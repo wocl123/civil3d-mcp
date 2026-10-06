@@ -1,24 +1,35 @@
+// 중앙 서버로 보내는 기록 (docs/데이터관리_설계.md §3).
+// 로그 한 줄에서 항목을 하나씩 골라 새로 만든다. 통째로 복사하는 것은 없다.
+// 그래서 나중에 로그에 항목이 늘어도, 여기에 더하지 않는 한 PC 밖으로 나가지 않는다.
+
 import { REGIONS, ROAD_CLASSES } from "../civil/alignmentRecord.js";
 import { failureGuide } from "../errors/failureGuide.js";
 import type { LogFile } from "../logs/workLog.js";
 import { hour } from "./privacy.js";
 
-// The records sent to the central server (docs/데이터관리_설계.md §3). Each is built
-// field by field from a local log line; nothing is copied over as a whole, so a field
-// added to the local logs later never leaves this PC unless it is added here.
 export type OutRecord = Record<string, unknown> & { type: "turn" | "tool" | "change" | "modification"; at: string };
 
 type Line = Record<string, unknown>;
-const num = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
-const name = (value: unknown) => typeof value === "string" && /^[a-z][a-z_]{0,60}$/.test(value) ? value : undefined;
-const word = (value: unknown, max = 40) => typeof value === "string" && /^[\w.-]+$/.test(value) && value.length <= max ? value : undefined;
-// Code-made check names, such as "제19조 최소 평면곡선 반지름" or "선형 생성"; never people's words.
-const check = (value: unknown) => typeof value === "string" && /^[\p{L}\p{N} ·(),.%/①-⑳_-]{1,80}$/u.test(value) ? value : undefined;
+
+// ── 값 거르개: 모양이 맞을 때만 값을 받고, 아니면 undefined(빠짐).
+const num = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+// 도구 이름 (소문자_밑줄)
+const name = (value: unknown) =>
+  typeof value === "string" && /^[a-z][a-z_]{0,60}$/.test(value) ? value : undefined;
+// 짧은 영문 낱말 (모델 이름, 종류 등)
+const word = (value: unknown, max = 40) =>
+  typeof value === "string" && /^[\w.-]+$/.test(value) && value.length <= max ? value : undefined;
+// 코드가 만든 검토 이름 ("제19조 최소 평면곡선 반지름", "선형 생성"). 사람이 쓴 말은 아니다.
+const check = (value: unknown) =>
+  typeof value === "string" && /^[\p{L}\p{N} ·(),.%/①-⑳_-]{1,80}$/u.test(value) ? value : undefined;
+// 목록이면 개수만
 const count = (value: unknown) => Array.isArray(value) ? value.length : 0;
+// undefined 항목 빼기
 const clean = <T extends Record<string, unknown>>(record: T): T =>
   Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as T;
 
-// What kind of failure a message was, never the message itself.
+// 오류는 원문이 아니라 종류만 보낸다.
 export function errorKind(message: unknown): string | undefined {
   if (typeof message !== "string" || !message) return undefined;
   if (/usage limit|rate limit|quota|429/i.test(message)) return "ai_limit";
@@ -31,63 +42,105 @@ export function errorKind(message: unknown): string | undefined {
 function usage(value: unknown) {
   if (!value || typeof value !== "object") return undefined;
   const item = value as Record<string, unknown>;
-  return clean({ inputTokens: num(item.inputTokens), outputTokens: num(item.outputTokens), cachedInputTokens: num(item.cachedInputTokens) });
+  return clean({
+    inputTokens: num(item.inputTokens),
+    outputTokens: num(item.outputTokens),
+    cachedInputTokens: num(item.cachedInputTokens)
+  });
 }
 
+// 질문 1건. 질문·답 원문과 도면 이름은 넣지 않는다.
 function turn(line: Line): OutRecord {
   const model = line.model as Record<string, unknown> | undefined;
   return clean({
-    type: "turn" as const, at: hour(String(line.at)), kind: word(line.kind), provider: word(line.provider),
-    model: word(model?.model), effort: word(model?.effort), ms: num(line.ms), cached: line.cached === true,
+    type: "turn" as const,
+    at: hour(String(line.at)),
+    kind: word(line.kind),
+    provider: word(line.provider),
+    model: word(model?.model),
+    effort: word(model?.effort),
+    ms: num(line.ms),
+    cached: line.cached === true,
     tools: Array.isArray(line.tools) ? line.tools.map(name).filter(Boolean) : [],
     usage: usage(line.usage),
-    counts: { recorded: count(line.recorded), candidates: count(line.candidates), fixes: count(line.fixes), applied: count(line.applied) },
+    counts: {
+      recorded: count(line.recorded),
+      candidates: count(line.candidates),
+      fixes: count(line.fixes),
+      applied: count(line.applied)
+    },
     errorKind: errorKind(line.error)
   });
 }
 
+// 도구 호출 1건. 넘긴 값(input)과 오류 원문은 넣지 않는다.
 function tool(line: Line): OutRecord {
   return clean({
-    type: "tool" as const, at: hour(String(line.at)), tool: name(line.tool), ms: num(line.ms), ok: line.ok === true,
-    outputChars: num(line.outputChars), images: num(line.images), errorKind: errorKind(line.error)
+    type: "tool" as const,
+    at: hour(String(line.at)),
+    tool: name(line.tool),
+    ms: num(line.ms),
+    ok: line.ok === true,
+    outputChars: num(line.outputChars),
+    images: num(line.images),
+    errorKind: errorKind(line.error)
   });
 }
 
+// 도면 변경 시도 1건. 측점·핸들·선형 이름·수정안 제목은 넣지 않는다.
 function change(line: Line): OutRecord {
   const result = line.result as Record<string, unknown> | undefined;
   const changes = Array.isArray(result?.changes) ? result.changes as Line[] : [];
   const created = result?.created as { curves?: unknown[] } | undefined;
   return clean({
-    type: "change" as const, at: hour(String(line.at)), state: line.state === "applied" ? "applied" : "failed",
-    source: created || line.check === "선형 생성" ? "create" : "fix", check: check(line.check),
-    changes: changes.map(item => clean({ kind: word(item.kind), property: word(item.property), before: num(item.before), after: num(item.after) })),
+    type: "change" as const,
+    at: hour(String(line.at)),
+    state: line.state === "applied" ? "applied" : "failed",
+    source: created || line.check === "선형 생성" ? "create" : "fix",
+    check: check(line.check),
+    changes: changes.map(item => clean({
+      kind: word(item.kind), property: word(item.property), before: num(item.before), after: num(item.after)
+    })),
     curves: created ? count(created.curves) : undefined,
     errorKind: errorKind(line.error)
   });
 }
 
+// 설계 조건: 정해진 목록에 있는 값만.
 function conditions(value: unknown) {
   const item = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   const oneOf = (list: readonly string[], text: unknown) => typeof text === "string" && list.includes(text) ? text : undefined;
   return clean({
-    designSpeed: num(item.designSpeed), roadClass: oneOf(ROAD_CLASSES, item.roadClass), region: oneOf(REGIONS, item.region),
+    designSpeed: num(item.designSpeed),
+    roadClass: oneOf(ROAD_CLASSES, item.roadClass),
+    region: oneOf(REGIONS, item.region),
     criteria: typeof item.criteria === "string" && /^[\w가-힣.-]{1,60}$/.test(item.criteria) ? item.criteria : undefined
   });
 }
 
+// 수정 추적 결과 1건 (AI가 만든 값을 사람이 어떻게 했는지).
 function event(line: Line): OutRecord | undefined {
   if (line.type !== "modification") return undefined;
   const outcomes = ["modified", "kept", "deleted", "restructured"];
   const properties = ["radius", "spiralLength", "elevation", "curveLength"];
   if (!outcomes.includes(String(line.outcome)) || !properties.includes(String(line.property))) return undefined;
+
   return clean({
-    type: "modification" as const, at: hour(String(line.at)), outcome: String(line.outcome),
-    source: line.source === "create" ? "create" : "fix", check: check(line.check),
-    objectKind: line.objectKind === "profile" ? "profile" : "alignment", property: String(line.property),
-    aiValue: num(line.aiValue), userValue: num(line.userValue), ageHours: num(line.ageHours), conditions: conditions(line.conditions)
+    type: "modification" as const,
+    at: hour(String(line.at)),
+    outcome: String(line.outcome),
+    source: line.source === "create" ? "create" : "fix",
+    check: check(line.check),
+    objectKind: line.objectKind === "profile" ? "profile" : "alignment",
+    property: String(line.property),
+    aiValue: num(line.aiValue),
+    userValue: num(line.userValue),
+    ageHours: num(line.ageHours),
+    conditions: conditions(line.conditions)
   });
 }
 
+// 로그 파일 종류에 맞는 기록을 만든다.
 export function outRecord(file: LogFile, line: Line): OutRecord | undefined {
   if (typeof line.at !== "string") return undefined;
   switch (file) {
