@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { parseUsage } from "./usage.js";
 import { paletteLaunch } from "./paletteWorkspace.js";
+import { cliPath, locateCli } from "./cliLocator.js";
 import type { TokenUsage } from "./types/TokenUsage.js";
 import type { Provider } from "./types/Provider.js";
 import type { ProviderState } from "./types/ProviderState.js";
@@ -26,11 +27,19 @@ async function runCli(provider: Provider, args: string[], input = "", timeoutMs 
   const windows = process.platform === "win32";
   const executable = windows ? "cmd.exe" : provider;
   const commandArgs = windows ? ["/d", "/s", "/c", provider, ...args] : args;
+  // The CLI is found where it really is (cliLocator.ts), and its folder leads PATH, so a
+  // CLI installed after Civil 3D started still runs. Windows keys PATH as "Path".
+  const location = await locateCli(provider);
+  const env: Record<string, string | undefined> = { ...process.env, ...extraEnv, CI: "1" };
+  if (location) {
+    for (const key of Object.keys(env)) if (/^path$/i.test(key)) delete env[key];
+    env[windows ? "Path" : "PATH"] = await cliPath(provider, location);
+  }
   return await new Promise<CliResult>((resolve, reject) => {
     const child = spawn(executable, commandArgs, {
       cwd, windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...extraEnv, CI: "1" }
+      env
     });
     let stdout = "";
     let stderr = "";
@@ -71,19 +80,29 @@ async function runCli(provider: Provider, args: string[], input = "", timeoutMs 
 }
 
 async function isInstalled(provider: Provider): Promise<boolean> {
-  const locator = process.platform === "win32" ? "where.exe" : "which";
-  return await new Promise<boolean>((resolve) => {
-    const child = spawn(locator, [provider], { windowsHide: true, stdio: "ignore" });
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0));
-  });
+  return (await locateCli(provider)) !== undefined;
 }
+
+// A login confirmed earlier is confirmed again on its own once it is older than the TTL,
+// so an AI the user chose does not drop out of the palette after a few idle minutes.
+// Claude and Codex have a cheap local status command; Gemini's check costs quota, so it
+// waits for the user to choose it again.
+const AUTO_RECHECK = new Set<Provider>(["claude", "codex"]);
+const rechecking = new Map<Provider, Promise<ProviderState>>();
 
 export async function getProviderState(provider: Provider): Promise<ProviderState> {
   if (!(await isInstalled(provider))) return "missing";
   const record = verified.get(provider);
-  if (!record || Date.now() - record.checkedAt > VERIFY_TTL_MS) return "unchecked";
-  return record.state;
+  if (record && Date.now() - record.checkedAt <= VERIFY_TTL_MS) return record.state;
+  if (record?.state === "ready" && AUTO_RECHECK.has(provider)) {
+    let running = rechecking.get(provider);
+    if (!running) {
+      running = verifyProvider(provider).finally(() => rechecking.delete(provider));
+      rechecking.set(provider, running);
+    }
+    return running;
+  }
+  return "unchecked";
 }
 
 export async function verifyProvider(provider: Provider): Promise<ProviderState> {

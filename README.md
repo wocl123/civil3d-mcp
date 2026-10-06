@@ -114,10 +114,26 @@ Civil 3D commands for testing the read-only drawing queries.
 | Codex | `codex login status` | `codex login` |
 | Gemini | Short headless model request | Run `gemini` and complete its login |
 
-The palette never asks for passwords or API keys. An absent CLI or failed login
-check leaves that AI unavailable. Gemini's check can use account quota because
-its CLI has no documented noninteractive login-status command. Checks are cached
-for five minutes.
+The palette never asks for passwords or API keys. Gemini's check can use account
+quota because its CLI has no documented noninteractive login-status command.
+Checks are cached for five minutes; after that a Claude or Codex login that was
+confirmed is confirmed again on its own, so the chosen AI stays available.
+
+The service finds each CLI where it really is (`server/src/ai/cliLocator.ts`): the
+current PATH, the user and machine PATH read fresh from the registry, and the
+official install folders (`%USERPROFILE%\.local\bin`, `%APPDATA%\npm`). A CLI
+installed after Civil 3D started is therefore found without restarting.
+
+Picking an AI in the palette that is not installed asks first: "설치할까요?" with
+[설치] and [취소]. Only [설치] opens `server\setup\setup-ai-cli.ps1 -Provider <ai>
+-Action install` for that one AI in its own PowerShell window: Claude's official
+installer (`irm https://claude.ai/install.ps1 | iex`), or `npm install -g @openai/codex`
+/ `@google/gemini-cli` (Node.js is already required), followed by the CLI's own sign-in
+in the browser with the user's own account. An installed AI whose login is not
+confirmed asks "로그인할까요?" the same way (`-Action login`). Afterwards, clicking the
+AI again checks it. `npm run smoke:cli` checks that the script is valid PowerShell,
+runs its read-only `-Action check` for each AI, and checks that installed CLIs are
+found with a stale PATH.
 
 ## Palette AI, MCP, and memory
 

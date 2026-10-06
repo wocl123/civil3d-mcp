@@ -18,7 +18,8 @@
     "law:fetch": "npm run build && node scripts/law-fetch.mjs",
     "test:design": "npm run build && node scripts/design-regression.mjs",
     "test:tools": "npm run build && node scripts/tool-contract.mjs",
-    "test:central": "npm run build && npm --prefix ../central run build && node scripts/central-e2e.mjs"
+    "test:central": "npm run build && npm --prefix ../central run build && node scripts/central-e2e.mjs",
+    "smoke:cli": "npm run build && node scripts/cli-smoke.mjs && node scripts/cli-missing-scenario.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

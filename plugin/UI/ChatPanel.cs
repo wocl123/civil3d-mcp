@@ -174,11 +174,7 @@ internal sealed class ChatPanel : UserControl
     private async Task ChooseAsync(string name)
     {
         if (_busy) return;
-        if (_states[name] == "missing")
-        {
-            AddNotice($"{Display(name)} CLI가 설치되어 있지 않습니다.", error: true);
-            return;
-        }
+        // Every click checks again, so a CLI installed or signed in a moment ago is picked up.
         if (_states[name] != "ready")
         {
             SetBusy(true);
@@ -189,9 +185,17 @@ internal sealed class ChatPanel : UserControl
             }
             catch (System.Exception ex) { AddNotice("인증 확인 실패: " + ex.Message, error: true); }
             finally { SetBusy(false); }
+            if (_states[name] == "missing")
+            {
+                AskSetup(name, "install",
+                    $"{Display(name)}가 이 PC에 설치되어 있지 않습니다. 설치할까요?\n설치 창이 열리고, 설치가 끝나면 로그인까지 이어 갑니다.");
+                UpdateChips();
+                return;
+            }
             if (_states[name] != "ready")
             {
-                AddNotice($"{Display(name)} 인증이 확인되지 않았습니다. 터미널에서 {LoginCommand(name)} 후 다시 눌러 주세요.", error: true);
+                AskSetup(name, "login",
+                    $"{Display(name)} 로그인이 확인되지 않았습니다. 로그인할까요?\n로그인 창이 열리고 브라우저에서 계정으로 로그인합니다. (터미널에서 {LoginCommand(name)}를 직접 실행해도 됩니다.)");
                 UpdateChips();
                 return;
             }
@@ -413,6 +417,50 @@ internal sealed class ChatPanel : UserControl
         ScrollToEnd();
     }
 
+    // Picking an AI that is not installed (or not signed in) asks first. Only [설치] / [로그인]
+    // opens server/setup/setup-ai-cli.ps1 for that one AI in its own window, where it installs
+    // and goes on to the sign-in; the user signs in there with their own account.
+    private void AskSetup(string name, string action, string text)
+    {
+        StackPanel body = new();
+        body.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
+        Button yes = SmallButton(action == "install" ? "설치" : "로그인", "PowerShell 창이 열립니다.");
+        Button no = SmallButton("취소", "아무것도 하지 않습니다.");
+        yes.Background = _theme.Accent;
+        yes.Foreground = Brushes.White;
+        no.Margin = new Thickness(6, 0, 0, 0);
+        StackPanel buttons = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 7, 0, 0) };
+        buttons.Children.Add(yes);
+        buttons.Children.Add(no);
+        body.Children.Add(buttons);
+        yes.Click += async (_, _) =>
+        {
+            yes.IsEnabled = no.IsEnabled = false;
+            try
+            {
+                JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/provider/setup", new { provider = name, action });
+                AddNotice(data["message"]?.ToString() ?? "창을 열었습니다.", error: data["opened"]?.GetValue<bool>() != true);
+            }
+            catch (System.Exception ex)
+            {
+                AddNotice("창을 열지 못했습니다: " + ex.Message, error: true);
+                yes.IsEnabled = no.IsEnabled = true;
+            }
+        };
+        no.Click += (_, _) =>
+        {
+            yes.IsEnabled = no.IsEnabled = false;
+            AddNotice($"{Display(name)} {(action == "install" ? "설치" : "로그인")}를 취소했습니다. 다시 누르면 다시 묻습니다.");
+        };
+        _messages.Children.Add(new Border
+        {
+            Child = body, CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 7, 10, 8),
+            Margin = new Thickness(0, 2, 12, 8), HorizontalAlignment = HorizontalAlignment.Left,
+            Background = _theme.Surface, BorderBrush = _theme.Attention, BorderThickness = new Thickness(1)
+        });
+        ScrollToEnd();
+    }
+
     // Answers stay selectable so values can be copied into the drawing or a report.
     private static TextBox SelectableText(string text, Brush foreground) => new()
     {
@@ -480,7 +528,12 @@ internal sealed class ChatPanel : UserControl
             chip.Background = selected ? _theme.AssistantBubble : _theme.Surface;
             chip.BorderBrush = selected ? _theme.Accent : _theme.Border;
             chip.Foreground = _theme.Text;
-            chip.ToolTip = state == "unauthenticated" ? $"터미널에서 {LoginCommand(name)} 후 다시 누르세요." : null;
+            chip.ToolTip = state switch
+            {
+                "unauthenticated" => "누르면 다시 확인하고, 안 되면 로그인할지 묻습니다.",
+                "missing" => "누르면 다시 확인하고, 없으면 설치할지 묻습니다.",
+                _ => null
+            };
         }
     }
 

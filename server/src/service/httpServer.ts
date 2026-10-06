@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { callPlugin } from "../bridge/pluginClient.js";
 import { getProviderState, isProvider, PROVIDERS, verifyProvider } from "../ai/aiCli.js";
 import { getUsageTotals } from "../ai/usage.js";
+import { openSetupWindow } from "../ai/cliSetup.js";
 import { getQuota } from "../ai/quota.js";
 import { answerChat } from "../workflows/paletteChat.js";
 import { clearMemory } from "../memory/memoryStore.js";
@@ -98,6 +99,13 @@ const httpServer = createServer(async (request, response) => {
       if (!isProvider(input.provider)) return json(response, 400, { error: "Unknown AI provider." });
       const state = await verifyProvider(input.provider);
       return json(response, 200, { provider: input.provider, state });
+    }
+    // The palette's 설치 창 열기 / 로그인 창 열기: the setup script in a PowerShell window (ai/cliSetup.ts).
+    if (request.method === "POST" && url.pathname === "/api/provider/setup") {
+      const input = await body(request);
+      if (!isProvider(input.provider) || (input.action !== "install" && input.action !== "login"))
+        return json(response, 400, { error: "provider와 action(install, login)이 필요합니다." });
+      return json(response, 200, await openSetupWindow(input.provider, input.action));
     }
     if (request.method === "POST" && (url.pathname === "/api/chat" || url.pathname === "/api/chat/stream")) {
       const input = await body(request);
