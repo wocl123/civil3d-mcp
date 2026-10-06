@@ -1,3 +1,19 @@
+// 로컬 서비스 (127.0.0.1:48900). Civil 3D 플러그인이 띄우고, 팔레트가 이 HTTP API를 부른다.
+//
+// API (모두 플러그인 세션 토큰이 필요하다):
+//   GET  /api/providers              AI별 상태와 남은 세션 시간
+//   GET  /api/usage?provider=        서비스가 켜진 뒤 토큰 합계
+//   GET  /api/quota?provider=        계정의 남은 사용 한도
+//   GET  /api/drawing                도면 상태와 객체 일부(점검용)
+//   POST /api/provider/check         로그인 확인(세션 시작)
+//   POST /api/provider/setup         AI CLI 설치·로그인 창 열기
+//   POST /api/chat, /api/chat/stream 팔레트 질문 (stream은 진행 상황을 한 줄씩 보냄)
+//   POST /api/conversation/clear     대화 지우기
+//   POST /api/memory/clear           답변 재사용 저장소 지우기
+//   POST /api/shutdown               새 서비스가 자리를 넘겨 달라고 할 때
+//
+// 수명: 자기를 띄운 Civil 3D가 꺼지면 스스로 끝나고, 포트에 남은 옛 서비스는 넘겨받는다(아래 참고).
+
 import { paletteMessage } from "../errors/failureGuide.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -20,16 +36,24 @@ if (!Number.isInteger(configuredPort) || configuredPort < 1 || configuredPort > 
   throw new Error("MY_CIVIL3D_SERVICE_PORT must be between 1 and 65535.");
 const port = configuredPort;
 
+const MAX_BODY = 16 * 1024;
+
+// 플러그인 연결 파일(토큰이 들어 있다).
+const connectionPath = () => process.env.MY_CIVIL3D_CONNECTION_FILE ??
+  join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "MyCivil3DMcp", "connection.json");
+
+// 요청 헤더의 토큰이 플러그인 세션 토큰과 같은지(시간이 일정한 비교).
 async function authorized(request: IncomingMessage): Promise<boolean> {
-  const file = process.env.MY_CIVIL3D_CONNECTION_FILE ??
-    join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "MyCivil3DMcp", "connection.json");
   try {
-    const config = JSON.parse(await readFile(file, "utf8")) as { token?: string };
+    const config = JSON.parse(await readFile(connectionPath(), "utf8")) as { token?: string };
     const candidate = request.headers["x-my-civil3d-token"];
-    if (typeof candidate !== "string" || !/^[a-f\d]{64}$/i.test(candidate) ||
-        typeof config.token !== "string" || !/^[a-f\d]{64}$/i.test(config.token)) return false;
-    return timingSafeEqual(Buffer.from(candidate, "hex"), Buffer.from(config.token, "hex"));
-  } catch { return false; }
+    const validCandidate = typeof candidate === "string" && /^[a-f\d]{64}$/i.test(candidate);
+    const validToken = typeof config.token === "string" && /^[a-f\d]{64}$/i.test(config.token);
+    if (!validCandidate || !validToken) return false;
+    return timingSafeEqual(Buffer.from(candidate, "hex"), Buffer.from(config.token!, "hex"));
+  } catch {
+    return false;
+  }
 }
 
 function json(response: ServerResponse, status: number, body: unknown): void {
@@ -41,13 +65,14 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.end(JSON.stringify(body));
 }
 
+// 요청 본문(JSON 객체, 16 KB까지).
 async function body(request: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += data.length;
-    if (size > 16 * 1024) throw new Error("Request body is too large.");
+    if (size > MAX_BODY) throw new Error("Request body is too large.");
     chunks.push(data);
   }
   const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -58,75 +83,89 @@ async function body(request: IncomingMessage): Promise<Record<string, unknown>> 
 
 const httpServer = createServer(async (request, response) => {
   try {
-    if (request.headers.host !== `${host}:${port}`)
-      return json(response, 403, { error: "Invalid host." });
-    if (!(await authorized(request)))
-      return json(response, 403, { error: "Civil 3D session is not authorized." });
+    // ── 보안 검사: 이 주소로 온 요청인지, 세션 토큰이 맞는지, POST는 JSON이고 다른 사이트에서 온 것이 아닌지.
+    if (request.headers.host !== `${host}:${port}`) return json(response, 403, { error: "Invalid host." });
+    if (!(await authorized(request))) return json(response, 403, { error: "Civil 3D session is not authorized." });
+
     const url = new URL(request.url ?? "/", `http://${host}:${port}`);
     if (request.method === "POST") {
       const origin = request.headers.origin;
-      if (origin && origin !== `http://${host}:${port}`)
-        return json(response, 403, { error: "Cross-origin requests are blocked." });
-      if (!request.headers["content-type"]?.startsWith("application/json"))
-        return json(response, 415, { error: "Use application/json." });
+      if (origin && origin !== `http://${host}:${port}`) return json(response, 403, { error: "Cross-origin requests are blocked." });
+      if (!request.headers["content-type"]?.startsWith("application/json")) return json(response, 415, { error: "Use application/json." });
     }
+    const route = `${request.method} ${url.pathname}`;
 
-    if (request.method === "GET" && url.pathname === "/api/providers") {
+    // ── AI 상태
+    if (route === "GET /api/providers") {
       const states = await Promise.all(PROVIDERS.map(async provider => ({
         provider, state: await getProviderState(provider), session: sessionInfo(provider)
       })));
       return json(response, 200, { providers: states });
     }
-    if (request.method === "GET" && url.pathname === "/api/usage") {
+
+    if (route === "GET /api/usage") {
       const provider = url.searchParams.get("provider");
       if (!isProvider(provider)) return json(response, 400, { error: "Unknown AI provider." });
       return json(response, 200, { provider, totals: getUsageTotals(provider) });
     }
-    if (request.method === "GET" && url.pathname === "/api/quota") {
+
+    if (route === "GET /api/quota") {
       const provider = url.searchParams.get("provider");
       if (!isProvider(provider)) return json(response, 400, { error: "Unknown AI provider." });
-      return json(response, 200, {
-        provider, quota: await getQuota(provider, url.searchParams.get("refresh") === "1")
-      });
+      const quota = await getQuota(provider, url.searchParams.get("refresh") === "1");
+      return json(response, 200, { provider, quota });
     }
-    if (request.method === "GET" && url.pathname === "/api/drawing") {
+
+    // ── 도면 (점검용)
+    if (route === "GET /api/drawing") {
       const status = await callPlugin("drawing.status");
       const objects = await callPlugin("drawing.objects", { offset: 0, limit: 40 });
       return json(response, 200, { status, objects });
     }
-    if (request.method === "POST" && url.pathname === "/api/provider/check") {
+
+    // ── 로그인 확인 / 설치·로그인 창
+    if (route === "POST /api/provider/check") {
       const input = await body(request);
       if (!isProvider(input.provider)) return json(response, 400, { error: "Unknown AI provider." });
       const state = await verifyProvider(input.provider);
       return json(response, 200, { provider: input.provider, state, session: sessionInfo(input.provider) });
     }
-    // The palette's 설치 창 열기 / 로그인 창 열기: the setup script in a PowerShell window (ai/cliSetup.ts).
-    if (request.method === "POST" && url.pathname === "/api/provider/setup") {
+
+    if (route === "POST /api/provider/setup") {
       const input = await body(request);
       if (!isProvider(input.provider) || (input.action !== "install" && input.action !== "login"))
         return json(response, 400, { error: "provider와 action(install, login)이 필요합니다." });
       return json(response, 200, await openSetupWindow(input.provider, input.action));
     }
-    if (request.method === "POST" && (url.pathname === "/api/chat" || url.pathname === "/api/chat/stream")) {
+
+    // ── 팔레트 질문
+    if (route === "POST /api/chat" || route === "POST /api/chat/stream") {
       const input = await body(request);
       if (!isProvider(input.provider) || typeof input.message !== "string" ||
           input.message.trim().length < 1 || input.message.length > 4000)
         return json(response, 400, { error: "AI를 고르고 4000자 이내로 질문을 입력해 주세요." });
-      const state = await getProviderState(input.provider);
-      if (state !== "ready")
-        return json(response, 403, { error: state === "unchecked"
-          ? "AI 세션 시간이 지나 사용이 풀렸습니다. 위에서 AI를 다시 눌러 주세요."
-          : "선택한 AI가 설치되어 있지 않거나 로그인이 확인되지 않았습니다." });
-      // A question keeps the session alive: its time starts again now and when the answer is done.
-      touchProvider(input.provider);
 
+      const state = await getProviderState(input.provider);
+      if (state !== "ready") {
+        return json(response, 403, {
+          error: state === "unchecked"
+            ? "AI 세션 시간이 지나 사용이 풀렸습니다. 위에서 AI를 다시 눌러 주세요."
+            : "선택한 AI가 설치되어 있지 않거나 로그인이 확인되지 않았습니다."
+        });
+      }
+
+      // 질문은 세션을 살린다: 지금, 그리고 답이 끝날 때 시간을 다시 시작한다.
+      touchProvider(input.provider);
       const conversation = isConversationId(input.conversation) ? input.conversation : undefined;
+
+      // 한 번에 답 전체
       if (url.pathname === "/api/chat") {
         const result = await answerChat(input.provider, input.message, undefined, conversation);
         touchProvider(input.provider);
         return json(response, 200, { ...result, session: sessionInfo(input.provider) });
       }
-      // One JSON object per line: progress and delta events, then done (the /api/chat result) or error.
+
+      // 스트림: 한 줄에 JSON 하나. 진행(progress)·답 조각(delta) 이벤트, 끝에 done(위와 같은 결과) 또는 error.
       response.writeHead(200, {
         "Content-Type": "application/x-ndjson; charset=utf-8",
         "Cache-Control": "no-store",
@@ -142,58 +181,70 @@ const httpServer = createServer(async (request, response) => {
       }
       return response.end();
     }
-    if (request.method === "POST" && url.pathname === "/api/conversation/clear") {
+
+    // ── 지우기
+    if (route === "POST /api/conversation/clear") {
       const input = await body(request);
       if (isConversationId(input.conversation)) forget(input.conversation);
       return json(response, 200, { cleared: true });
     }
-    // A newer service (from a Civil 3D started later) asks this one to make room.
-    if (request.method === "POST" && url.pathname === "/api/shutdown") {
+
+    if (route === "POST /api/memory/clear") {
+      await clearMemory();
+      return json(response, 200, { cleared: true });
+    }
+
+    // ── 나중에 켜진 Civil 3D의 새 서비스가 자리를 넘겨 달라고 함
+    if (route === "POST /api/shutdown") {
       json(response, 200, { stopping: true });
       process.stderr.write("MyCivil3DMcp local service: replaced by a newer service.\n");
       httpServer.close();
       setTimeout(() => process.exit(0), 200).unref();
       return;
     }
-    if (request.method === "POST" && url.pathname === "/api/memory/clear") {
-      await clearMemory();
-      return json(response, 200, { cleared: true });
-    }
+
     json(response, 404, { error: "Not found." });
   } catch (error) {
     json(response, 503, { error: paletteMessage(error instanceof Error ? error.message : String(error)) });
   }
 });
 
+// 포트를 잡은 뒤: 뒤쪽 작업(수정 추적, 보낼 묶음, 중앙 지식, 정리)을 시작한다. docs/데이터관리_설계.md §8
 function started(): void {
   process.stderr.write(`MyCivil3DMcp local service: ${host}:${port}\n`);
-  // Tracking checks, outgoing packages, central knowledge, and clean-up (docs/데이터관리_설계.md §8).
   if (process.env.MY_CIVIL3D_SYNC !== "off") startSyncLoop();
 }
 
-// The service lives as long as the Civil 3D that started it. Civil 3D does not always stop
-// it on exit, and a leftover service would keep answering the next Civil 3D with old code.
+// 수명 ①: 자기를 띄운 Civil 3D가 살아 있는 동안만 산다.
+// Civil 3D가 꺼질 때 항상 이 서비스를 끄지는 않는다. 남은 서비스가 다음 Civil 3D에 옛 코드로 답하면 안 된다.
 const parent = Number(process.env.MY_CIVIL3D_PARENT_PID);
-if (Number.isInteger(parent) && parent > 0)
+if (Number.isInteger(parent) && parent > 0) {
   setInterval(() => {
-    try { process.kill(parent, 0); }
-    catch { process.stderr.write("MyCivil3DMcp local service: Civil 3D has exited.\n"); process.exit(0); }
+    try {
+      process.kill(parent, 0);   // 신호 0: 프로세스가 있는지만 본다
+    } catch {
+      process.stderr.write("MyCivil3DMcp local service: Civil 3D has exited.\n");
+      process.exit(0);
+    }
   }, 5000);
-
-// A service left on the port (an older build, or one whose Civil 3D is gone) is asked to
-// stop with this session's token, and this one takes the port.
-async function takeOver(): Promise<void> {
-  const file = process.env.MY_CIVIL3D_CONNECTION_FILE ??
-    join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "MyCivil3DMcp", "connection.json");
-  try {
-    const { token } = JSON.parse(await readFile(file, "utf8")) as { token?: string };
-    await fetch(`http://${host}:${port}/api/shutdown`, {
-      method: "POST", headers: { "Content-Type": "application/json", "x-my-civil3d-token": token ?? "" }, body: "{}",
-      signal: AbortSignal.timeout(3000)
-    });
-  } catch { /* It may already be gone, or too old to know /api/shutdown. */ }
 }
 
+// 수명 ②: 포트에 남은 서비스(옛 빌드, 또는 Civil 3D가 이미 꺼진 것)에 이 세션 토큰으로 종료를 요청한다.
+async function takeOver(): Promise<void> {
+  try {
+    const { token } = JSON.parse(await readFile(connectionPath(), "utf8")) as { token?: string };
+    await fetch(`http://${host}:${port}/api/shutdown`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-my-civil3d-token": token ?? "" },
+      body: "{}",
+      signal: AbortSignal.timeout(3000)
+    });
+  } catch {
+    // 이미 꺼졌거나, /api/shutdown 을 모르는 옛 서비스다.
+  }
+}
+
+// 포트가 이미 쓰이면 넘겨받기를 시도하고 1초 뒤 다시 잡는다(최대 5번).
 let attempts = 0;
 httpServer.on("error", (error: NodeJS.ErrnoException) => {
   if (error.code !== "EADDRINUSE" || ++attempts > 5) {
@@ -203,4 +254,5 @@ httpServer.on("error", (error: NodeJS.ErrnoException) => {
   }
   void takeOver().then(() => setTimeout(() => httpServer.listen(port, host), 1000));
 });
+
 httpServer.listen(port, host, started);
