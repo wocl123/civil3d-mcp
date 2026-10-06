@@ -1,3 +1,9 @@
+// 중앙 서버에서 받은 승인 지식을 이 PC에 둔다.
+//   - 규칙 파일 하나: rules/중앙_지식.md (always, 매 요청에 들어감)
+//   - 설정값: knowledge/central-parameters.json
+// 둘 다 바뀔 때마다 통째로 바뀌므로 여기서 고치는 파일이 아니다.
+// 이 PC에서만 다르게 하려면 /후보(승인된_지식)로 남긴다. 그쪽이 먼저 적용된다.
+
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { writeAtomic } from "../files.js";
@@ -5,17 +11,17 @@ import type { Official } from "../sync/centralClient.js";
 import { writeCentralParameters } from "./parameters.js";
 import { rulesDir } from "./rulesStore.js";
 
-// The central server's approved knowledge on this PC: one always-included rule file and
-// the central settings. Both are replaced as a whole on every change, so they are not for
-// editing here; a practice that differs on this PC belongs in /후보 (승인된_지식), which
-// comes first.
 export const CENTRAL_RULE = "중앙_지식";
 
 export async function applyOfficial(official: Official): Promise<void> {
   const rule = join(rulesDir(), `${CENTRAL_RULE}.md`);
   const items = official.items.filter(item => item.content.trim());
-  if (!items.length) await rm(rule, { force: true });
-  else await writeAtomic(rule, `---
+
+  // 승인 지식이 없으면 파일을 지운다.
+  if (!items.length) {
+    await rm(rule, { force: true });
+  } else {
+    await writeAtomic(rule, `---
 description: 중앙 서버에서 검토자가 승인한 공통 작업 관행. 매 요청에 함께 들어간다.
 always: true
 ---
@@ -26,5 +32,7 @@ always: true
 
 ${items.map(item => `- ${item.content} (${item.id})`).join("\n")}
 `);
+  }
+
   await writeCentralParameters(official.parameters ?? {}, official.version);
 }
