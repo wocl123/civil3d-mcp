@@ -196,6 +196,10 @@ public static class PluginBridge
                 "alignment.create" => await InDocumentEditAsync(doc => AlignmentCreation.Create(doc, ReadCreate(parameters))),
                 "drawing.pick_polyline" => await InDocumentContextAsync(doc => DrawingPicker.PickPolyline(
                     doc, parameters?["message"]?.ToString(), Math.Clamp(ReadInt(parameters?["timeoutSeconds"], 90), 10, 110))),
+                "drawing.capture" => await InDocumentContextAsync(doc => DrawingCapture.Capture(
+                    doc, ReadStrings(parameters?["handles"]),
+                    Math.Clamp(ReadInt(parameters?["width"], 800), 200, 1600),
+                    Math.Clamp(ReadInt(parameters?["height"], 600), 200, 1200))),
                 "drawing.selection" => await InDocumentContextAsync(doc => DrawingSelection.Get(doc)),
                 "drawing.polylines" => await InDocumentContextAsync(doc => DrawingQueries.GetPolylines(
                     doc,
@@ -244,6 +248,13 @@ public static class PluginBridge
         value?.Deserialize<AlignmentCreateRequest>(ReadOptions) is { Polyline: not null, Points: not null, Curves: not null } request
             ? request
             : throw new ArgumentException("alignment.create needs name, type, polyline, points, and curves.");
+
+    private static string[] ReadStrings(JsonNode? value) => value switch
+    {
+        null => [],
+        JsonArray array => array.Select(item => ReadString(item)).ToArray(),
+        _ => throw new ArgumentException("handles must be an array of handles.")
+    };
 
     private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
 

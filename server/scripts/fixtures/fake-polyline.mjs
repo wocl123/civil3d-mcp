@@ -1,14 +1,14 @@
 // Fake polylines and alignment.create for the bridge. A created alignment is modelled
 // well enough (curves, elements, design speed) for the criteria recheck to read it.
 const b15 = Math.tan(Math.PI / 12);
-const polylines = {
+export const polylines = {
   "2A1": { layer: 'C-ROAD-PLAN', closed: false, vertices: [[1000, 2000, 0], [1400, 2300, 0], [1900, 2250, 0], [2300, 2600, 0]] },
   "2A2": { layer: 'C-ROAD-PLAN', closed: false, vertices: [[0, 0, 0], [300, 0, b15], [300 + 200 * Math.sin(Math.PI / 3), 100, 0], [300 + 200 * Math.sin(Math.PI / 3) + 150, 100 + 150 * Math.sqrt(3), 0]] },
   "2A3": { layer: '0', closed: true, vertices: [[0, 0, 0], [10, 0, 0], [10, 10, 0]] },
   "2A4": { layer: 'SD-PIPE', closed: false, vertices: [[500, 500, 0], [560, 500, 0], [560, 540, 0], [640, 600, 0]] },
   "2A5": { layer: 'C-ROAD-PLAN', closed: false, vertices: [[0, 0, 0], [150, 0, 0], [250, 80, 0], [400, 60, 0]] }
 };
-const created = new Map();
+export const created = new Map();
 const len = v => v.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - v[i][0], p[1] - v[i][1]), 0);
 const t = s => `${Math.floor(s / 1000)}+${(s % 1000).toFixed(2).padStart(6, '0')}`;
 

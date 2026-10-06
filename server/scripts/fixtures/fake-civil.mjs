@@ -3,7 +3,8 @@
 import { createServer } from 'node:net';
 import { writeFileSync } from 'node:fs';
 import { applyChanges, handle as handleAlignment } from './fake-alignment.mjs';
-import { handlePolyline } from './fake-polyline.mjs';
+import { capture } from './fake-capture.mjs';
+import { created, handlePolyline, polylines } from './fake-polyline.mjs';
 
 const token = 'a'.repeat(64);
 let selected = [];
@@ -18,6 +19,7 @@ function answer(request) {
     case 'change.apply': return applyChanges(request);
     case 'drawing.status': return { drawingName: 'FAKE-SITE.dwg', filePath: 'D:/fake/FAKE-SITE.dwg', civilDocumentAvailable: true, revision: 'sess1-42' };
     case 'alignment.list': return handlePolyline(request) ?? alignments;
+    case 'drawing.capture': return capture(request.params ?? {}, polylines, [...created.values()]);
     case 'drawing.selection': return { drawingName: 'FAKE-SITE.dwg', totalCount: selected.length, items: selected.map(handle => {
       const polyline = handlePolyline({ method: 'drawing.polylines', params: { limit: 50 } }).items.find(item => item.handle === handle);
       return polyline ? { handle, type: 'Polyline', layer: polyline.layer, name: null, polyline }

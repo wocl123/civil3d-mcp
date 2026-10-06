@@ -5,6 +5,7 @@ const LABELS: Record<string, string> = {
   list_drawing_objects: "객체 목록 읽는 중",
   get_drawing_object: "객체 읽는 중",
   get_selection: "선택한 객체 읽는 중",
+  capture_drawing: "도면 캡처해서 확인하는 중",
   list_alignments: "선형 목록 읽는 중",
   get_alignment: "선형 읽는 중",
   get_alignment_section: "선형 세부 정보 읽는 중",

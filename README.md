@@ -229,7 +229,10 @@ its PVI), the radius of a single arc, and a new alignment from a plan. Adding sp
 superelevation are shown as fixes to make by hand.
 
 **Creating an alignment from a polyline.** The palette works in turns, as the
-`선형생성` rule describes. The AI calls `pick_polyline`: the Civil 3D command line
+`선형생성` rule describes. A polyline the user selected before asking is used at once:
+the plug-in records each drawing's selection when it changes (`drawing.selection`),
+and every palette question carries it (it is also part of the answer-reuse key).
+Otherwise the AI calls `pick_polyline`: the Civil 3D command line
 asks the user to click the polyline (the palette shows the same request), and the
 AI waits up to 90 seconds. ESC or no pick within that time cancels; the user can
 then pick again or ask for a list (`list_polylines`). The CLIs' MCP tool timeout is
@@ -395,13 +398,15 @@ The MCP entry point is `node build/index.js`. Its tools are:
 | `list_drawing_layers` | Paged layer inventory with visibility, lock state, object counts, and type counts |
 | `list_drawing_objects` | Paged Model Space handles, types, and layers; optional exact layer filter |
 | `get_drawing_object` | One Model Space or COGO point object by handle, with available geometry and bounds |
+| `get_selection` | The objects the user has selected in the drawing now (up to 20), with Civil names and polyline summaries |
+| `capture_drawing` | A PNG of Model Space framed on given objects (or the whole drawing), rendered off screen without moving the user's view |
 | `list_alignments` | Paged alignment summaries: type, layer, site, start and end station (raw and formatted), length, profile count |
 | `get_alignment` | One alignment's overview: summary, settings, item count of each section, parts Civil 3D could not provide, its profiles, design speeds, and curves when there are 30 or fewer |
 | `get_alignment_section` | One section of an alignment, optionally within a station range: curves, elements, key points, station equations, design speeds, superelevation, offset, related objects, or failed design checks |
 | `get_profile` | One profile's overview: summary, settings (source surface, offset, design checks), highest and lowest points, item count of each section, and for design profiles its vertical curves and tangents when each has 30 or fewer |
 | `get_profile_section` | One section of a profile, optionally within a station range: PVIs with sight distances, tangent grades, vertical curves (crest or sag, K, minimum K, high or low point), profile views, failed design checks, or elevations at given stations or intervals |
-| `apply_drawing_change` | Apply one computed fix or alignment plan the user agreed to, by id, then re-run its check; the only tool that changes the drawing |
-| `check_alignment_criteria` | Alignment against design criteria (default 도로구조규칙): minimum curve radius, minimum curve length, spirals required and their length, maximum superelevation |
+| `apply_drawing_change` | Apply one computed fix or alignment plan the user agreed to, by id, then re-run its check; a created alignment comes back with a capture of it and its polyline for the AI to look at; the only tool that changes the drawing |
+| `check_alignment_criteria` | Alignment against design criteria (default 도로구조규칙): design speed, minimum curve radius, minimum curve length, spirals required and their length, maximum superelevation. Each item is pass, fail, review (within a proviso; a person decides), or n/a; notCovered lists what is never compared |
 | `check_profile_criteria` | Design profiles against design criteria: minimum vertical curve K, required vertical curve length, maximum grade; with only an alignment, all its design profiles |
 | `pick_polyline` | Prompt the user on the command line to click one 2D polyline and wait up to 90 s; returns it, or cancelled or timeout |
 | `list_polylines` | Paged 2D polylines with layer, vertex and arc counts, length, start and end points; optional layer filter |

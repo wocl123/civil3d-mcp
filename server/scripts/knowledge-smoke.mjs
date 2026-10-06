@@ -8,6 +8,7 @@ process.env.MY_CIVIL3D_KNOWLEDGE_DIR = temporary;
 const { appendFacts, knowledgeFile, knowledgePrompt, parseKnowledge, readKnowledge } =
   await import('../build/knowledge/knowledgeStore.js');
 const { splitFacts } = await import('../build/knowledge/factBlock.js');
+const { dropSelfNotes, FactsFilter } = await import('../build/workflows/factsFilter.js');
 const { listRules, readRule, rulesPrompt, rulesDir } = await import('../build/knowledge/rulesStore.js');
 
 try {
@@ -20,6 +21,14 @@ try {
   assert.equal(splitFacts('답<facts>[{"title":"C-ROAD 용도","content":"도로 중심선으로 보인다.","basis":"drawing"}]</facts>').proposals.length, 0);
   assert.deepEqual(splitFacts('답만 있습니다.'), { answer: '답만 있습니다.', proposals: [] });
   assert.equal(splitFacts('답 <facts>not json</facts>').answer, '답');
+
+  // Leading self-notes in English are dropped, in the final answer and while streaming.
+  const noted = 'Next question is 지역. Record the criteria fact.\n\n지역은요?\n1. 도시지역';
+  assert.equal(dropSelfNotes(noted), '지역은요?\n1. 도시지역');
+  const filter = new FactsFilter();
+  assert.equal(noted.match(/.{1,5}/gs).map(part => filter.push(part)).join(''), '지역은요?\n1. 도시지역');
+  assert.equal(dropSelfNotes('Civil 3D 선형은 3개입니다.'), 'Civil 3D 선형은 3개입니다.');
+  assert.equal(dropSelfNotes('English only answer, nothing else here.'), 'English only answer, nothing else here.');
 
   const scope = { key: 'd:/site/a.dwg', label: 'a.dwg', state: 'r1' };
   assert.equal(knowledgeFile({ key: '', label: '', state: 'no-drawing' }), undefined);

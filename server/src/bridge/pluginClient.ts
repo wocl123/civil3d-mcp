@@ -6,7 +6,7 @@ import { createConnection } from "node:net";
 
 export type BridgeMethod = "drawing.status" | "drawing.objects" | "drawing.layers" | "drawing.object" |
   "alignment.list" | "alignment.get" | "alignment.section" | "profile.get" | "profile.section" |
-  "change.apply" | "alignment.create" | "drawing.polylines" | "drawing.pick_polyline" | "drawing.selection";
+  "change.apply" | "alignment.create" | "drawing.polylines" | "drawing.pick_polyline" | "drawing.selection" | "drawing.capture";
 
 export function connectionFile(): string {
   if (process.env.MY_CIVIL3D_CONNECTION_FILE) return process.env.MY_CIVIL3D_CONNECTION_FILE;

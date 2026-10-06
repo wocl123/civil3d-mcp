@@ -4,7 +4,7 @@ import { appliedFor, fixesFor } from "../changes/changeStore.js";
 import { paletteModel, paletteVersion } from "../ai/paletteWorkspace.js";
 import { addUsage, getUsageTotals } from "../ai/usage.js";
 import type { TokenUsage } from "../ai/types/TokenUsage.js";
-import { FactsFilter } from "./factsFilter.js";
+import { dropSelfNotes, FactsFilter } from "./factsFilter.js";
 import { toolLabel } from "./toolLabels.js";
 import { historyPrompt, offeredFixes, remember, status, summaryOf } from "./conversation.js";
 import { compactConversation } from "./compaction.js";
@@ -109,7 +109,9 @@ export async function answerChat(provider: Provider, message: string,
     throw error;
   }
   const totals = addUsage(provider, result.usage);
-  const { answer, proposals } = splitFacts(result.answer);
+  const split = splitFacts(result.answer);
+  const answer = dropSelfNotes(split.answer);
+  const proposals = split.proposals;
   const general = proposals.filter(proposal => proposal.scope === "general");
   const [recorded, candidates] = await Promise.all([
     appendFacts(scope, proposals.filter(proposal => proposal.scope !== "general"), provider),

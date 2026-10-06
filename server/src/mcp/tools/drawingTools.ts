@@ -3,6 +3,9 @@ import { z } from "zod";
 import { callPlugin } from "../../bridge/pluginClient.js";
 import { toolResult } from "../toolResult.js";
 
+const handle = z.string().regex(/^[0-9a-fA-F]{1,16}$/);
+type DrawingImage = { width: number; height: number; png: string; area: number[]; framed: string[] };
+
 export function registerDrawingTools(server: McpServer): void {
   server.registerTool("get_active_drawing", {
     title: "Active Civil 3D drawing",
@@ -30,10 +33,27 @@ export function registerDrawingTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async () => toolResult(await callPlugin("drawing.selection")));
 
+  server.registerTool("capture_drawing", {
+    title: "Capture the drawing",
+    description: "Render Model Space to a PNG framed on the given objects (handles), or on the whole drawing without handles, and return the image. The user's view does not change. Use it to look at what was just created or changed, such as a new alignment with the polyline it follows, and confirm it matches the plan. The drawing's own colours on a black background; area is the shown region [minX, minY, maxX, maxY] in drawing units.",
+    inputSchema: {
+      handles: z.array(handle).max(50).optional(),
+      width: z.number().int().min(200).max(1600).default(800),
+      height: z.number().int().min(200).max(1200).default(600)
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false }
+  }, async args => {
+    const image = await callPlugin("drawing.capture", args, 60000) as DrawingImage;
+    return { content: [
+      { type: "image" as const, data: image.png, mimeType: "image/png" },
+      { type: "text" as const, text: JSON.stringify({ width: image.width, height: image.height, area: image.area, framed: image.framed }) }
+    ] };
+  });
+
   server.registerTool("get_drawing_object", {
     title: "Inspect drawing object",
     description: "Read one Model Space or COGO point object by handle, including available geometry and bounds.",
-    inputSchema: { handle: z.string().regex(/^[0-9a-fA-F]{1,16}$/) },
+    inputSchema: { handle },
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async args => toolResult(await callPlugin("drawing.object", args)));
 }
