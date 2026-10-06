@@ -1,0 +1,3183 @@
+{
+ "path arc": [
+  {
+   "x": 0,
+   "y": 0
+  },
+  {
+   "x": 415.47005383792515,
+   "y": 1.2819751242557093e-14,
+   "radius": 200.00000000000003
+  },
+  {
+   "x": 623.2050807568877,
+   "y": 359.8076211353316
+  }
+ ],
+ "path arc reversed": [
+  {
+   "x": 623.2050807568877,
+   "y": 359.8076211353316
+  },
+  {
+   "x": 415.4700538379251,
+   "y": 1.4210854715202004e-14,
+   "radius": 200.00000000000003
+  },
+  {
+   "x": 0,
+   "y": 0
+  }
+ ],
+ "plan missing conditions": {
+  "polyline": {
+   "handle": "2A1",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {},
+  "missing": [
+   {
+    "name": "roadClass",
+    "neededFor": "제8조① 설계속도",
+    "options": [
+     "주간선도로(고속국도)",
+     "주간선도로(그 밖의 도로)",
+     "보조간선도로",
+     "집산도로",
+     "국지도로"
+    ]
+   },
+   {
+    "name": "region",
+    "neededFor": "제8조① 설계속도",
+    "options": [
+     "지방지역(평지)",
+     "지방지역(구릉지)",
+     "지방지역(산지)",
+     "도시지역"
+    ]
+   },
+   {
+    "name": "area",
+    "neededFor": "제19조 최소 평면곡선 반지름의 최대 편경사",
+    "options": [
+     "지방지역(적설·한랭)",
+     "지방지역(그 밖)",
+     "도시지역",
+     "연결로"
+    ]
+   }
+  ],
+  "start": {
+   "x": 1000,
+   "y": 2000
+  },
+  "end": {
+   "x": 2300,
+   "y": 2600
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 1400,
+    "y": 2300,
+    "deflectionDeg": 42.5805,
+    "turn": "우",
+    "straightBefore": 500,
+    "straightAfter": 502.494,
+    "tangent": 0,
+    "status": "ok",
+    "note": "설계 조건이 정해지면 반지름을 정함"
+   },
+   {
+    "ip": 2,
+    "x": 1900,
+    "y": 2250,
+    "deflectionDeg": 46.8965,
+    "turn": "좌",
+    "straightBefore": 502.494,
+    "straightAfter": 531.507,
+    "tangent": 0,
+    "status": "ok",
+    "note": "설계 조건이 정해지면 반지름을 정함"
+   }
+  ],
+  "overlaps": [],
+  "warnings": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+  ]
+ },
+ "plan 집산 도시": {
+  "polyline": {
+   "handle": "2A1",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로",
+   "관망"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "roadClass": {
+    "value": "집산도로",
+    "from": "input"
+   },
+   "region": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "designSpeed": {
+    "value": 50,
+    "from": "criteria"
+   },
+   "area": {
+    "value": "도시지역",
+    "from": "criteria"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 1000,
+   "y": 2000
+  },
+  "end": {
+   "x": 2300,
+   "y": 2600
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 1400,
+    "y": 2300,
+    "deflectionDeg": 42.5805,
+    "turn": "우",
+    "straightBefore": 500,
+    "straightAfter": 502.494,
+    "tangent": 35.072,
+    "status": "ok",
+    "minRadius": 90,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 90,
+    "curveLength": 66.885,
+    "maxRadius": 1189
+   },
+   {
+    "ip": 2,
+    "x": 1900,
+    "y": 2250,
+    "deflectionDeg": 46.8965,
+    "turn": "좌",
+    "straightBefore": 502.494,
+    "straightAfter": 531.507,
+    "tangent": 39.037,
+    "status": "ok",
+    "minRadius": 90,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 90,
+    "curveLength": 73.665,
+    "maxRadius": 1077
+   }
+  ],
+  "overlaps": [],
+  "warnings": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "설계속도는 제8조① 설계속도 표 값 50 km/h를 썼다. 지형·경제성 등으로 필요하면 30 km/h까지 낮출 수 있다(단서).",
+   "적용 최대 편경사는 제21조① 최대 편경사의 도시지역 최대값 6%를 썼다.",
+   "설계속도 50 km/h는 완화곡선 설치 대상(제23조② 완화곡선의 최소 길이, 60 km/h 이상)이 아니라 원곡선만 넣었다."
+  ],
+  "length": 1526.333,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A1",
+     "vertices": [
+      {
+       "x": 1000,
+       "y": 2000,
+       "bulge": 0
+      },
+      {
+       "x": 1400,
+       "y": 2300,
+       "bulge": 0
+      },
+      {
+       "x": 1900,
+       "y": 2250,
+       "bulge": 0
+      },
+      {
+       "x": 2300,
+       "y": 2600,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 1000,
+      "y": 2000
+     },
+     {
+      "x": 1400,
+      "y": 2300
+     },
+     {
+      "x": 1900,
+      "y": 2250
+     },
+     {
+      "x": 2300,
+      "y": 2600
+     }
+    ],
+    "curves": [
+     {
+      "radius": 90
+     },
+     {
+      "radius": 90
+     }
+    ],
+    "designSpeed": 50,
+    "description": "용도: 도로, 관망 / 기준: 도로구조규칙 / 도로 구분: 집산도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+   },
+   "status": "feasible",
+   "effects": [
+    "도로·관망 선형, IP 2개, 곡선 2개",
+    "길이 약 1526.333 m (계산값)",
+    "선형 설명에 \"용도: 도로, 관망 / 기준: 도로구조규칙 / 도로 구분: 집산도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%\" 기록",
+    "선형 설계속도 50 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "도로구조규칙",
+    "designSpeed": 50,
+    "roadClass": "집산도로",
+    "region": "도시지역"
+   }
+  }
+ },
+ "plan 80 도시": {
+  "polyline": {
+   "handle": "2A1",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "designSpeed": {
+    "value": 80,
+    "from": "input"
+   },
+   "area": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 1000,
+   "y": 2000
+  },
+  "end": {
+   "x": 2300,
+   "y": 2600
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 1400,
+    "y": 2300,
+    "deflectionDeg": 42.5805,
+    "turn": "우",
+    "straightBefore": 500,
+    "straightAfter": 502.494,
+    "tangent": 134.251,
+    "status": "ok",
+    "minRadius": 280,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 280,
+    "curveLength": 258.088,
+    "spiralLength": 50,
+    "spiralA": 118.3,
+    "maxRadius": 848
+   },
+   {
+    "ip": 2,
+    "x": 1900,
+    "y": 2250,
+    "deflectionDeg": 46.8965,
+    "turn": "좌",
+    "straightBefore": 502.494,
+    "straightAfter": 531.507,
+    "tangent": 146.602,
+    "status": "ok",
+    "minRadius": 280,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 280,
+    "curveLength": 279.18,
+    "spiralLength": 50,
+    "spiralA": 118.3,
+    "maxRadius": 791
+   }
+  ],
+  "overlaps": [],
+  "warnings": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "적용 최대 편경사는 제21조① 최대 편경사의 도시지역 최대값 6%를 썼다."
+  ],
+  "length": 1509.563,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A1",
+     "vertices": [
+      {
+       "x": 1000,
+       "y": 2000,
+       "bulge": 0
+      },
+      {
+       "x": 1400,
+       "y": 2300,
+       "bulge": 0
+      },
+      {
+       "x": 1900,
+       "y": 2250,
+       "bulge": 0
+      },
+      {
+       "x": 2300,
+       "y": 2600,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 1000,
+      "y": 2000
+     },
+     {
+      "x": 1400,
+      "y": 2300
+     },
+     {
+      "x": 1900,
+      "y": 2250
+     },
+     {
+      "x": 2300,
+      "y": 2600
+     }
+    ],
+    "curves": [
+     {
+      "radius": 280,
+      "spiralLength": 50
+     },
+     {
+      "radius": 280,
+      "spiralLength": 50
+     }
+    ],
+    "designSpeed": 80,
+    "description": "용도: 도로 / 기준: 도로구조규칙 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+   },
+   "status": "feasible",
+   "effects": [
+    "도로 선형, IP 2개, 곡선 2개 (양쪽 완화곡선 50 m)",
+    "길이 약 1509.563 m (계산값)",
+    "선형 설명에 \"용도: 도로 / 기준: 도로구조규칙 / 편경사 지역: 도시지역 / 최대편경사: 6%\" 기록",
+    "선형 설계속도 80 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "도로구조규칙",
+    "designSpeed": 80,
+    "area": "도시지역"
+   }
+  }
+ },
+ "plan 보조간선 산지": {
+  "polyline": {
+   "handle": "2A1",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "roadClass": {
+    "value": "보조간선도로",
+    "from": "input"
+   },
+   "region": {
+    "value": "지방지역(산지)",
+    "from": "input"
+   },
+   "designSpeed": {
+    "value": 50,
+    "from": "criteria"
+   },
+   "area": {
+    "value": "지방지역(적설·한랭)",
+    "from": "input"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 1000,
+   "y": 2000
+  },
+  "end": {
+   "x": 2300,
+   "y": 2600
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 1400,
+    "y": 2300,
+    "deflectionDeg": 42.5805,
+    "turn": "우",
+    "straightBefore": 500,
+    "straightAfter": 502.494,
+    "tangent": 35.072,
+    "status": "ok",
+    "minRadius": 90,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 90,
+    "curveLength": 66.885,
+    "maxRadius": 1189
+   },
+   {
+    "ip": 2,
+    "x": 1900,
+    "y": 2250,
+    "deflectionDeg": 46.8965,
+    "turn": "좌",
+    "straightBefore": 502.494,
+    "straightAfter": 531.507,
+    "tangent": 39.037,
+    "status": "ok",
+    "minRadius": 90,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 90,
+    "curveLength": 73.665,
+    "maxRadius": 1077
+   }
+  ],
+  "overlaps": [],
+  "warnings": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "설계속도는 제8조① 설계속도 표 값 50 km/h를 썼다. 지형·경제성 등으로 필요하면 30 km/h까지 낮출 수 있다(단서).",
+   "적용 최대 편경사는 제21조① 최대 편경사의 지방지역(적설·한랭) 최대값 6%를 썼다.",
+   "설계속도 50 km/h는 완화곡선 설치 대상(제23조② 완화곡선의 최소 길이, 60 km/h 이상)이 아니라 원곡선만 넣었다."
+  ],
+  "length": 1526.333,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A1",
+     "vertices": [
+      {
+       "x": 1000,
+       "y": 2000,
+       "bulge": 0
+      },
+      {
+       "x": 1400,
+       "y": 2300,
+       "bulge": 0
+      },
+      {
+       "x": 1900,
+       "y": 2250,
+       "bulge": 0
+      },
+      {
+       "x": 2300,
+       "y": 2600,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 1000,
+      "y": 2000
+     },
+     {
+      "x": 1400,
+      "y": 2300
+     },
+     {
+      "x": 1900,
+      "y": 2250
+     },
+     {
+      "x": 2300,
+      "y": 2600
+     }
+    ],
+    "curves": [
+     {
+      "radius": 90
+     },
+     {
+      "radius": 90
+     }
+    ],
+    "designSpeed": 50,
+    "description": "용도: 도로 / 기준: 도로구조규칙 / 도로 구분: 보조간선도로 / 지역: 지방지역(산지) / 편경사 지역: 지방지역(적설·한랭) / 최대편경사: 6%"
+   },
+   "status": "feasible",
+   "effects": [
+    "도로 선형, IP 2개, 곡선 2개",
+    "길이 약 1526.333 m (계산값)",
+    "선형 설명에 \"용도: 도로 / 기준: 도로구조규칙 / 도로 구분: 보조간선도로 / 지역: 지방지역(산지) / 편경사 지역: 지방지역(적설·한랭) / 최대편경사: 6%\" 기록",
+    "선형 설계속도 50 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "도로구조규칙",
+    "designSpeed": 50,
+    "roadClass": "보조간선도로",
+    "region": "지방지역(산지)",
+    "area": "지방지역(적설·한랭)"
+   }
+  }
+ },
+ "plan arc 60": {
+  "polyline": {
+   "handle": "2A2",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 1
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "designSpeed": {
+    "value": 60,
+    "from": "input"
+   },
+   "area": {
+    "value": "지방지역(그 밖)",
+    "from": "input"
+   },
+   "maxSuperelevation": {
+    "value": 8,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 0,
+   "y": 0
+  },
+  "end": {
+   "x": 623.205,
+   "y": 359.808
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 415.47,
+    "y": 0,
+    "deflectionDeg": 60,
+    "turn": "좌",
+    "straightBefore": 415.47,
+    "straightAfter": 415.47,
+    "tangent": 133.113,
+    "status": "ok",
+    "minRadius": 130,
+    "radiusFrom": "폴리라인 호",
+    "radius": 200,
+    "curveLength": 244.44,
+    "spiralLength": 35,
+    "spiralA": 83.7,
+    "maxRadius": 689
+   }
+  ],
+  "overlaps": [],
+  "warnings": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "적용 최대 편경사는 제21조① 최대 편경사의 지방지역(그 밖) 최대값 8%를 썼다."
+  ],
+  "length": 809.154,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A2",
+     "vertices": [
+      {
+       "x": 0,
+       "y": 0,
+       "bulge": 0
+      },
+      {
+       "x": 300,
+       "y": 0,
+       "bulge": 0.2679491924311227
+      },
+      {
+       "x": 473.2050807568877,
+       "y": 100,
+       "bulge": 0
+      },
+      {
+       "x": 623.2050807568877,
+       "y": 359.8076211353316,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 415.47005383792515,
+      "y": 1.2819751242557093e-14
+     },
+     {
+      "x": 623.2050807568877,
+      "y": 359.8076211353316
+     }
+    ],
+    "curves": [
+     {
+      "radius": 200,
+      "spiralLength": 35
+     }
+    ],
+    "designSpeed": 60,
+    "description": "용도: 도로 / 기준: 도로구조규칙 / 편경사 지역: 지방지역(그 밖) / 최대편경사: 8%"
+   },
+   "status": "feasible",
+   "effects": [
+    "도로 선형, IP 1개, 곡선 1개 (양쪽 완화곡선 35 m)",
+    "길이 약 809.154 m (계산값)",
+    "선형 설명에 \"용도: 도로 / 기준: 도로구조규칙 / 편경사 지역: 지방지역(그 밖) / 최대편경사: 8%\" 기록",
+    "선형 설계속도 60 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "도로구조규칙",
+    "designSpeed": 60,
+    "area": "지방지역(그 밖)"
+   }
+  }
+ },
+ "plan arc reversed radii": {
+  "polyline": {
+   "handle": "2A2",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 1
+  },
+  "direction": "폴리라인 끝점 → 시작점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "designSpeed": {
+    "value": 60,
+    "from": "input"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "input"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 623.205,
+   "y": 359.808
+  },
+  "end": {
+   "x": 0,
+   "y": 0
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 415.47,
+    "y": 0,
+    "deflectionDeg": 60,
+    "turn": "우",
+    "straightBefore": 415.47,
+    "straightAfter": 415.47,
+    "tangent": 75.512,
+    "status": "below_criteria",
+    "minRadius": 140,
+    "radiusFrom": "사용자 지정",
+    "note": "제19조 최소 평면곡선 반지름 기준으로 R 140 이상 필요",
+    "radius": 100,
+    "curveLength": 139.72,
+    "spiralLength": 35,
+    "spiralA": 59.2,
+    "maxRadius": 689
+   }
+  ],
+  "overlaps": [],
+  "warnings": [
+   "IP1: R 100은 제19조 최소 평면곡선 반지름 기준 최소 140 m 미달 (사용자 지정)"
+  ],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+  ],
+  "length": 819.636,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A2",
+     "vertices": [
+      {
+       "x": 0,
+       "y": 0,
+       "bulge": 0
+      },
+      {
+       "x": 300,
+       "y": 0,
+       "bulge": 0.2679491924311227
+      },
+      {
+       "x": 473.2050807568877,
+       "y": 100,
+       "bulge": 0
+      },
+      {
+       "x": 623.2050807568877,
+       "y": 359.8076211353316,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 623.2050807568877,
+      "y": 359.8076211353316
+     },
+     {
+      "x": 415.4700538379251,
+      "y": 1.4210854715202004e-14
+     },
+     {
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "curves": [
+     {
+      "radius": 100,
+      "spiralLength": 35
+     }
+    ],
+    "designSpeed": 60,
+    "description": "용도: 도로 / 기준: 도로구조규칙 / 최대편경사: 6%"
+   },
+   "status": "feasible",
+   "effects": [
+    "도로 선형, IP 1개, 곡선 1개 (양쪽 완화곡선 35 m)",
+    "길이 약 819.636 m (계산값)",
+    "선형 설명에 \"용도: 도로 / 기준: 도로구조규칙 / 최대편경사: 6%\" 기록",
+    "선형 설계속도 60 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "도로구조규칙",
+    "designSpeed": 60,
+    "maxSuperelevation": 6
+   }
+  }
+ },
+ "plan overlap": {
+  "polyline": {
+   "handle": "2A5",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "designSpeed": {
+    "value": 80,
+    "from": "input"
+   },
+   "area": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 0,
+   "y": 0
+  },
+  "end": {
+   "x": 400,
+   "y": 60
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 150,
+    "y": 0,
+    "deflectionDeg": 38.6598,
+    "turn": "좌",
+    "straightBefore": 150,
+    "straightAfter": 128.062,
+    "tangent": 123.343,
+    "status": "overlap",
+    "minRadius": 280,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 280,
+    "curveLength": 238.927,
+    "spiralLength": 50,
+    "spiralA": 118.3,
+    "note": "앞뒤 직선이 짧아 이 IP에는 기준에 맞는 곡선이 들어가지 않음 (가능 범위 없음)"
+   },
+   {
+    "ip": 2,
+    "x": 250,
+    "y": 80,
+    "deflectionDeg": 46.2545,
+    "turn": "우",
+    "straightBefore": 128.062,
+    "straightAfter": 151.327,
+    "tangent": 144.74,
+    "status": "overlap",
+    "minRadius": 280,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 280,
+    "curveLength": 276.042,
+    "spiralLength": 50,
+    "spiralA": 118.3,
+    "note": "앞뒤 직선이 짧아 이 IP에는 기준에 맞는 곡선이 들어가지 않음 (가능 범위 없음)"
+   }
+  ],
+  "overlaps": [
+   "IP1~IP2 직선 128.062 m < 접선장 합 268.083 m"
+  ],
+  "warnings": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "적용 최대 편경사는 제21조① 최대 편경사의 도시지역 최대값 6%를 썼다."
+  ],
+  "length": 408.193,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A5",
+     "vertices": [
+      {
+       "x": 0,
+       "y": 0,
+       "bulge": 0
+      },
+      {
+       "x": 150,
+       "y": 0,
+       "bulge": 0
+      },
+      {
+       "x": 250,
+       "y": 80,
+       "bulge": 0
+      },
+      {
+       "x": 400,
+       "y": 60,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 150,
+      "y": 0
+     },
+     {
+      "x": 250,
+      "y": 80
+     },
+     {
+      "x": 400,
+      "y": 60
+     }
+    ],
+    "curves": [
+     {
+      "radius": 280,
+      "spiralLength": 50
+     },
+     {
+      "radius": 280,
+      "spiralLength": 50
+     }
+    ],
+    "designSpeed": 80,
+    "description": "용도: 도로 / 기준: 도로구조규칙 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+   },
+   "status": "conflict",
+   "reason": "IP1~IP2 직선 128.062 m < 접선장 합 268.083 m",
+   "effects": [
+    "도로 선형, IP 2개, 곡선 2개 (양쪽 완화곡선 50 m)",
+    "길이 약 408.193 m (계산값)",
+    "선형 설명에 \"용도: 도로 / 기준: 도로구조규칙 / 편경사 지역: 도시지역 / 최대편경사: 6%\" 기록",
+    "선형 설계속도 80 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "도로구조규칙",
+    "designSpeed": 80,
+    "area": "도시지역"
+   }
+  }
+ },
+ "plan utility": {
+  "polyline": {
+   "handle": "2A4",
+   "layer": "SD-PIPE",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "관망"
+  ],
+  "alignmentType": "Utility (기타)",
+  "conditions": {},
+  "missing": [],
+  "start": {
+   "x": 500,
+   "y": 500
+  },
+  "end": {
+   "x": 640,
+   "y": 600
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 560,
+    "y": 500,
+    "deflectionDeg": 90,
+    "turn": "좌",
+    "straightBefore": 60,
+    "straightAfter": 40,
+    "tangent": 0,
+    "status": "angle_point"
+   },
+   {
+    "ip": 2,
+    "x": 560,
+    "y": 540,
+    "deflectionDeg": 53.1301,
+    "turn": "우",
+    "straightBefore": 40,
+    "straightAfter": 100,
+    "tangent": 15,
+    "status": "ok",
+    "radiusFrom": "사용자 지정",
+    "radius": 30,
+    "curveLength": 27.819,
+    "maxRadius": 80
+   }
+  ],
+  "overlaps": [],
+  "warnings": [],
+  "notes": [],
+  "length": 197.819,
+  "option": {
+   "title": "선형 SD-1 생성",
+   "changes": [],
+   "create": {
+    "name": "SD-1",
+    "type": "Utility",
+    "polyline": {
+     "handle": "2A4",
+     "vertices": [
+      {
+       "x": 500,
+       "y": 500,
+       "bulge": 0
+      },
+      {
+       "x": 560,
+       "y": 500,
+       "bulge": 0
+      },
+      {
+       "x": 560,
+       "y": 540,
+       "bulge": 0
+      },
+      {
+       "x": 640,
+       "y": 600,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 500,
+      "y": 500
+     },
+     {
+      "x": 560,
+      "y": 500
+     },
+     {
+      "x": 560,
+      "y": 540
+     },
+     {
+      "x": 640,
+      "y": 600
+     }
+    ],
+    "curves": [
+     {},
+     {
+      "radius": 30
+     }
+    ],
+    "description": "용도: 관망"
+   },
+   "status": "feasible",
+   "effects": [
+    "관망 선형, IP 2개, 곡선 1개",
+    "길이 약 197.819 m (계산값)",
+    "선형 설명에 \"용도: 관망\" 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "none"
+  }
+ },
+ "plan LH 단지": {
+  "polyline": {
+   "handle": "2A1",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "LH_설계지침_토목",
+   "title": "LH 설계지침(토목)",
+   "effective": "2025-11-26",
+   "reviewed": false,
+   "verification": "문서 원문과 사람 대조 전 (기준표 검토 필요); 따르는 도로구조규칙: 2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "roadClass": {
+    "value": "공동주택 단지 내 도로",
+    "from": "input"
+   },
+   "region": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "designSpeed": {
+    "value": 20,
+    "from": "criteria"
+   },
+   "area": {
+    "value": "도시지역",
+    "from": "criteria"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 1000,
+   "y": 2000
+  },
+  "end": {
+   "x": 2300,
+   "y": 2600
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 1400,
+    "y": 2300,
+    "deflectionDeg": 42.5805,
+    "turn": "우",
+    "straightBefore": 500,
+    "straightAfter": 502.494,
+    "tangent": 17.536,
+    "status": "ok",
+    "minRadius": 45,
+    "radiusFrom": "제20조 곡선 최소 길이 30 m",
+    "radius": 45,
+    "curveLength": 33.443,
+    "maxRadius": 1244
+   },
+   {
+    "ip": 2,
+    "x": 1900,
+    "y": 2250,
+    "deflectionDeg": 46.8965,
+    "turn": "좌",
+    "straightBefore": 502.494,
+    "straightAfter": 531.507,
+    "tangent": 17.35,
+    "status": "ok",
+    "minRadius": 40,
+    "radiusFrom": "제20조 곡선 최소 길이 30 m",
+    "radius": 40,
+    "curveLength": 32.74,
+    "maxRadius": 1118
+   }
+  ],
+  "overlaps": [],
+  "warnings": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "8.1.1: 이 지침에 따로 정하지 않은 사항은 「도로의 구조·시설 기준에 관한 규칙」 등 관련법에 따른다. 평면곡선 반지름, 곡선 길이, 편경사, 완화곡선, 종단곡선은 지침에 따로 정한 값이 없어 법령 값을 쓴다.",
+   "8.1.3 가의 설계속도 표와 20 km/h 감속 허용은 법령 제8조①과 같다.",
+   "8.2.2 가의 최대 종단경사 표는 법령 제25조①과 같다(2026-10-02 대조). 사업지구 계획지형이 산지 등의 조건을 충족하면 산지 등의 값을 적용한다(8.2.2 주2).",
+   "설계속도는 LH 지침 8.1.3 나 공동주택 단지 내 도로 설계속도 상한 20 km/h를 썼다.",
+   "적용 최대 편경사는 도로구조규칙 제21조① 최대 편경사의 도시지역 최대값 6%를 썼다.",
+   "설계속도 20 km/h는 완화곡선 설치 대상(도로구조규칙 제23조② 완화곡선의 최소 길이, 60 km/h 이상)이 아니라 원곡선만 넣었다."
+  ],
+  "length": 1530.412,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A1",
+     "vertices": [
+      {
+       "x": 1000,
+       "y": 2000,
+       "bulge": 0
+      },
+      {
+       "x": 1400,
+       "y": 2300,
+       "bulge": 0
+      },
+      {
+       "x": 1900,
+       "y": 2250,
+       "bulge": 0
+      },
+      {
+       "x": 2300,
+       "y": 2600,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 1000,
+      "y": 2000
+     },
+     {
+      "x": 1400,
+      "y": 2300
+     },
+     {
+      "x": 1900,
+      "y": 2250
+     },
+     {
+      "x": 2300,
+      "y": 2600
+     }
+    ],
+    "curves": [
+     {
+      "radius": 45
+     },
+     {
+      "radius": 40
+     }
+    ],
+    "designSpeed": 20,
+    "description": "용도: 도로 / 기준: LH_설계지침_토목 / 도로 구분: 공동주택 단지 내 도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+   },
+   "status": "feasible",
+   "effects": [
+    "도로 선형, IP 2개, 곡선 2개",
+    "길이 약 1530.412 m (계산값)",
+    "선형 설명에 \"용도: 도로 / 기준: LH_설계지침_토목 / 도로 구분: 공동주택 단지 내 도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%\" 기록",
+    "선형 설계속도 20 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "LH_설계지침_토목",
+    "designSpeed": 20,
+    "roadClass": "공동주택 단지 내 도로",
+    "region": "도시지역"
+   }
+  }
+ },
+ "plan LH 집산 30": {
+  "polyline": {
+   "handle": "2A1",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "LH_설계지침_토목",
+   "title": "LH 설계지침(토목)",
+   "effective": "2025-11-26",
+   "reviewed": false,
+   "verification": "문서 원문과 사람 대조 전 (기준표 검토 필요); 따르는 도로구조규칙: 2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "roadClass": {
+    "value": "집산도로",
+    "from": "input"
+   },
+   "region": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "designSpeed": {
+    "value": 30,
+    "from": "input"
+   },
+   "area": {
+    "value": "도시지역",
+    "from": "criteria"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 1000,
+   "y": 2000
+  },
+  "end": {
+   "x": 2300,
+   "y": 2600
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 1400,
+    "y": 2300,
+    "deflectionDeg": 42.5805,
+    "turn": "우",
+    "straightBefore": 500,
+    "straightAfter": 502.494,
+    "tangent": 21.433,
+    "status": "ok",
+    "minRadius": 55,
+    "radiusFrom": "제20조 곡선 최소 길이 40 m",
+    "radius": 55,
+    "curveLength": 40.874,
+    "maxRadius": 1233
+   },
+   {
+    "ip": 2,
+    "x": 1900,
+    "y": 2250,
+    "deflectionDeg": 46.8965,
+    "turn": "좌",
+    "straightBefore": 502.494,
+    "straightAfter": 531.507,
+    "tangent": 21.687,
+    "status": "ok",
+    "minRadius": 50,
+    "radiusFrom": "제20조 곡선 최소 길이 40 m",
+    "radius": 50,
+    "curveLength": 40.925,
+    "maxRadius": 1109
+   }
+  ],
+  "overlaps": [],
+  "warnings": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "8.1.1: 이 지침에 따로 정하지 않은 사항은 「도로의 구조·시설 기준에 관한 규칙」 등 관련법에 따른다. 평면곡선 반지름, 곡선 길이, 편경사, 완화곡선, 종단곡선은 지침에 따로 정한 값이 없어 법령 값을 쓴다.",
+   "8.1.3 가의 설계속도 표와 20 km/h 감속 허용은 법령 제8조①과 같다.",
+   "8.2.2 가의 최대 종단경사 표는 법령 제25조①과 같다(2026-10-02 대조). 사업지구 계획지형이 산지 등의 조건을 충족하면 산지 등의 값을 적용한다(8.2.2 주2).",
+   "설계속도 30 km/h는 도로구조규칙 제8조① 설계속도 표 값 50 km/h보다 낮아 단서(지형·경제성 등으로 필요한 경우 20 km/h 이내 감속)를 적용한 것이다. 감속 사유를 설계에 남겨야 한다.",
+   "적용 최대 편경사는 도로구조규칙 제21조① 최대 편경사의 도시지역 최대값 6%를 썼다.",
+   "설계속도 30 km/h는 완화곡선 설치 대상(도로구조규칙 제23조② 완화곡선의 최소 길이, 60 km/h 이상)이 아니라 원곡선만 넣었다."
+  ],
+  "length": 1529.56,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A1",
+     "vertices": [
+      {
+       "x": 1000,
+       "y": 2000,
+       "bulge": 0
+      },
+      {
+       "x": 1400,
+       "y": 2300,
+       "bulge": 0
+      },
+      {
+       "x": 1900,
+       "y": 2250,
+       "bulge": 0
+      },
+      {
+       "x": 2300,
+       "y": 2600,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 1000,
+      "y": 2000
+     },
+     {
+      "x": 1400,
+      "y": 2300
+     },
+     {
+      "x": 1900,
+      "y": 2250
+     },
+     {
+      "x": 2300,
+      "y": 2600
+     }
+    ],
+    "curves": [
+     {
+      "radius": 55
+     },
+     {
+      "radius": 50
+     }
+    ],
+    "designSpeed": 30,
+    "description": "용도: 도로 / 기준: LH_설계지침_토목 / 도로 구분: 집산도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+   },
+   "status": "feasible",
+   "effects": [
+    "도로 선형, IP 2개, 곡선 2개",
+    "길이 약 1529.56 m (계산값)",
+    "선형 설명에 \"용도: 도로 / 기준: LH_설계지침_토목 / 도로 구분: 집산도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%\" 기록",
+    "선형 설계속도 30 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "LH_설계지침_토목",
+    "designSpeed": 30,
+    "roadClass": "집산도로",
+    "region": "도시지역"
+   }
+  }
+ },
+ "plan LH 집산 20": {
+  "polyline": {
+   "handle": "2A1",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "LH_설계지침_토목",
+   "title": "LH 설계지침(토목)",
+   "effective": "2025-11-26",
+   "reviewed": false,
+   "verification": "문서 원문과 사람 대조 전 (기준표 검토 필요); 따르는 도로구조규칙: 2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "roadClass": {
+    "value": "집산도로",
+    "from": "input"
+   },
+   "region": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "designSpeed": {
+    "value": 20,
+    "from": "input"
+   },
+   "area": {
+    "value": "도시지역",
+    "from": "criteria"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 1000,
+   "y": 2000
+  },
+  "end": {
+   "x": 2300,
+   "y": 2600
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 1400,
+    "y": 2300,
+    "deflectionDeg": 42.5805,
+    "turn": "우",
+    "straightBefore": 500,
+    "straightAfter": 502.494,
+    "tangent": 17.536,
+    "status": "ok",
+    "minRadius": 45,
+    "radiusFrom": "제20조 곡선 최소 길이 30 m",
+    "radius": 45,
+    "curveLength": 33.443,
+    "maxRadius": 1244
+   },
+   {
+    "ip": 2,
+    "x": 1900,
+    "y": 2250,
+    "deflectionDeg": 46.8965,
+    "turn": "좌",
+    "straightBefore": 502.494,
+    "straightAfter": 531.507,
+    "tangent": 17.35,
+    "status": "ok",
+    "minRadius": 40,
+    "radiusFrom": "제20조 곡선 최소 길이 30 m",
+    "radius": 40,
+    "curveLength": 32.74,
+    "maxRadius": 1118
+   }
+  ],
+  "overlaps": [],
+  "warnings": [
+   "설계속도 20 km/h는 도로구조규칙 제8조① 설계속도 표 값 50 km/h에서 단서의 감속을 뺀 30 km/h보다 낮음"
+  ],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "8.1.1: 이 지침에 따로 정하지 않은 사항은 「도로의 구조·시설 기준에 관한 규칙」 등 관련법에 따른다. 평면곡선 반지름, 곡선 길이, 편경사, 완화곡선, 종단곡선은 지침에 따로 정한 값이 없어 법령 값을 쓴다.",
+   "8.1.3 가의 설계속도 표와 20 km/h 감속 허용은 법령 제8조①과 같다.",
+   "8.2.2 가의 최대 종단경사 표는 법령 제25조①과 같다(2026-10-02 대조). 사업지구 계획지형이 산지 등의 조건을 충족하면 산지 등의 값을 적용한다(8.2.2 주2).",
+   "적용 최대 편경사는 도로구조규칙 제21조① 최대 편경사의 도시지역 최대값 6%를 썼다.",
+   "설계속도 20 km/h는 완화곡선 설치 대상(도로구조규칙 제23조② 완화곡선의 최소 길이, 60 km/h 이상)이 아니라 원곡선만 넣었다."
+  ],
+  "length": 1530.412,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A1",
+     "vertices": [
+      {
+       "x": 1000,
+       "y": 2000,
+       "bulge": 0
+      },
+      {
+       "x": 1400,
+       "y": 2300,
+       "bulge": 0
+      },
+      {
+       "x": 1900,
+       "y": 2250,
+       "bulge": 0
+      },
+      {
+       "x": 2300,
+       "y": 2600,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 1000,
+      "y": 2000
+     },
+     {
+      "x": 1400,
+      "y": 2300
+     },
+     {
+      "x": 1900,
+      "y": 2250
+     },
+     {
+      "x": 2300,
+      "y": 2600
+     }
+    ],
+    "curves": [
+     {
+      "radius": 45
+     },
+     {
+      "radius": 40
+     }
+    ],
+    "designSpeed": 20,
+    "description": "용도: 도로 / 기준: LH_설계지침_토목 / 도로 구분: 집산도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+   },
+   "status": "feasible",
+   "effects": [
+    "도로 선형, IP 2개, 곡선 2개",
+    "길이 약 1530.412 m (계산값)",
+    "선형 설명에 \"용도: 도로 / 기준: LH_설계지침_토목 / 도로 구분: 집산도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%\" 기록",
+    "선형 설계속도 20 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "LH_설계지침_토목",
+    "designSpeed": 20,
+    "roadClass": "집산도로",
+    "region": "도시지역"
+   }
+  }
+ },
+ "plan 고속 too fast": {
+  "polyline": {
+   "handle": "2A1",
+   "layer": "C-ROAD-PLAN",
+   "vertexCount": 4,
+   "ipCount": 2
+  },
+  "direction": "폴리라인 시작점 → 끝점",
+  "uses": [
+   "도로"
+  ],
+  "alignmentType": "Centerline (도로 중심선)",
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "conditions": {
+   "roadClass": {
+    "value": "주간선도로(고속국도)",
+    "from": "input"
+   },
+   "region": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "designSpeed": {
+    "value": 120,
+    "from": "input"
+   },
+   "area": {
+    "value": "도시지역",
+    "from": "criteria"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "start": {
+   "x": 1000,
+   "y": 2000
+  },
+  "end": {
+   "x": 2300,
+   "y": 2600
+  },
+  "ips": [
+   {
+    "ip": 1,
+    "x": 1400,
+    "y": 2300,
+    "deflectionDeg": 42.5805,
+    "turn": "우",
+    "straightBefore": 500,
+    "straightAfter": 502.494,
+    "tangent": 311.787,
+    "status": "overlap",
+    "minRadius": 710,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 710,
+    "curveLength": 597.651,
+    "spiralLength": 70,
+    "spiralA": 222.9,
+    "maxRadius": 318
+   },
+   {
+    "ip": 2,
+    "x": 1900,
+    "y": 2250,
+    "deflectionDeg": 46.8965,
+    "turn": "좌",
+    "straightBefore": 502.494,
+    "straightAfter": 531.507,
+    "tangent": 343.077,
+    "status": "overlap",
+    "minRadius": 710,
+    "radiusFrom": "제19조 최소 평면곡선 반지름",
+    "radius": 710,
+    "curveLength": 651.134,
+    "spiralLength": 70,
+    "spiralA": 222.9,
+    "maxRadius": 358
+   }
+  ],
+  "overlaps": [
+   "IP1~IP2 직선 502.494 m < 접선장 합 654.864 m"
+  ],
+  "warnings": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "적용 최대 편경사는 제21조① 최대 편경사의 도시지역 최대값 6%를 썼다."
+  ],
+  "length": 1473.058,
+  "option": {
+   "title": "선형 선형-1 생성",
+   "changes": [],
+   "create": {
+    "name": "선형-1",
+    "type": "Centerline",
+    "polyline": {
+     "handle": "2A1",
+     "vertices": [
+      {
+       "x": 1000,
+       "y": 2000,
+       "bulge": 0
+      },
+      {
+       "x": 1400,
+       "y": 2300,
+       "bulge": 0
+      },
+      {
+       "x": 1900,
+       "y": 2250,
+       "bulge": 0
+      },
+      {
+       "x": 2300,
+       "y": 2600,
+       "bulge": 0
+      }
+     ]
+    },
+    "points": [
+     {
+      "x": 1000,
+      "y": 2000
+     },
+     {
+      "x": 1400,
+      "y": 2300
+     },
+     {
+      "x": 1900,
+      "y": 2250
+     },
+     {
+      "x": 2300,
+      "y": 2600
+     }
+    ],
+    "curves": [
+     {
+      "radius": 710,
+      "spiralLength": 70
+     },
+     {
+      "radius": 710,
+      "spiralLength": 70
+     }
+    ],
+    "designSpeed": 120,
+    "description": "용도: 도로 / 기준: 도로구조규칙 / 도로 구분: 주간선도로(고속국도) / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+   },
+   "status": "conflict",
+   "reason": "IP1~IP2 직선 502.494 m < 접선장 합 654.864 m",
+   "effects": [
+    "도로 선형, IP 2개, 곡선 2개 (양쪽 완화곡선 70 m)",
+    "길이 약 1473.058 m (계산값)",
+    "선형 설명에 \"용도: 도로 / 기준: 도로구조규칙 / 도로 구분: 주간선도로(고속국도) / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%\" 기록",
+    "선형 설계속도 120 km/h 기록",
+    "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+   ]
+  },
+  "source": {
+   "check": "alignment",
+   "input": {
+    "alignment": "선형-1",
+    "criteria": "도로구조규칙",
+    "designSpeed": 120,
+    "roadClass": "주간선도로(고속국도)",
+    "region": "도시지역"
+   }
+  }
+ },
+ "plan closed": "error: 닫힌 폴리라인은 선형으로 만들지 않는다. 열린 폴리라인을 쓰세요.",
+ "plan no use": "error: 용도를 하나 이상 정해야 한다.",
+ "check 본선 지방": {
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "target": "선형 본선",
+  "conditions": {
+   "designSpeed": "선형 설계속도: 0+000.00부터 80",
+   "area": {
+    "value": "지방지역(그 밖)",
+    "from": "input"
+   },
+   "maxSuperelevation": {
+    "value": 8,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "summary": {
+   "pass": 7,
+   "fail": 1,
+   "notChecked": 0
+  },
+  "items": [
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "제19조",
+    "target": "곡선 1 (0+300.00~0+670.00)",
+    "actual": 600,
+    "limit": 250,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "제20조",
+    "target": "곡선 1 (0+300.00~0+670.00)",
+    "actual": 370,
+    "limit": 90,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "제23조②",
+    "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+300.00~0+360.00",
+    "actual": 60,
+    "limit": 50,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "제23조②",
+    "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+610.00~0+670.00",
+    "actual": 60,
+    "limit": 50,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "제19조",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "actual": 380,
+    "limit": 250,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "제20조",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "actual": 150,
+    "limit": 90,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선 설치",
+    "article": "제23조①",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "unit": "m",
+    "result": "fail",
+    "note": "완화곡선 없음. 설계속도 60 km/h 이상은 완화곡선을 설치해야 함",
+    "fixes": [
+     {
+      "title": "완화곡선 추가 (양쪽 클로소이드)",
+      "changes": [
+       {
+        "object": {
+         "kind": "alignmentSpiral",
+         "handle": "B1"
+        },
+        "property": "spiralInLength",
+        "to": 50,
+        "unit": "m"
+       },
+       {
+        "object": {
+         "kind": "alignmentSpiral",
+         "handle": "B1"
+        },
+        "property": "spiralOutLength",
+        "to": 50,
+        "unit": "m"
+       }
+      ],
+      "status": "feasible",
+      "effects": [
+       "완화곡선 길이 50 m, 파라미터 A 138 (R 380 유지)",
+       "이정량 p 0.274 m, 접선장 약 25.055 m 증가 (근사 계산값)",
+       "원곡선 교각 22.6155° → 15.0766°"
+      ]
+     }
+    ]
+   },
+   {
+    "check": "최대 편경사",
+    "article": "제21조①",
+    "target": "선형 전체 최대 편경사",
+    "actual": 6,
+    "limit": 8,
+    "unit": "%",
+    "bound": "max",
+    "result": "pass"
+   }
+  ],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "적용 최대 편경사는 제21조①의 지방지역(그 밖) 최대값 8%를 썼다."
+  ]
+ },
+ "check 본선 100 도시": {
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "target": "선형 본선",
+  "conditions": {
+   "designSpeed": {
+    "value": 100,
+    "from": "input"
+   },
+   "area": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "input"
+   }
+  },
+  "missing": [],
+  "summary": {
+   "pass": 6,
+   "fail": 2,
+   "notChecked": 0
+  },
+  "items": [
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "제19조",
+    "target": "곡선 1 (0+300.00~0+670.00)",
+    "actual": 600,
+    "limit": 460,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "제20조",
+    "target": "곡선 1 (0+300.00~0+670.00)",
+    "actual": 370,
+    "limit": 110,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "제23조②",
+    "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+300.00~0+360.00",
+    "actual": 60,
+    "limit": 60,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "제23조②",
+    "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+610.00~0+670.00",
+    "actual": 60,
+    "limit": 60,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "제19조",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "actual": 380,
+    "limit": 460,
+    "unit": "m",
+    "bound": "min",
+    "result": "fail",
+    "fixes": [
+     {
+      "title": "곡선 반지름 키우기 (교각 유지)",
+      "changes": [
+       {
+        "object": {
+         "kind": "alignmentArc",
+         "handle": "B1"
+        },
+        "property": "radius",
+        "from": 380,
+        "to": 460,
+        "unit": "m"
+       }
+      ],
+      "status": "feasible",
+      "effects": [
+       "교각 22.6155° 유지",
+       "접선장 T 75.98 → 91.982 m",
+       "곡선 길이 150 → 181.569 m",
+       "외할 E 7.52 → 9.106 m (계산값)"
+      ]
+     }
+    ]
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "제20조",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "actual": 150,
+    "limit": 110,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선 설치",
+    "article": "제23조①",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "unit": "m",
+    "result": "fail",
+    "note": "완화곡선 없음. 설계속도 60 km/h 이상은 완화곡선을 설치해야 함",
+    "fixes": [
+     {
+      "title": "완화곡선 추가 (양쪽 클로소이드)",
+      "changes": [
+       {
+        "object": {
+         "kind": "alignmentSpiral",
+         "handle": "B1"
+        },
+        "property": "spiralInLength",
+        "to": 60,
+        "unit": "m"
+       },
+       {
+        "object": {
+         "kind": "alignmentSpiral",
+         "handle": "B1"
+        },
+        "property": "spiralOutLength",
+        "to": 60,
+        "unit": "m"
+       }
+      ],
+      "status": "feasible",
+      "effects": [
+       "완화곡선 길이 60 m, 파라미터 A 151 (R 380 유지)",
+       "이정량 p 0.395 m, 접선장 약 30.079 m 증가 (근사 계산값)",
+       "원곡선 교각 22.6155° → 13.5688°"
+      ]
+     }
+    ]
+   },
+   {
+    "check": "최대 편경사",
+    "article": "제21조①",
+    "target": "선형 전체 최대 편경사",
+    "actual": 6,
+    "limit": 6,
+    "unit": "%",
+    "bound": "max",
+    "result": "pass"
+   }
+  ],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+  ]
+ },
+ "check 본선 class": {
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "target": "선형 본선",
+  "conditions": {
+   "designSpeed": "선형 설계속도: 0+000.00부터 80",
+   "area": {
+    "value": "도시지역",
+    "from": "drawing"
+   },
+   "roadClass": {
+    "value": "보조간선도로",
+    "from": "input"
+   },
+   "region": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "summary": {
+   "pass": 8,
+   "fail": 1,
+   "notChecked": 0
+  },
+  "items": [
+   {
+    "check": "설계속도",
+    "article": "제8조①",
+    "target": "설계속도 0+000.00부터",
+    "actual": 80,
+    "limit": 40,
+    "unit": "km/h",
+    "bound": "min",
+    "result": "pass",
+    "note": "표 값 60 km/h, 단서로 40 km/h까지 감속 허용"
+   },
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "제19조",
+    "target": "곡선 1 (0+300.00~0+670.00)",
+    "actual": 600,
+    "limit": 280,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "제20조",
+    "target": "곡선 1 (0+300.00~0+670.00)",
+    "actual": 370,
+    "limit": 90,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "제23조②",
+    "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+300.00~0+360.00",
+    "actual": 60,
+    "limit": 50,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "제23조②",
+    "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+610.00~0+670.00",
+    "actual": 60,
+    "limit": 50,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "제19조",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "actual": 380,
+    "limit": 280,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "제20조",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "actual": 150,
+    "limit": 90,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선 설치",
+    "article": "제23조①",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "unit": "m",
+    "result": "fail",
+    "note": "완화곡선 없음. 설계속도 60 km/h 이상은 완화곡선을 설치해야 함",
+    "fixes": [
+     {
+      "title": "완화곡선 추가 (양쪽 클로소이드)",
+      "changes": [
+       {
+        "object": {
+         "kind": "alignmentSpiral",
+         "handle": "B1"
+        },
+        "property": "spiralInLength",
+        "to": 50,
+        "unit": "m"
+       },
+       {
+        "object": {
+         "kind": "alignmentSpiral",
+         "handle": "B1"
+        },
+        "property": "spiralOutLength",
+        "to": 50,
+        "unit": "m"
+       }
+      ],
+      "status": "feasible",
+      "effects": [
+       "완화곡선 길이 50 m, 파라미터 A 138 (R 380 유지)",
+       "이정량 p 0.274 m, 접선장 약 25.055 m 증가 (근사 계산값)",
+       "원곡선 교각 22.6155° → 15.0766°"
+      ]
+     }
+    ]
+   },
+   {
+    "check": "최대 편경사",
+    "article": "제21조①",
+    "target": "선형 전체 최대 편경사",
+    "actual": 6,
+    "limit": 6,
+    "unit": "%",
+    "bound": "max",
+    "result": "pass"
+   }
+  ],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "적용 최대 편경사는 제21조①의 도시지역 최대값 6%를 썼다."
+  ]
+ },
+ "check profile": [
+  {
+   "criteria": {
+    "id": "도로구조규칙",
+    "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+    "effective": "2026-06-03",
+    "reviewed": false,
+    "verification": "2026-06-03 시행 원문과 일치"
+   },
+   "target": "종단 본선 계획선 (FG, 선형 본선)",
+   "conditions": {
+    "designSpeed": "선형 설계속도: 0+000.00부터 80",
+    "roadFunction": {
+     "value": "주간선·보조간선(그 밖의 도로)",
+     "from": "input"
+    },
+    "terrain": {
+     "value": "평지",
+     "from": "input"
+    }
+   },
+   "missing": [],
+   "summary": {
+    "pass": 5,
+    "fail": 2,
+    "notChecked": 0
+   },
+   "items": [
+    {
+     "check": "종단곡선 최소 변화 비율(K)",
+     "article": "제27조②",
+     "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "actual": 37.21,
+     "limit": 40,
+     "unit": "m/%",
+     "bound": "min",
+     "result": "fail",
+     "note": "수정안은 종단곡선 필요 길이 항목에 있음"
+    },
+    {
+     "check": "종단곡선 필요 길이",
+     "article": "제27조①",
+     "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "actual": 160,
+     "limit": 172,
+     "unit": "m",
+     "bound": "min",
+     "result": "fail",
+     "note": "max(최소 K 40 × 경사 차 4.3% = 172, 최소 길이 70) (계산값)",
+     "fixes": [
+      {
+       "title": "종단곡선 길이 늘리기 (VIP 유지)",
+       "changes": [
+        {
+         "object": {
+          "kind": "profileCurve",
+          "handle": "C2"
+         },
+         "property": "length",
+         "from": 160,
+         "to": 172,
+         "unit": "m"
+        }
+       ],
+       "status": "feasible",
+       "effects": [
+        "곡선 구간 0+334.00~0+506.00",
+        "K 37.2 → 40",
+        "VIP 수직거리 0.86 → 0.925 m (계산값)"
+       ]
+      },
+      {
+       "title": "경사 차 줄이기 (곡선 길이 유지, VIP 표고 조정)",
+       "changes": [
+        {
+         "object": {
+          "kind": "profilePvi",
+          "handle": "C2"
+         },
+         "property": "elevation",
+         "from": 58.5,
+         "to": 57.828,
+         "unit": "m"
+        }
+       ],
+       "status": "unverified",
+       "reason": "앞뒤 VIP(0+000.00, 0+900.00)로 이어지는 경사가 바뀌어 그 곡선들은 다시 검토해야 함",
+       "effects": [
+        "VIP 표고 낮춤 0.672 m",
+        "경사 2.5% → 2.34%, -1.8% → -1.66%",
+        "경사 차 4.3 → 4%, K 40 (계산값)",
+        "인접 곡선 VIP 0+900.00: 경사 차 2.7 → 2.56%, K 44.4 → 46.9 (계산값)"
+       ]
+      }
+     ]
+    },
+    {
+     "check": "종단곡선 최소 변화 비율(K)",
+     "article": "제27조②",
+     "target": "곡선 2 오목 (VIP 0+900.00)",
+     "actual": 44.44,
+     "limit": 30,
+     "unit": "m/%",
+     "bound": "min",
+     "result": "pass"
+    },
+    {
+     "check": "종단곡선 필요 길이",
+     "article": "제27조①",
+     "target": "곡선 2 오목 (VIP 0+900.00)",
+     "actual": 120,
+     "limit": 81,
+     "unit": "m",
+     "bound": "min",
+     "result": "pass",
+     "note": "max(최소 K 30 × 경사 차 2.7% = 81, 최소 길이 70) (계산값)"
+    },
+    {
+     "check": "최대 종단경사",
+     "article": "제25조①",
+     "target": "경사 1 (0+000.00~0+340.00)",
+     "actual": 2.5,
+     "limit": 4,
+     "unit": "%",
+     "bound": "max",
+     "result": "pass"
+    },
+    {
+     "check": "최대 종단경사",
+     "article": "제25조①",
+     "target": "경사 2 (0+500.00~0+840.00)",
+     "actual": 1.8,
+     "limit": 4,
+     "unit": "%",
+     "bound": "max",
+     "result": "pass"
+    },
+    {
+     "check": "최대 종단경사",
+     "article": "제25조①",
+     "target": "경사 3 (0+960.00~1+250.50)",
+     "actual": 0.9,
+     "limit": 4,
+     "unit": "%",
+     "bound": "max",
+     "result": "pass"
+    }
+   ],
+   "notes": [
+    "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+   ]
+  }
+ ],
+ "check profile fixes": [
+  {
+   "criteria": {
+    "id": "도로구조규칙",
+    "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+    "effective": "2026-06-03",
+    "reviewed": false,
+    "verification": "2026-06-03 시행 원문과 일치"
+   },
+   "target": "종단 본선 계획선 (FG, 선형 본선)",
+   "conditions": {
+    "designSpeed": {
+     "value": 80,
+     "from": "input"
+    },
+    "roadFunction": {
+     "value": "고속국도",
+     "from": "input"
+    },
+    "terrain": {
+     "value": "평지",
+     "from": "input"
+    }
+   },
+   "missing": [],
+   "summary": {
+    "pass": 5,
+    "fail": 2,
+    "notChecked": 0
+   },
+   "items": [
+    {
+     "check": "종단곡선 최소 변화 비율(K)",
+     "article": "제27조②",
+     "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "actual": 37.21,
+     "limit": 40,
+     "unit": "m/%",
+     "bound": "min",
+     "result": "fail",
+     "note": "수정안은 종단곡선 필요 길이 항목에 있음"
+    },
+    {
+     "check": "종단곡선 필요 길이",
+     "article": "제27조①",
+     "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "actual": 160,
+     "limit": 172,
+     "unit": "m",
+     "bound": "min",
+     "result": "fail",
+     "note": "max(최소 K 40 × 경사 차 4.3% = 172, 최소 길이 70) (계산값)",
+     "fixes": [
+      {
+       "title": "종단곡선 길이 늘리기 (VIP 유지)",
+       "changes": [
+        {
+         "object": {
+          "kind": "profileCurve",
+          "handle": "C2"
+         },
+         "property": "length",
+         "from": 160,
+         "to": 172,
+         "unit": "m"
+        }
+       ],
+       "status": "feasible",
+       "effects": [
+        "곡선 구간 0+334.00~0+506.00",
+        "K 37.2 → 40",
+        "VIP 수직거리 0.86 → 0.925 m (계산값)"
+       ]
+      },
+      {
+       "title": "경사 차 줄이기 (곡선 길이 유지, VIP 표고 조정)",
+       "changes": [
+        {
+         "object": {
+          "kind": "profilePvi",
+          "handle": "C2"
+         },
+         "property": "elevation",
+         "from": 58.5,
+         "to": 57.828,
+         "unit": "m"
+        }
+       ],
+       "status": "unverified",
+       "reason": "앞뒤 VIP(0+000.00, 0+900.00)로 이어지는 경사가 바뀌어 그 곡선들은 다시 검토해야 함",
+       "effects": [
+        "VIP 표고 낮춤 0.672 m",
+        "경사 2.5% → 2.34%, -1.8% → -1.66%",
+        "경사 차 4.3 → 4%, K 40 (계산값)",
+        "인접 곡선 VIP 0+900.00: 경사 차 2.7 → 2.56%, K 44.4 → 46.9 (계산값)"
+       ]
+      }
+     ]
+    },
+    {
+     "check": "종단곡선 최소 변화 비율(K)",
+     "article": "제27조②",
+     "target": "곡선 2 오목 (VIP 0+900.00)",
+     "actual": 44.44,
+     "limit": 30,
+     "unit": "m/%",
+     "bound": "min",
+     "result": "pass"
+    },
+    {
+     "check": "종단곡선 필요 길이",
+     "article": "제27조①",
+     "target": "곡선 2 오목 (VIP 0+900.00)",
+     "actual": 120,
+     "limit": 81,
+     "unit": "m",
+     "bound": "min",
+     "result": "pass",
+     "note": "max(최소 K 30 × 경사 차 2.7% = 81, 최소 길이 70) (계산값)"
+    },
+    {
+     "check": "최대 종단경사",
+     "article": "제25조①",
+     "target": "경사 1 (0+000.00~0+340.00)",
+     "actual": 2.5,
+     "limit": 4,
+     "unit": "%",
+     "bound": "max",
+     "result": "pass"
+    },
+    {
+     "check": "최대 종단경사",
+     "article": "제25조①",
+     "target": "경사 2 (0+500.00~0+840.00)",
+     "actual": 1.8,
+     "limit": 4,
+     "unit": "%",
+     "bound": "max",
+     "result": "pass"
+    },
+    {
+     "check": "최대 종단경사",
+     "article": "제25조①",
+     "target": "경사 3 (0+960.00~1+250.50)",
+     "actual": 0.9,
+     "limit": 4,
+     "unit": "%",
+     "bound": "max",
+     "result": "pass"
+    }
+   ],
+   "notes": [
+    "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+   ]
+  }
+ ],
+ "check profile missing": [
+  {
+   "criteria": {
+    "id": "도로구조규칙",
+    "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+    "effective": "2026-06-03",
+    "reviewed": false,
+    "verification": "2026-06-03 시행 원문과 일치"
+   },
+   "target": "종단 본선 계획선 (FG, 선형 본선)",
+   "conditions": {
+    "designSpeed": "선형 설계속도: 0+000.00부터 80"
+   },
+   "missing": [
+    {
+     "name": "roadFunction",
+     "neededFor": "제25조① 최대 종단경사",
+     "options": [
+      "고속국도",
+      "주간선·보조간선(그 밖의 도로)",
+      "집산도로·연결로",
+      "국지도로"
+     ]
+    },
+    {
+     "name": "terrain",
+     "neededFor": "제25조① 최대 종단경사",
+     "options": [
+      "평지",
+      "산지등"
+     ]
+    }
+   ],
+   "summary": {
+    "pass": 2,
+    "fail": 2,
+    "notChecked": 0
+   },
+   "items": [
+    {
+     "check": "종단곡선 최소 변화 비율(K)",
+     "article": "제27조②",
+     "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "actual": 37.21,
+     "limit": 40,
+     "unit": "m/%",
+     "bound": "min",
+     "result": "fail",
+     "note": "수정안은 종단곡선 필요 길이 항목에 있음"
+    },
+    {
+     "check": "종단곡선 필요 길이",
+     "article": "제27조①",
+     "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "actual": 160,
+     "limit": 172,
+     "unit": "m",
+     "bound": "min",
+     "result": "fail",
+     "note": "max(최소 K 40 × 경사 차 4.3% = 172, 최소 길이 70) (계산값)",
+     "fixes": [
+      {
+       "title": "종단곡선 길이 늘리기 (VIP 유지)",
+       "changes": [
+        {
+         "object": {
+          "kind": "profileCurve",
+          "handle": "C2"
+         },
+         "property": "length",
+         "from": 160,
+         "to": 172,
+         "unit": "m"
+        }
+       ],
+       "status": "feasible",
+       "effects": [
+        "곡선 구간 0+334.00~0+506.00",
+        "K 37.2 → 40",
+        "VIP 수직거리 0.86 → 0.925 m (계산값)"
+       ]
+      },
+      {
+       "title": "경사 차 줄이기 (곡선 길이 유지, VIP 표고 조정)",
+       "changes": [
+        {
+         "object": {
+          "kind": "profilePvi",
+          "handle": "C2"
+         },
+         "property": "elevation",
+         "from": 58.5,
+         "to": 57.828,
+         "unit": "m"
+        }
+       ],
+       "status": "unverified",
+       "reason": "앞뒤 VIP(0+000.00, 0+900.00)로 이어지는 경사가 바뀌어 그 곡선들은 다시 검토해야 함",
+       "effects": [
+        "VIP 표고 낮춤 0.672 m",
+        "경사 2.5% → 2.34%, -1.8% → -1.66%",
+        "경사 차 4.3 → 4%, K 40 (계산값)",
+        "인접 곡선 VIP 0+900.00: 경사 차 2.7 → 2.56%, K 44.4 → 46.9 (계산값)"
+       ]
+      }
+     ]
+    },
+    {
+     "check": "종단곡선 최소 변화 비율(K)",
+     "article": "제27조②",
+     "target": "곡선 2 오목 (VIP 0+900.00)",
+     "actual": 44.44,
+     "limit": 30,
+     "unit": "m/%",
+     "bound": "min",
+     "result": "pass"
+    },
+    {
+     "check": "종단곡선 필요 길이",
+     "article": "제27조①",
+     "target": "곡선 2 오목 (VIP 0+900.00)",
+     "actual": 120,
+     "limit": 81,
+     "unit": "m",
+     "bound": "min",
+     "result": "pass",
+     "note": "max(최소 K 30 × 경사 차 2.7% = 81, 최소 길이 70) (계산값)"
+    }
+   ],
+   "notes": [
+    "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+   ]
+  }
+ ],
+ "create road": {
+  "applied": true,
+  "fix": "선형 선형-1 생성",
+  "created": {
+   "name": "선형-1",
+   "handle": "D0",
+   "type": "Centerline",
+   "length": 1526.334,
+   "curves": [
+    {
+     "ip": 1,
+     "radius": 90,
+     "spiralLength": null
+    },
+    {
+     "ip": 2,
+     "radius": 90,
+     "spiralLength": null
+    }
+   ]
+  },
+  "undo": "Ctrl+Z 한 번(또는 UNDO 1)으로 되돌릴 수 있음",
+  "recheck": {
+   "target": "선형 선형-1",
+   "targetPassed": true,
+   "targetItems": [
+    {
+     "check": "설계속도",
+     "article": "도로구조규칙 제8조①",
+     "target": "설계속도 입력값",
+     "actual": 50,
+     "limit": 30,
+     "unit": "km/h",
+     "bound": "min",
+     "result": "pass",
+     "note": "표 값 50 km/h, 단서로 30 km/h까지 감속 허용"
+    },
+    {
+     "check": "최소 평면곡선 반지름",
+     "article": "도로구조규칙 제19조",
+     "target": "곡선 1 (0+464.93~0+531.81)",
+     "actual": 90,
+     "limit": 90,
+     "unit": "m",
+     "bound": "min",
+     "result": "pass"
+    },
+    {
+     "check": "평면곡선의 최소 길이(완화곡선 포함)",
+     "article": "도로구조규칙 제20조",
+     "target": "곡선 1 (0+464.93~0+531.81)",
+     "actual": 66.885,
+     "limit": 60,
+     "unit": "m",
+     "bound": "min",
+     "result": "pass"
+    },
+    {
+     "check": "완화곡선의 최소 길이",
+     "article": "도로구조규칙 제23조②",
+     "target": "곡선 1 (0+464.93~0+531.81)",
+     "unit": "m",
+     "result": "n/a",
+     "note": "설계속도 50 km/h는 완화구간 대상(제23조③)이며 아직 비교하지 않음"
+    },
+    {
+     "check": "최소 평면곡선 반지름",
+     "article": "도로구조규칙 제19조",
+     "target": "곡선 2 (0+960.20~1+033.86)",
+     "actual": 90,
+     "limit": 90,
+     "unit": "m",
+     "bound": "min",
+     "result": "pass"
+    },
+    {
+     "check": "평면곡선의 최소 길이(완화곡선 포함)",
+     "article": "도로구조규칙 제20조",
+     "target": "곡선 2 (0+960.20~1+033.86)",
+     "actual": 73.665,
+     "limit": 60,
+     "unit": "m",
+     "bound": "min",
+     "result": "pass"
+    },
+    {
+     "check": "완화곡선의 최소 길이",
+     "article": "도로구조규칙 제23조②",
+     "target": "곡선 2 (0+960.20~1+033.86)",
+     "unit": "m",
+     "result": "n/a",
+     "note": "설계속도 50 km/h는 완화구간 대상(제23조③)이며 아직 비교하지 않음"
+    },
+    {
+     "check": "최대 편경사",
+     "article": "도로구조규칙 제21조①",
+     "target": "선형 전체",
+     "unit": "%",
+     "result": "n/a",
+     "note": "편경사가 계산되어 있지 않음"
+    }
+   ],
+   "otherFailures": [],
+   "summary": [
+    {
+     "target": "선형 선형-1",
+     "pass": 5,
+     "fail": 0,
+     "notChecked": 3
+    }
+   ]
+  }
+ },
+ "check created": {
+  "criteria": {
+   "id": "LH_설계지침_토목",
+   "title": "LH 설계지침(토목)",
+   "effective": "2025-11-26",
+   "reviewed": false,
+   "verification": "문서 원문과 사람 대조 전 (기준표 검토 필요); 따르는 도로구조규칙: 2026-06-03 시행 원문과 일치"
+  },
+  "target": "선형 선형-1",
+  "conditions": {
+   "designSpeed": "선형 설계속도: 0+000.00부터 50",
+   "area": {
+    "value": "도시지역",
+    "from": "drawing"
+   },
+   "roadClass": {
+    "value": "집산도로",
+    "from": "drawing"
+   },
+   "region": {
+    "value": "도시지역",
+    "from": "drawing"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "drawing"
+   }
+  },
+  "missing": [],
+  "summary": {
+   "pass": 5,
+   "fail": 0,
+   "notChecked": 3
+  },
+  "items": [
+   {
+    "check": "설계속도",
+    "article": "도로구조규칙 제8조①",
+    "target": "설계속도 0+000.00부터",
+    "actual": 50,
+    "limit": 30,
+    "unit": "km/h",
+    "bound": "min",
+    "result": "pass",
+    "note": "표 값 50 km/h, 단서로 30 km/h까지 감속 허용"
+   },
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "도로구조규칙 제19조",
+    "target": "곡선 1 (0+464.93~0+531.81)",
+    "actual": 90,
+    "limit": 90,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "도로구조규칙 제20조",
+    "target": "곡선 1 (0+464.93~0+531.81)",
+    "actual": 66.885,
+    "limit": 60,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "도로구조규칙 제23조②",
+    "target": "곡선 1 (0+464.93~0+531.81)",
+    "unit": "m",
+    "result": "n/a",
+    "note": "설계속도 50 km/h는 완화구간 대상(제23조③)이며 아직 비교하지 않음"
+   },
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "도로구조규칙 제19조",
+    "target": "곡선 2 (0+960.20~1+033.86)",
+    "actual": 90,
+    "limit": 90,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "도로구조규칙 제20조",
+    "target": "곡선 2 (0+960.20~1+033.86)",
+    "actual": 73.665,
+    "limit": 60,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "도로구조규칙 제23조②",
+    "target": "곡선 2 (0+960.20~1+033.86)",
+    "unit": "m",
+    "result": "n/a",
+    "note": "설계속도 50 km/h는 완화구간 대상(제23조③)이며 아직 비교하지 않음"
+   },
+   {
+    "check": "최대 편경사",
+    "article": "도로구조규칙 제21조①",
+    "target": "선형 전체",
+    "unit": "%",
+    "result": "n/a",
+    "note": "편경사가 계산되어 있지 않음"
+   }
+  ],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "8.1.1: 이 지침에 따로 정하지 않은 사항은 「도로의 구조·시설 기준에 관한 규칙」 등 관련법에 따른다. 평면곡선 반지름, 곡선 길이, 편경사, 완화곡선, 종단곡선은 지침에 따로 정한 값이 없어 법령 값을 쓴다.",
+   "8.1.3 가의 설계속도 표와 20 km/h 감속 허용은 법령 제8조①과 같다.",
+   "8.2.2 가의 최대 종단경사 표는 법령 제25조①과 같다(2026-10-02 대조). 사업지구 계획지형이 산지 등의 조건을 충족하면 산지 등의 값을 적용한다(8.2.2 주2).",
+   "선형 설명에 기록된 조건을 썼다: 기준: LH_설계지침_토목 / 도로 구분: 집산도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+  ]
+ },
+ "create utility": {
+  "applied": true,
+  "fix": "선형 SD-1 생성",
+  "created": {
+   "name": "SD-1",
+   "handle": "D1",
+   "type": "Utility",
+   "length": 200,
+   "curves": []
+  },
+  "undo": "Ctrl+Z 한 번(또는 UNDO 1)으로 되돌릴 수 있음",
+  "recheck": "용도에 도로가 없어 설계 기준 검토 없음"
+ },
+ "check utility": {
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "target": "선형 SD-1",
+  "conditions": {},
+  "missing": [],
+  "summary": {
+   "pass": 0,
+   "fail": 0,
+   "notChecked": 0
+  },
+  "items": [],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "선형 설명의 용도가 관망이라 도로 기준으로 검토하지 않음. 도로이면 설명의 용도에 도로를 넣으세요."
+  ]
+ },
+ "plan name taken": {
+  "title": "선형 선형-1 생성",
+  "changes": [],
+  "create": {
+   "name": "선형-1",
+   "type": "Centerline",
+   "polyline": {
+    "handle": "2A1",
+    "vertices": [
+     {
+      "x": 1000,
+      "y": 2000,
+      "bulge": 0
+     },
+     {
+      "x": 1400,
+      "y": 2300,
+      "bulge": 0
+     },
+     {
+      "x": 1900,
+      "y": 2250,
+      "bulge": 0
+     },
+     {
+      "x": 2300,
+      "y": 2600,
+      "bulge": 0
+     }
+    ]
+   },
+   "points": [
+    {
+     "x": 1000,
+     "y": 2000
+    },
+    {
+     "x": 1400,
+     "y": 2300
+    },
+    {
+     "x": 1900,
+     "y": 2250
+    },
+    {
+     "x": 2300,
+     "y": 2600
+    }
+   ],
+   "curves": [
+    {
+     "radius": 140,
+     "spiralLength": 35
+    },
+    {
+     "radius": 140,
+     "spiralLength": 35
+    }
+   ],
+   "designSpeed": 60,
+   "description": "용도: 도로 / 기준: 도로구조규칙 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+  },
+  "status": "conflict",
+  "reason": "같은 이름의 선형 선형-1이(가) 이미 있음",
+  "effects": [
+   "도로 선형, IP 2개, 곡선 2개 (양쪽 완화곡선 35 m)",
+   "길이 약 1521.513 m (계산값)",
+   "선형 설명에 \"용도: 도로 / 기준: 도로구조규칙 / 편경사 지역: 도시지역 / 최대편경사: 6%\" 기록",
+   "선형 설계속도 60 km/h 기록",
+   "사이트 없음, 도면 기본 스타일·레이어, 폴리라인은 그대로 둠"
+  ]
+ },
+ "plan next name": "선형-2",
+ "apply not offered": "error: Fix fx-a4c3574ce2 was not offered to the user in this conversation. Show it and ask before applying."
+}
