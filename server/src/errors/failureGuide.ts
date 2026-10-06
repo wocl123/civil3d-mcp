@@ -1,25 +1,24 @@
-// What a failure means and what to do about it, for the failures this service and the
-// plug-in can raise. A tool that fails returns this guide with its error, so every AI
-// explains the same failure the same way instead of interpreting a raw message, and
-// knows whether trying again can help.
+// 실패 안내: 서비스와 플러그인이 낼 수 있는 실패마다, 무슨 뜻이고 무엇을 하면 되는지.
+// 도구가 실패하면 오류와 함께 이 안내를 돌려준다. 그래서 어느 AI든 같은 실패를 같은 말로 설명하고,
+// 다시 시도해도 되는지 안다. (오류 원문은 영어라 정규식도 영어 문구로 맞춘다.)
 export type FailureGuide = {
-  kind: string;
-  // What happened, in the user's terms.
-  meaning: string;
-  // What the user can do, or "" when nothing is needed from them.
-  userAction: string;
-  // What the AI does next.
-  next: string;
-  // Whether the drawing changed. A failed edit is rolled back in one transaction, but a
-  // request that timed out or lost its connection may still finish in Civil 3D.
+  kind: string;          // 실패 종류 (예: timeout, not_found). 작업 기록과 통계에도 쓴다.
+  meaning: string;       // 무슨 일이 있었는지 (사용자 말로)
+  userAction: string;    // 사용자가 할 일. 없으면 ""
+  next: string;          // AI가 다음에 할 일
+
+  // 도면이 바뀌었는지. 실패한 편집은 트랜잭션째 되돌려지지만,
+  // 시간 초과나 연결 끊김은 Civil 3D 안에서 끝까지 실행됐을 수도 있다("unknown").
   drawingChanged: false | "unknown";
 };
 
 const ASK_NOTHING = "";
 const NO_RETRY = "같은 호출을 다시 하지 않는다.";
 
+// mayHaveChanged: 이 실패면 도면이 바뀌었을 수도 있다.
 type Guide = Omit<FailureGuide, "drawingChanged"> & { mayHaveChanged?: true };
 
+// [오류 문구 정규식, 안내]. 위에서부터 처음 맞는 것을 쓴다.
 const GUIDES: [RegExp, Guide][] = [
   [/Method not found|Unknown bridge method/, {
     kind: "old_plugin",
@@ -121,6 +120,7 @@ const GUIDES: [RegExp, Guide][] = [
   }]
 ];
 
+// 어느 정규식에도 맞지 않는 오류.
 const UNKNOWN: Guide = {
   kind: "unexpected",
   meaning: "예상하지 못한 오류가 났다.",
@@ -128,20 +128,23 @@ const UNKNOWN: Guide = {
   next: `${NO_RETRY} 오류 내용을 짧게 전하고, 계속되면 작업 기록(data\\logs)을 확인해 달라고 한다.`
 };
 
+// 오류 메시지 → 실패 안내.
 export function failureGuide(message: string): FailureGuide {
   const { mayHaveChanged, ...guide } = GUIDES.find(([pattern]) => pattern.test(message))?.[1] ?? UNKNOWN;
   return { ...guide, drawingChanged: mayHaveChanged ? "unknown" : false };
 }
 
-// Failures of the AI itself, shown in the palette instead of the CLI's English message.
+// AI 자체의 실패. CLI의 영어 메시지 대신 팔레트에 보여 줄 한국어 문장.
 const PALETTE_MESSAGES: [RegExp, (match: RegExpExecArray) => string][] = [
-  [/^(\w+) account is not verified/, match => `${match[1]} 로그인이 확인되지 않았습니다. 팔레트에서 그 AI를 다시 선택하거나 터미널에서 로그인해 주세요.`],
+  [/^(\w+) account is not verified/, match =>
+    `${match[1]} 로그인이 확인되지 않았습니다. 팔레트에서 그 AI를 다시 선택하거나 터미널에서 로그인해 주세요.`],
   [/usage limit|rate limit|quota|429/i, () => "AI 사용 한도에 도달했습니다. 한도가 풀린 뒤 다시 시도하거나 다른 AI를 선택해 주세요."],
   [/^(\w+) failed\. Check its account login/, match => `${match[1]} 실행에 실패했습니다. 로그인 상태를 확인해 주세요.`],
   [/returned no (final )?answer/, () => "AI가 답을 만들지 못했습니다. 다시 질문해 주세요."],
   [/timed out|ETIMEDOUT/, () => "AI 응답이 너무 오래 걸려 멈췄습니다. 질문을 나눠서 다시 해 주세요."]
 ];
 
+// 팔레트에 보여 줄 오류 문장: 아는 실패면 한국어 안내 + (원문), 모르면 원문 그대로.
 export function paletteMessage(message: string): string {
   for (const [pattern, text] of PALETTE_MESSAGES) {
     const match = pattern.exec(message);
