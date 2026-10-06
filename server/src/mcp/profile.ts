@@ -1,3 +1,7 @@
+// 도구 프로필.
+//   full:    모든 도구 (개발·외부 MCP 클라이언트용)
+//   palette: 팔레트 AI용. 읽기 전용 도구 + 동의한 수정안 적용 도구 하나만.
+
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 export type McpProfile = "full" | "palette";
@@ -8,14 +12,15 @@ export function mcpProfile(): McpProfile {
 
 type ToolConfig = { annotations?: { readOnlyHint?: boolean; openWorldHint?: boolean } };
 
-// The one write tool the palette AI gets. It applies only a fix computed by the
-// check tools and shown to the user earlier in the conversation, with the user's
-// agreement; the values come from code, never from the AI (see changeTools.ts).
+// 팔레트 AI가 받는 유일한 쓰기 도구.
+// 검토 도구가 계산하고 앞서 사용자에게 보여 준 수정안만, 사용자가 동의했을 때 적용한다.
+// 값은 코드가 계산한 것이고 AI가 정하지 않는다(changeTools.ts).
 const PALETTE_WRITE_TOOLS = new Set(["apply_drawing_change"]);
 
-// The palette AI runs unattended, so its profile registers only tools that cannot
-// change the drawing or read files outside it, plus the guarded write tool above.
-// Other write tools never reach that AI, regardless of how each CLI handles tool approval.
+// 팔레트 AI는 사람이 지켜보지 않는 상태로 돈다. 그래서 도면을 바꾸거나 도면 밖 파일을 읽을 수 있는 도구는
+// 등록 자체를 하지 않는다(CLI마다 도구 승인 방식이 달라도 상관없게).
+//   openWorldHint === false  (도면 밖을 보지 않음)  그리고
+//   readOnlyHint === true    (읽기 전용)  또는 위의 쓰기 도구
 export function paletteServer(server: McpServer): McpServer {
   return new Proxy(server, {
     get(target, property, receiver) {

@@ -1,3 +1,7 @@
+// 설계 도구: 폴리라인 찾기·고르기, 폴리라인으로 선형 계획.
+// 계획은 코드가 하고 도면에는 아무것도 그리지 않는다. 사용자가 계획에 동의하면
+// AI가 그 id를 apply_drawing_change 에 넘겨 만든다. 도구 설명은 AI가 읽으므로 영어로 둔다.
+
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { callPlugin } from "../../bridge/pluginClient.js";
@@ -8,11 +12,11 @@ import { CRITERIA_SETS } from "../../criteria/criteriaStore.js";
 import { fixView } from "../fixView.js";
 import { toolResult } from "../toolResult.js";
 
+// 사용자가 폴리라인을 고를 때까지 기다리는 시간(초)
 const PICK_SECONDS = 90;
 
-// Design tools plan new objects in code; nothing is drawn until the user agrees to a
-// plan and the AI passes its id to apply_drawing_change.
 export function registerDesignTools(server: McpServer): void {
+  // 2D 폴리라인 목록
   server.registerTool("list_polylines", {
     title: "List 2D polylines",
     description: "Read open and closed 2D polylines in Model Space with handle, layer, vertex count, arc segment count, length, and start and end points, optionally on one layer. Use it to find the polyline an alignment should follow. Results are paged.",
@@ -23,6 +27,7 @@ export function registerDesignTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async args => toolResult(await callPlugin("drawing.polylines", args)));
 
+  // 명령줄에 안내를 띄우고 사용자가 폴리라인을 클릭할 때까지 기다린다
   server.registerTool("pick_polyline", {
     title: "Ask the user to pick a polyline",
     description: "Show a prompt on the Civil 3D command line and wait while the user clicks one 2D polyline in the drawing (up to 90 seconds; ESC cancels). Returns status picked with the polyline (handle, layer, vertices, arcs, length, start and end), or cancelled or timeout. Picking changes nothing. Use it when an alignment should follow a polyline the user has not named by handle.",
@@ -32,6 +37,7 @@ export function registerDesignTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async args => toolResult(await callPlugin("drawing.pick_polyline", { ...args, timeoutSeconds: PICK_SECONDS }, (PICK_SECONDS + 20) * 1000)));
 
+  // 폴리라인으로 선형 계획. 만들 수 있으면 생성 수정안을 id와 함께 저장한다.
   server.registerTool("plan_alignment_from_polyline", {
     title: "Plan an alignment along a polyline",
     description: "Plan, in code, an alignment whose IPs are the polyline's vertices. When uses include 도로 it lays out a road centerline to the design criteria: each IP gets the smallest radius the criteria allow (minimum radius, minimum curve length, spirals from 60 km/h) unless radii are given or the polyline has an arc there; the design speed comes from roadClass and region (제8조, the proviso allows up to 20 km/h less when the user says so by giving designSpeed), the maximum superelevation from the area; what is still needed is listed under missing. The criteria, uses, road class, and areas are written to the alignment's description so later checks use them without asking. Other uses (관망, 수로/하천, 구조물, 기타) get curves only where radii are given or the polyline has arcs. Returns each IP with deflection, straights, radius and why, the radius range that fits (minRadius to maxRadius), spiral, tangent, and status, straights too short for their curves (overlaps), warnings, and an option with an id to create the alignment with apply_drawing_change after the user agrees. Nothing is drawn.",

@@ -1,3 +1,5 @@
+// 선형·종단 읽기 도구. 도구 설명은 AI가 읽으므로 영어로 둔다.
+
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { callPlugin } from "../../bridge/pluginClient.js";
@@ -5,11 +7,12 @@ import { readSection } from "../../civil/civilData.js";
 import { toolResult } from "../toolResult.js";
 
 const key = z.string().min(1).max(255);
-// Sections this small are included in the overview, saving the AI a second call.
+// 항목이 이 개수 이하인 구간은 개요에 함께 넣는다(AI가 한 번 더 부르지 않게).
 const INLINE_LIMIT = 30;
 
 type Overview = { sections: Record<string, number> };
 
+// 선형 개요 + 종단 목록 + 설계속도 + (작으면) 곡선 목록.
 async function alignmentOverview(alignment: string) {
   const overview = await callPlugin("alignment.get", { alignment }) as Overview & { alignment: { handle: string } };
   const params = { alignment: overview.alignment.handle };
@@ -26,6 +29,7 @@ async function alignmentOverview(alignment: string) {
   };
 }
 
+// 종단 개요 + (설계 종단이고 작으면) 종단곡선·경사 목록. 지표면 종단(EG)은 개요만.
 async function profileOverview(profile: string, alignment?: string) {
   const overview = await callPlugin("profile.get", { profile, alignment }) as Overview & { profile: { handle: string; type: string; alignmentHandle?: string } };
   if (overview.profile.type === "EG") return overview;
@@ -39,6 +43,7 @@ async function profileOverview(profile: string, alignment?: string) {
 }
 
 export function registerAlignmentTools(server: McpServer): void {
+  // 선형 목록 (페이지 단위)
   server.registerTool("list_alignments", {
     title: "List alignments",
     description: "Summarize alignments: name, handle, type, layer, site, start and end station (raw and formatted text), length, and profile count. Results are paged.",
@@ -46,6 +51,7 @@ export function registerAlignmentTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async args => toolResult(await callPlugin("alignment.list", args)));
 
+  // 선형 하나의 개요
   server.registerTool("get_alignment", {
     title: "Alignment overview",
     description: "Read one alignment by handle or name, without listing alignments first: summary, settings, the item count of each section, parts Civil 3D could not provide, its profiles (name, handle, type), design speeds, and its curves when there are 30 or fewer. Read other sections with get_alignment_section.",
@@ -53,6 +59,7 @@ export function registerAlignmentTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async ({ alignment }) => toolResult(await alignmentOverview(alignment)));
 
+  // 선형의 구간 하나 (곡선, 요소, 편경사 등)
   server.registerTool("get_alignment_section", {
     title: "Alignment section",
     description: "Read one section of an alignment, optionally limited to a raw station range. Sections: curves (one row per horizontal curve group), elements (each line, arc, spiral with Civil 3D values), key_points (geometry and PI points), station_equations, design_speeds, superelevation (critical stations and lane slopes), offset, related (profiles, sample line groups, offset alignments), design_checks (failed checks). Results are paged.",
@@ -67,6 +74,7 @@ export function registerAlignmentTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async args => toolResult(await callPlugin("alignment.section", args)));
 
+  // 종단 하나의 개요
   server.registerTool("get_profile", {
     title: "Profile overview",
     description: "Read one profile by handle or name (give the alignment when names repeat): summary, settings (data source surface, offset, design checks), highest and lowest points, the item count of each section, parts Civil 3D could not provide, and for design profiles its vertical curves and tangents when each has 30 or fewer. Read other sections with get_profile_section.",
@@ -74,6 +82,7 @@ export function registerAlignmentTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async ({ profile, alignment }) => toolResult(await profileOverview(profile, alignment)));
 
+  // 종단의 구간 하나 (PVI, 경사, 종단곡선, 표고 등)
   server.registerTool("get_profile_section", {
     title: "Profile section",
     description: "Read one section of a profile, optionally limited to a raw station range. Sections: pvis (station, elevation, grades in percent, curve length, K, sight distances), tangents (grade and length of each straight grade), curves (vertical curves with crest or sag, K, grade change, high or low point, minimum K), views (profile views of the alignment), design_checks (failed checks), elevations (elevation and grade at the given stations, or every interval over the range; up to 200). Results are paged.",
