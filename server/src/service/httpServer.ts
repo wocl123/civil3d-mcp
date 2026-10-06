@@ -5,7 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { callPlugin } from "../bridge/pluginClient.js";
-import { getProviderState, isProvider, PROVIDERS, verifyProvider } from "../ai/aiCli.js";
+import { getProviderState, isProvider, PROVIDERS, sessionInfo, touchProvider, verifyProvider } from "../ai/aiCli.js";
 import { getUsageTotals } from "../ai/usage.js";
 import { openSetupWindow } from "../ai/cliSetup.js";
 import { getQuota } from "../ai/quota.js";
@@ -73,7 +73,7 @@ const httpServer = createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/providers") {
       const states = await Promise.all(PROVIDERS.map(async provider => ({
-        provider, state: await getProviderState(provider)
+        provider, state: await getProviderState(provider), session: sessionInfo(provider)
       })));
       return json(response, 200, { providers: states });
     }
@@ -98,7 +98,7 @@ const httpServer = createServer(async (request, response) => {
       const input = await body(request);
       if (!isProvider(input.provider)) return json(response, 400, { error: "Unknown AI provider." });
       const state = await verifyProvider(input.provider);
-      return json(response, 200, { provider: input.provider, state });
+      return json(response, 200, { provider: input.provider, state, session: sessionInfo(input.provider) });
     }
     // The palette's 설치 창 열기 / 로그인 창 열기: the setup script in a PowerShell window (ai/cliSetup.ts).
     if (request.method === "POST" && url.pathname === "/api/provider/setup") {
@@ -112,11 +112,20 @@ const httpServer = createServer(async (request, response) => {
       if (!isProvider(input.provider) || typeof input.message !== "string" ||
           input.message.trim().length < 1 || input.message.length > 4000)
         return json(response, 400, { error: "AI를 고르고 4000자 이내로 질문을 입력해 주세요." });
-      if (await getProviderState(input.provider) !== "ready")
-        return json(response, 403, { error: "선택한 AI가 설치되어 있지 않거나 로그인이 확인되지 않았습니다." });
+      const state = await getProviderState(input.provider);
+      if (state !== "ready")
+        return json(response, 403, { error: state === "unchecked"
+          ? "AI 세션 시간이 지나 사용이 풀렸습니다. 위에서 AI를 다시 눌러 주세요."
+          : "선택한 AI가 설치되어 있지 않거나 로그인이 확인되지 않았습니다." });
+      // A question keeps the session alive: its time starts again now and when the answer is done.
+      touchProvider(input.provider);
 
       const conversation = isConversationId(input.conversation) ? input.conversation : undefined;
-      if (url.pathname === "/api/chat") return json(response, 200, await answerChat(input.provider, input.message, undefined, conversation));
+      if (url.pathname === "/api/chat") {
+        const result = await answerChat(input.provider, input.message, undefined, conversation);
+        touchProvider(input.provider);
+        return json(response, 200, { ...result, session: sessionInfo(input.provider) });
+      }
       // One JSON object per line: progress and delta events, then done (the /api/chat result) or error.
       response.writeHead(200, {
         "Content-Type": "application/x-ndjson; charset=utf-8",
@@ -126,7 +135,8 @@ const httpServer = createServer(async (request, response) => {
       const send = (event: Record<string, unknown>) => response.write(JSON.stringify(event) + "\n");
       try {
         const result = await answerChat(input.provider, input.message, event => send(event), conversation);
-        send({ type: "done", ...result });
+        touchProvider(input.provider);
+        send({ type: "done", ...result, session: sessionInfo(input.provider) });
       } catch (error) {
         send({ type: "error", error: paletteMessage(error instanceof Error ? error.message : String(error)) });
       }
@@ -136,6 +146,14 @@ const httpServer = createServer(async (request, response) => {
       const input = await body(request);
       if (isConversationId(input.conversation)) forget(input.conversation);
       return json(response, 200, { cleared: true });
+    }
+    // A newer service (from a Civil 3D started later) asks this one to make room.
+    if (request.method === "POST" && url.pathname === "/api/shutdown") {
+      json(response, 200, { stopping: true });
+      process.stderr.write("MyCivil3DMcp local service: replaced by a newer service.\n");
+      httpServer.close();
+      setTimeout(() => process.exit(0), 200).unref();
+      return;
     }
     if (request.method === "POST" && url.pathname === "/api/memory/clear") {
       await clearMemory();
@@ -147,8 +165,42 @@ const httpServer = createServer(async (request, response) => {
   }
 });
 
-httpServer.listen(port, host, () => {
+function started(): void {
   process.stderr.write(`MyCivil3DMcp local service: ${host}:${port}\n`);
   // Tracking checks, outgoing packages, central knowledge, and clean-up (docs/데이터관리_설계.md §8).
   if (process.env.MY_CIVIL3D_SYNC !== "off") startSyncLoop();
+}
+
+// The service lives as long as the Civil 3D that started it. Civil 3D does not always stop
+// it on exit, and a leftover service would keep answering the next Civil 3D with old code.
+const parent = Number(process.env.MY_CIVIL3D_PARENT_PID);
+if (Number.isInteger(parent) && parent > 0)
+  setInterval(() => {
+    try { process.kill(parent, 0); }
+    catch { process.stderr.write("MyCivil3DMcp local service: Civil 3D has exited.\n"); process.exit(0); }
+  }, 5000);
+
+// A service left on the port (an older build, or one whose Civil 3D is gone) is asked to
+// stop with this session's token, and this one takes the port.
+async function takeOver(): Promise<void> {
+  const file = process.env.MY_CIVIL3D_CONNECTION_FILE ??
+    join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "MyCivil3DMcp", "connection.json");
+  try {
+    const { token } = JSON.parse(await readFile(file, "utf8")) as { token?: string };
+    await fetch(`http://${host}:${port}/api/shutdown`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-my-civil3d-token": token ?? "" }, body: "{}",
+      signal: AbortSignal.timeout(3000)
+    });
+  } catch { /* It may already be gone, or too old to know /api/shutdown. */ }
+}
+
+let attempts = 0;
+httpServer.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code !== "EADDRINUSE" || ++attempts > 5) {
+    process.stderr.write(`MyCivil3DMcp local service could not start: ${error.message}\n` +
+      (error.code === "EADDRINUSE" ? `Another program holds port ${port}. Close it, or set MY_CIVIL3D_SERVICE_PORT.\n` : ""));
+    process.exit(1);
+  }
+  void takeOver().then(() => setTimeout(() => httpServer.listen(port, host), 1000));
 });
+httpServer.listen(port, host, started);

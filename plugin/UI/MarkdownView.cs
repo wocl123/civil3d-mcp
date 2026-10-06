@@ -39,29 +39,39 @@ internal static partial class MarkdownView
     [GeneratedRegex(@"^[+\-−]?[\d,]*\.?\d+(\s*(%|m|㎡|m²|m³))?$|^\d+\+\d+(\.\d+)?$")]
     private static partial Regex NumberCell();
 
-    /// <param name="wheel">Receives mouse-wheel turns over a table so the chat keeps scrolling.</param>
+    /// <summary>
+    /// The whole answer as one read-only rich text document, so it can be selected by
+    /// dragging (across paragraphs, lists, and tables) and copied with Ctrl+C.
+    /// </summary>
+    /// <param name="wheel">Receives mouse-wheel turns over the answer so the chat keeps scrolling.</param>
     public static FrameworkElement Render(string markdown, ChatTheme theme, Action<MouseWheelEventArgs> wheel)
     {
-        StackPanel blocks = new();
+        FlowDocument document = new()
+        {
+            PagePadding = new Thickness(0), FontFamily = Body, FontSize = BodySize, Foreground = theme.Text,
+            LineHeight = 19, TextAlignment = TextAlignment.Left
+        };
         string[] lines = Lines(markdown);
         List<string> paragraph = [];
+        bool lastWasList = false;
 
-        void Add(FrameworkElement element, double top = 6)
+        void Add(Block block, double top = 6)
         {
-            element.Margin = new Thickness(0, blocks.Children.Count == 0 ? 0 : top, 0, 0);
-            blocks.Children.Add(element);
+            block.Margin = new Thickness(block.Margin.Left, document.Blocks.Count == 0 ? 0 : top, 0, 0);
+            document.Blocks.Add(block);
         }
         void FlushParagraph()
         {
             if (paragraph.Count == 0) return;
-            TextBlock text = Text(theme);
+            Paragraph text = new();
             for (int i = 0; i < paragraph.Count; i++)
             {
                 if (i > 0) text.Inlines.Add(new LineBreak());
-                AddInlines(text, paragraph[i], theme);
+                AddInlines(text.Inlines, paragraph[i], theme);
             }
             Add(text);
             paragraph.Clear();
+            lastWasList = false;
         }
 
         for (int i = 0; i < lines.Length; i++)
@@ -73,6 +83,7 @@ internal static partial class MarkdownView
                 List<string> code = [];
                 while (++i < lines.Length && !lines[i].TrimStart().StartsWith("```", StringComparison.Ordinal)) code.Add(lines[i]);
                 Add(CodeBlock(string.Join("\n", code), theme));
+                lastWasList = false;
                 continue;
             }
             if (IsTableStart(lines, i))
@@ -81,7 +92,8 @@ internal static partial class MarkdownView
                 List<string> rows = [lines[i]];
                 string rule = lines[++i];
                 while (i + 1 < lines.Length && lines[i + 1].TrimStart().StartsWith('|')) rows.Add(lines[++i]);
-                Add(Table(rows, Alignments(rule), theme, wheel), 8);
+                Add(Table(rows, Alignments(rule), theme), 8);
+                lastWasList = false;
                 continue;
             }
             if (string.IsNullOrWhiteSpace(line)) { FlushParagraph(); continue; }
@@ -89,25 +101,44 @@ internal static partial class MarkdownView
             if (heading.Success)
             {
                 FlushParagraph();
-                TextBlock text = Text(theme);
-                text.FontWeight = FontWeights.SemiBold;
-                text.FontSize = 13.5;
-                AddInlines(text, heading.Groups[1].Value, theme);
+                Paragraph text = new() { FontWeight = FontWeights.SemiBold, FontSize = 13.5 };
+                AddInlines(text.Inlines, heading.Groups[1].Value, theme);
                 Add(text, 10);
+                lastWasList = false;
                 continue;
             }
             Match item = ListItem().Match(line);
             if (item.Success)
             {
                 FlushParagraph();
-                bool continuing = blocks.Children.Count > 0 && blocks.Children[^1] is Grid { Tag: "list" };
-                Add(ListRow(item, theme), continuing ? 2 : 6);
+                Add(ListRow(item, theme), lastWasList ? 2 : 6);
+                lastWasList = true;
                 continue;
             }
             paragraph.Add(line.Trim());
         }
         FlushParagraph();
-        return blocks;
+
+        RichTextBox box = new()
+        {
+            Document = document, IsReadOnly = true, IsReadOnlyCaretVisible = false, BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent, Foreground = theme.Text, Padding = new Thickness(0),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            SelectionBrush = theme.Accent, Cursor = Cursors.IBeam
+        };
+        box.PreviewMouseWheel += (_, e) => { e.Handled = true; wheel(e); };
+        // A flow-document table does not share out leftover width by itself, so the first
+        // column gets what the other columns leave of the answer's width.
+        box.SizeChanged += (_, e) =>
+        {
+            foreach (Table table in document.Blocks.OfType<Table>())
+            {
+                double others = table.Columns.Skip(1).Sum(column => column.Width.Value);
+                double first = Math.Max(FirstColumnMinimum, e.NewSize.Width - others - 12);
+                if (Math.Abs(table.Columns[0].Width.Value - first) > 0.5) table.Columns[0].Width = new GridLength(first);
+            }
+        };
+        return box;
     }
 
     /// <summary>Plain text for the clipboard; tables become tab-separated rows that paste into Excel.</summary>
@@ -150,130 +181,95 @@ internal static partial class MarkdownView
         cell.EndsWith(':') ? (cell.StartsWith(':') ? TextAlignment.Center : TextAlignment.Right)
         : cell.StartsWith(':') ? TextAlignment.Left : (TextAlignment?)null).ToList();
 
-    private static TextBlock Text(ChatTheme theme) => new() { TextWrapping = TextWrapping.Wrap, Foreground = theme.Text, LineHeight = 19 };
+    private static readonly FontFamily Body = new("Malgun Gothic");
+    private const double BodySize = 12.5;
+    private const double FirstColumnMinimum = 80;
 
-    private static void AddInlines(TextBlock target, string text, ChatTheme theme)
+    private static void AddInlines(InlineCollection target, string text, ChatTheme theme)
     {
         // Some AIs break a table cell with <br>; show it as a line break.
         string[] parts = LineBreakTag().Split(text);
         for (int i = 0; i < parts.Length; i++)
         {
-            if (i > 0) target.Inlines.Add(new LineBreak());
+            if (i > 0) target.Add(new LineBreak());
             AddStyledRuns(target, parts[i], theme);
         }
     }
 
-    private static void AddStyledRuns(TextBlock target, string text, ChatTheme theme)
+    private static void AddStyledRuns(InlineCollection target, string text, ChatTheme theme)
     {
         // WPF may break a line after "+", which splits stations such as 0+339.21.
-        text = StationPlus().Replace(text, "\u2060+\u2060");
+        text = StationPlus().Replace(text, "⁠+⁠");
         int at = 0;
         foreach (Match match in Inline().Matches(text))
         {
-            if (match.Index > at) target.Inlines.Add(new Run(text[at..match.Index]));
+            if (match.Index > at) target.Add(new Run(text[at..match.Index]));
             if (match.Groups[1].Success)
-                target.Inlines.Add(new Run(match.Groups[1].Value) { FontWeight = FontWeights.Bold });
+                target.Add(new Run(match.Groups[1].Value) { FontWeight = FontWeights.Bold });
             else
-                target.Inlines.Add(new Run(match.Groups[2].Value) { FontFamily = Mono, Background = theme.Surface });
+                target.Add(new Run(match.Groups[2].Value) { FontFamily = Mono, Background = theme.Surface });
             at = match.Index + match.Length;
         }
-        if (at < text.Length) target.Inlines.Add(new Run(text[at..]));
+        if (at < text.Length) target.Add(new Run(text[at..]));
     }
 
-    private static Grid ListRow(Match item, ChatTheme theme)
+    // A hanging indent keeps wrapped lines under the text, not under the bullet.
+    private static Paragraph ListRow(Match item, ChatTheme theme)
     {
         int depth = item.Groups[1].Value.Replace("\t", "  ").Length / 2;
         string marker = item.Groups[2].Value;
-        Grid row = new() { Tag = "list" };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(depth * 14 + (char.IsDigit(marker[0]) ? 20 : 14)) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        TextBlock bullet = new()
-        {
-            Text = char.IsDigit(marker[0]) ? marker : "•", Foreground = theme.Muted, LineHeight = 19,
-            HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 6, 0)
-        };
-        TextBlock text = Text(theme);
-        AddInlines(text, item.Groups[3].Value, theme);
-        Grid.SetColumn(text, 1);
-        row.Children.Add(bullet);
-        row.Children.Add(text);
+        double hang = char.IsDigit(marker[0]) ? 20 : 14;
+        Paragraph row = new() { Margin = new Thickness(depth * 14 + hang, 0, 0, 0), TextIndent = -hang };
+        row.Inlines.Add(new Run((char.IsDigit(marker[0]) ? marker : "•") + " ") { Foreground = theme.Muted });
+        AddInlines(row.Inlines, item.Groups[3].Value, theme);
         return row;
     }
 
-    private static FrameworkElement Table(List<string> rows, List<TextAlignment?> alignments, ChatTheme theme,
-        Action<MouseWheelEventArgs> wheel)
+    // The first column (usually names) takes the room left and wraps; the others are as wide
+    // as their longest value, so they stay on one line.
+    private static Table Table(List<string> rows, List<TextAlignment?> alignments, ChatTheme theme)
     {
         List<List<string>> cells = rows.Select(Cells).ToList();
         int columns = cells.Max(row => row.Count);
-        Grid grid = new();
-        // The first column (usually names) wraps so the table fits the panel; the others keep one line.
+        Table table = new() { CellSpacing = 0, BorderBrush = theme.Border, BorderThickness = new Thickness(1) };
         for (int c = 0; c < columns; c++)
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = c == 0 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+        {
+            int column = c;
+            double width = column == 0 ? 0
+                : cells.Select((row, r) => column < row.Count ? TextWidth(Strip(row[column]), r == 0) : 0).Max() + 16;
+            table.Columns.Add(new TableColumn { Width = new GridLength(column == 0 ? FirstColumnMinimum : Math.Min(width, 260)) });
+        }
+        TableRowGroup group = new();
         for (int r = 0; r < cells.Count; r++)
         {
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            TableRow row = new();
+            bool header = r == 0;
+            if (header) row.Background = theme.Surface;
             for (int c = 0; c < columns; c++)
             {
                 string value = c < cells[r].Count ? cells[r][c] : "";
-                bool header = r == 0;
                 TextAlignment alignment = (c < alignments.Count ? alignments[c] : null)
                     ?? (!header && NumberCell().IsMatch(Strip(value)) ? TextAlignment.Right : TextAlignment.Left);
-                TextBlock text = new()
+                Paragraph text = new() { TextAlignment = alignment, FontWeight = header ? FontWeights.SemiBold : FontWeights.Normal, Margin = new Thickness(0) };
+                AddInlines(text.Inlines, value, theme);
+                row.Cells.Add(new TableCell(text)
                 {
-                    Foreground = theme.Text, TextAlignment = alignment, TextWrapping = c == 0 ? TextWrapping.Wrap : TextWrapping.NoWrap,
-                    FontWeight = header ? FontWeights.SemiBold : FontWeights.Normal
-                };
-                AddInlines(text, value, theme);
-                Border cell = new()
-                {
-                    Child = text, Padding = new Thickness(7, 3, 7, 3),
-                    Background = header ? theme.Surface : Brushes.Transparent, BorderBrush = theme.Border,
+                    Padding = new Thickness(7, 3, 7, 3), BorderBrush = theme.Border,
                     BorderThickness = new Thickness(c == 0 ? 0 : 1, 0, 0, r == cells.Count - 1 ? 0 : 1)
-                };
-                Grid.SetRow(cell, r);
-                Grid.SetColumn(cell, c);
-                grid.Children.Add(cell);
+                });
             }
+            group.Rows.Add(row);
         }
-        Border frame = new()
-        {
-            Child = grid, BorderBrush = theme.Border, BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4), HorizontalAlignment = HorizontalAlignment.Left
-        };
-        // The table takes the panel width; only when even a narrow first column does
-        // not fit does it scroll sideways. The wheel still scrolls the conversation.
-        ScrollViewer scroller = new()
-        {
-            Content = frame, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled
-        };
-        double minimum = MinimumWidth(grid);
-        scroller.SizeChanged += (_, e) =>
-        {
-            double width = Math.Max(e.NewSize.Width, minimum);
-            if (Math.Abs(frame.Width - width) > 0.5 || double.IsNaN(frame.Width)) frame.Width = width;
-        };
-        scroller.PreviewMouseWheel += (_, e) => { e.Handled = true; wheel(e); };
-        return scroller;
+        table.RowGroups.Add(group);
+        return table;
     }
 
-    // Room for every one-line column plus a first column of about six characters, and the frame.
-    private static double MinimumWidth(Grid grid)
-    {
-        Dictionary<int, double> widths = [];
-        foreach (UIElement cell in grid.Children)
-        {
-            int column = Grid.GetColumn(cell);
-            if (column == 0) continue;
-            cell.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            widths[column] = Math.Max(widths.GetValueOrDefault(column), cell.DesiredSize.Width);
-        }
-        return widths.Values.Sum() + 80 + 2;
-    }
+    private static double TextWidth(string text, bool bold) => new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
+        FlowDirection.LeftToRight, new Typeface(Body, FontStyles.Normal, bold ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal),
+        BodySize, Brushes.Black, 1.0).WidthIncludingTrailingWhitespace;
 
-    private static FrameworkElement CodeBlock(string code, ChatTheme theme) => new Border
+    private static Paragraph CodeBlock(string code, ChatTheme theme) => new(new Run(code))
     {
-        Background = theme.Surface, CornerRadius = new CornerRadius(4), Padding = new Thickness(8, 5, 8, 5),
-        Child = new TextBlock { Text = code, FontFamily = Mono, Foreground = theme.Text, TextWrapping = TextWrapping.Wrap }
+        FontFamily = Mono, Background = theme.Surface, Padding = new Thickness(8, 5, 8, 5), LineHeight = 17
     };
 }

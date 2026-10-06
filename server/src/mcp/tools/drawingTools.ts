@@ -13,6 +13,12 @@ export function registerDrawingTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async () => toolResult(await callPlugin("drawing.status")));
 
+  server.registerTool("get_drawing_summary", {
+    title: "Whole-drawing summary",
+    description: "One call for what is in the drawing: every Model Space object counted by type and by layer (largest 30 types and 25 layers, with the number of distinct ones), and the Civil objects: alignments by type, profile count, COGO points, surfaces, pipe networks with pipe and structure counts (first/second), corridors with baseline counts, and sites with parcel and alignment counts. Use it first for overview questions (도면에 뭐가 있어, 관망 정보, 레이어 구성) instead of paging list_drawing_layers or list_drawing_objects.",
+    annotations: { readOnlyHint: true, openWorldHint: false }
+  }, async () => toolResult(await callPlugin("drawing.summary", {}, 60000)));
+
   server.registerTool("list_drawing_layers", {
     title: "List drawing layers",
     description: "Read layer names, visibility and lock state, object counts, and object types, including COGO points. Results are paged.",
@@ -29,7 +35,7 @@ export function registerDrawingTools(server: McpServer): void {
 
   server.registerTool("get_selection", {
     title: "Current selection",
-    description: "Read the objects the user has selected in the drawing (with grips) right now: handle, type, layer, Civil object name, and for 2D polylines vertex and arc counts, length, and whether closed. Up to 20 are listed with the total count.",
+    description: "Read the objects the user has selected in the drawing (with grips) right now: handle, type, layer, Civil object name, and for 2D polylines vertex and arc counts, length, and whether closed. Up to 20 are listed with the total count; byType and byLayer count every selected object (largest 15 groups), so use them to describe a large selection as a whole.",
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async () => toolResult(await callPlugin("drawing.selection")));
 

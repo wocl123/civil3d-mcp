@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { checkAlignmentCriteria } from "../../criteria/alignmentCriteria.js";
 import { checkProfileCriteria } from "../../criteria/profileCriteria.js";
+import { checkAllAlignments } from "../../criteria/bulkCheck.js";
 import { registerFixes } from "../../changes/changeStore.js";
 import { itemsView } from "../fixView.js";
 import { toolResult } from "../toolResult.js";
@@ -49,4 +50,14 @@ export function registerCriteriaTools(server: McpServer): void {
     await registerFixes(reports.flatMap(report => report.items), { check: "profile", input: args });
     return toolResult(reports.map(report => ({ ...report, items: itemsView(report.items) })));
   });
+
+  server.registerTool("check_all_alignments", {
+    title: "Check every alignment against design criteria",
+    description: "One call for the whole drawing: checks every alignment (and, unless profiles is false, its design profiles) with the same code as check_alignment_criteria and check_profile_criteria, using the conditions recorded on each alignment. Returns per alignment the pass, fail, review, and not-checked counts, conditions still missing, and the first failures, plus totals. Use it for questions about all alignments instead of calling the single checks one by one. It makes no fixes: for an alignment's details and fixes, call the single check on that alignment. Up to 60 alignments per call; continue from nextOffset.",
+    inputSchema: {
+      criteria, profiles: z.boolean().default(true).describe("Also check each alignment's design profiles."),
+      offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(60).default(60)
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false }
+  }, async args => toolResult(await checkAllAlignments(args)));
 }

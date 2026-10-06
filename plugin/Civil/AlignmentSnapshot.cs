@@ -41,7 +41,7 @@ internal sealed class AlignmentSnapshot
 
         bool checks = alignment.UseDesignCheckSet;
         (List<AlignmentElement> elements, List<AlignmentCurve> curves) =
-            Try("elements", () => ReadElements(alignment, checks)) is { } read ? read : (new(), new());
+            Try<(List<AlignmentElement>, List<AlignmentCurve>)?>("elements", () => ReadElements(alignment, checks)) ?? (new(), new());
         List<AlignmentKeyPoint> keyPoints = Try("key_points", () => ReadKeyPoints(alignment)) ?? new();
         List<AlignmentStationEquation> equations = Try("station_equations", () => alignment.StationEquations
             .Select(item => new AlignmentStationEquation(Round(item.RawStationBack), Round(item.StationBack),

@@ -35,8 +35,10 @@ internal sealed class ProfileSnapshot
         }
 
         bool checks = Try("settings", () => profile.UseDesignCheckSet);
+        // A tuple is never null, so the failed read is marked by a nullable tuple; without it a
+        // failure gave (null, null) and the next line threw "Value cannot be null".
         (List<ProfileTangentInfo> tangents, List<ProfileCurveInfo> curves) =
-            Try("entities", () => ReadEntities(alignment, profile, checks)) is { } read ? read : (new(), new());
+            Try<(List<ProfileTangentInfo>, List<ProfileCurveInfo>)?>("entities", () => ReadEntities(alignment, profile, checks)) ?? (new(), new());
         List<ProfilePvi> pvis = Try("pvis", () => ReadPvis(alignment, profile)) ?? new();
         List<ProfileViewInfo> views = Try("views", () => ReadViews(transaction, alignment)) ?? new();
         ProfileSettings settings = Try("settings", () => ReadSettings(transaction, profile))
@@ -164,10 +166,11 @@ internal sealed class ProfileSnapshot
         {
             TangentOffsetAtPvi = AlignmentSnapshot.Finite(tangentOffset),
             HighLowPoint = onCurve ? new ProfilePoint(R(highLowStation), Text(alignment, highLowStation), R(highLowElevation)) : null,
-            MinimumKStopping = Positive(entity.MinimumKValueSSD),
-            MinimumKPassing = Positive(entity.MinimumKValuePSD),
-            MinimumKHeadlight = Positive(entity.MinimumKValueHSD),
-            HighestDesignSpeed = Positive(entity.HighestDesignSpeed)
+            // Civil 3D throws for these on curves without design criteria.
+            MinimumKStopping = Optional(() => entity.MinimumKValueSSD),
+            MinimumKPassing = Optional(() => entity.MinimumKValuePSD),
+            MinimumKHeadlight = Optional(() => entity.MinimumKValueHSD),
+            HighestDesignSpeed = Optional(() => entity.HighestDesignSpeed)
         };
     }
 
@@ -252,6 +255,11 @@ internal sealed class ProfileSnapshot
 
     // Civil 3D returns grades as ratios; answers use percent.
     internal static double? Percent(double ratio) => double.IsFinite(ratio) ? Math.Round(ratio * 100, 4) : null;
+    private static double? Optional(Func<double> read)
+    {
+        try { return Positive(read()); } catch (System.Exception) { return null; }
+    }
+
     private static double? Positive(double value) => double.IsFinite(value) && value > 0 ? Math.Round(value, 4) : null;
     private static double R(double value) => AlignmentSnapshot.Round(value);
     private static string Text(Alignment alignment, double station) => AlignmentSnapshot.StationText(alignment, station);

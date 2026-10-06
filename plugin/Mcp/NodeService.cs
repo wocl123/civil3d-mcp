@@ -32,6 +32,8 @@ internal static class NodeService
             WindowStyle = ProcessWindowStyle.Hidden
         };
         start.ArgumentList.Add(entry);
+        // The service exits when this Civil 3D does, and stops a leftover service holding its port.
+        start.Environment["MY_CIVIL3D_PARENT_PID"] = Environment.ProcessId.ToString();
         try
         {
             _process = Process.Start(start);

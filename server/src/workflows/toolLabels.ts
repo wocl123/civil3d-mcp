@@ -1,6 +1,8 @@
 // Korean labels for the palette's progress line while the AI calls tools.
 const LABELS: Record<string, string> = {
   get_active_drawing: "도면 정보 읽는 중",
+  get_drawing_summary: "도면 전체 요약 읽는 중",
+  check_all_alignments: "전체 선형 기준 검토 중",
   list_drawing_layers: "레이어 읽는 중",
   list_drawing_objects: "객체 목록 읽는 중",
   get_drawing_object: "객체 읽는 중",

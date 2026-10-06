@@ -10,7 +10,7 @@
     "build": "tsc",
     "start": "node build/index.js",
     "smoke": "npm run build && node scripts/smoke.mjs",
-    "smoke:service": "npm run build && node scripts/service-smoke.mjs",
+    "smoke:service": "npm run build && node scripts/service-smoke.mjs && node scripts/service-lifetime.mjs",
     "smoke:usage": "npm run build && node scripts/usage-smoke.mjs",
     "smoke:memory": "npm run build && node scripts/memory-smoke.mjs",
     "smoke:knowledge": "npm run build && node scripts/knowledge-smoke.mjs",

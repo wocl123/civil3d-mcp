@@ -116,8 +116,10 @@ Civil 3D commands for testing the read-only drawing queries.
 
 The palette never asks for passwords or API keys. Gemini's check can use account
 quota because its CLI has no documented noninteractive login-status command.
-Checks are cached for five minutes; after that a Claude or Codex login that was
-confirmed is confirmed again on its own, so the chosen AI stays available.
+A confirmed login is a session of 30 minutes from its last use
+(`MY_CIVIL3D_AI_SESSION_MINUTES`): every question to that AI starts the time again,
+and the palette shows the time left on the AI (사용 중 · 29:41). An AI left unused
+that long is released and is confirmed again when picked.
 
 The service finds each CLI where it really is (`server/src/ai/cliLocator.ts`): the
 current PATH, the user and machine PATH read fresh from the registry, and the
@@ -487,10 +489,11 @@ The MCP entry point is `node build/index.js`. Its tools are:
 | Tool | Result |
 | --- | --- |
 | `get_active_drawing` | Active drawing, Model Space count, units, coordinate system, change revision |
+| `get_drawing_summary` | The whole drawing in one call: objects by type and layer, alignments, profiles, surfaces, pipe networks (pipe and structure counts), corridors, sites and parcels, COGO points |
 | `list_drawing_layers` | Paged layer inventory with visibility, lock state, object counts, and type counts |
 | `list_drawing_objects` | Paged Model Space handles, types, and layers; optional exact layer filter |
 | `get_drawing_object` | One Model Space or COGO point object by handle, with available geometry and bounds |
-| `get_selection` | The objects the user has selected in the drawing now (up to 20), with Civil names and polyline summaries |
+| `get_selection` | The objects the user has selected in the drawing now: every one counted by type and layer, up to 20 in detail with Civil names and polyline summaries |
 | `capture_drawing` | A PNG of Model Space framed on given objects (or the whole drawing), rendered off screen without moving the user's view |
 | `list_alignments` | Paged alignment summaries: type, layer, site, start and end station (raw and formatted), length, profile count |
 | `get_alignment` | One alignment's overview: summary, settings, item count of each section, parts Civil 3D could not provide, its profiles, design speeds, and curves when there are 30 or fewer |
@@ -500,6 +503,7 @@ The MCP entry point is `node build/index.js`. Its tools are:
 | `apply_drawing_change` | Apply one computed fix or alignment plan the user agreed to, by id, then re-run its check; a created alignment comes back with a capture of it and its polyline for the AI to look at; the only tool that changes the drawing |
 | `check_alignment_criteria` | Alignment against design criteria (default 도로구조규칙): design speed, minimum curve radius, minimum curve length, spirals required and their length, maximum superelevation. Each item is pass, fail, review (within a proviso; a person decides), or n/a; notCovered lists what is never compared |
 | `check_profile_criteria` | Design profiles against design criteria: minimum vertical curve K, required vertical curve length, maximum grade; with only an alignment, all its design profiles |
+| `check_all_alignments` | Every alignment and its design profiles checked in one call: counts per alignment, missing conditions, first failures, totals (no fixes; use the single checks for those) |
 | `pick_polyline` | Prompt the user on the command line to click one 2D polyline and wait up to 90 s; returns it, or cancelled or timeout |
 | `list_polylines` | Paged 2D polylines with layer, vertex and arc counts, length, start and end points; optional layer filter |
 | `plan_alignment_from_polyline` | Plan, in code, a road centerline (to the criteria) or another alignment along a polyline; returns IPs, radii, fitting ranges, overlaps, and a creation option id; draws nothing |

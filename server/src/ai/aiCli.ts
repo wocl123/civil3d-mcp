@@ -13,8 +13,12 @@ export type { ProviderState } from "./types/ProviderState.js";
 
 export const PROVIDERS = ["claude", "codex", "gemini"] as const;
 
+// A confirmed login is a session that lasts SESSION_MS from its last use: every question
+// to that AI starts the time again, and an AI left unused that long goes back to
+// "unchecked" until the user picks it again, which confirms the login anew. The palette
+// shows the time left (sessionInfo). MY_CIVIL3D_AI_SESSION_MINUTES changes the length.
 const verified = new Map<Provider, { state: ProviderState; checkedAt: number }>();
-const VERIFY_TTL_MS = 5 * 60 * 1000;
+const SESSION_MS = Math.max(1, Number(process.env.MY_CIVIL3D_AI_SESSION_MINUTES ?? "30") || 30) * 60 * 1000;
 
 export function isProvider(value: unknown): value is Provider {
   return typeof value === "string" && PROVIDERS.includes(value as Provider);
@@ -83,26 +87,25 @@ async function isInstalled(provider: Provider): Promise<boolean> {
   return (await locateCli(provider)) !== undefined;
 }
 
-// A login confirmed earlier is confirmed again on its own once it is older than the TTL,
-// so an AI the user chose does not drop out of the palette after a few idle minutes.
-// Claude and Codex have a cheap local status command; Gemini's check costs quota, so it
-// waits for the user to choose it again.
-const AUTO_RECHECK = new Set<Provider>(["claude", "codex"]);
-const rechecking = new Map<Provider, Promise<ProviderState>>();
-
 export async function getProviderState(provider: Provider): Promise<ProviderState> {
   if (!(await isInstalled(provider))) return "missing";
   const record = verified.get(provider);
-  if (record && Date.now() - record.checkedAt <= VERIFY_TTL_MS) return record.state;
-  if (record?.state === "ready" && AUTO_RECHECK.has(provider)) {
-    let running = rechecking.get(provider);
-    if (!running) {
-      running = verifyProvider(provider).finally(() => rechecking.delete(provider));
-      rechecking.set(provider, running);
-    }
-    return running;
-  }
-  return "unchecked";
+  if (!record || Date.now() - record.checkedAt > SESSION_MS) return "unchecked";
+  return record.state;
+}
+
+// Using an AI starts its session time again.
+export function touchProvider(provider: Provider): void {
+  const record = verified.get(provider);
+  if (record?.state === "ready" && Date.now() - record.checkedAt <= SESSION_MS) record.checkedAt = Date.now();
+}
+
+// Time left in a ready AI's session, for the palette; undefined when it has none.
+export function sessionInfo(provider: Provider): { expiresInMs: number; sessionMs: number } | undefined {
+  const record = verified.get(provider);
+  if (record?.state !== "ready") return undefined;
+  const left = SESSION_MS - (Date.now() - record.checkedAt);
+  return left > 0 ? { expiresInMs: left, sessionMs: SESSION_MS } : undefined;
 }
 
 export async function verifyProvider(provider: Provider): Promise<ProviderState> {

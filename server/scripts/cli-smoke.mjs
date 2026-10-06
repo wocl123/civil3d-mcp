@@ -20,3 +20,27 @@ const { locateCli } = await import('../build/ai/cliLocator.js');
 const found = [];
 for (const provider of ['claude', 'codex', 'gemini']) if (await locateCli(provider)) found.push(provider);
 console.log(`AI CLI smoke test passed: setup script parses and checks each AI; found with a stale PATH: ${found.join(', ') || 'none installed'}.`);
+
+// Sessions: 30 minutes from the last use; a question starts the time again, an unused AI
+// goes back to "unchecked". The clock is moved instead of waited for.
+const { verifyProvider, getProviderState, touchProvider, sessionInfo } = await import('../build/ai/aiCli.js');
+if (found.includes('codex') && await verifyProvider('codex') === 'ready') {
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  const minutes = () => Math.round(sessionInfo('codex').expiresInMs / 60000);
+  assert.equal(minutes(), 30);
+  offset = 20 * 60000;
+  assert.equal(minutes(), 10, 'ten minutes left after twenty idle');
+  touchProvider('codex');
+  assert.equal(minutes(), 30, 'a question starts the time again');
+  offset += 29 * 60000;
+  assert.equal(await getProviderState('codex'), 'ready');
+  offset += 2 * 60000;
+  assert.equal(await getProviderState('codex'), 'unchecked', 'unused past the session: released');
+  assert.equal(sessionInfo('codex'), undefined);
+  touchProvider('codex');
+  assert.equal(await getProviderState('codex'), 'unchecked', 'a released session is not revived by use');
+  Date.now = realNow;
+  console.log('AI session timing passed: 30 min, reset on use, released when idle.');
+}

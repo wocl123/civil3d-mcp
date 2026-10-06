@@ -56,7 +56,9 @@ const BUDGETS = {
   check_alignment_criteria: 3000,
   check_profile_criteria: 3000,
   plan_alignment_from_polyline: 2500,
-  capture_drawing: 300
+  capture_drawing: 300,
+  get_drawing_summary: 1500,
+  check_all_alignments: 3000
 };
 const CALLS = [
   ['get_active_drawing', {}],
@@ -70,7 +72,9 @@ const CALLS = [
   ['check_alignment_criteria', { alignment: '본선', designSpeed: 100, maxSuperelevation: 6, area: '도시지역' }],
   ['check_profile_criteria', { alignment: '본선', roadFunction: '고속국도', terrain: '평지' }],
   ['plan_alignment_from_polyline', { polyline: '2A1', uses: ['도로'], roadClass: '보조간선도로', region: '지방지역(산지)', area: '지방지역(적설·한랭)' }],
-  ['capture_drawing', { handles: ['2A1'] }]
+  ['capture_drawing', { handles: ['2A1'] }],
+  ['get_drawing_summary', {}],
+  ['check_all_alignments', {}]
 ];
 
 const temporary = await mkdtemp(join(tmpdir(), 'my-civil3d-payload-'));

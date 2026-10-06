@@ -14,7 +14,7 @@ import { addTerms } from "../data/terms.js";
 import { syncSoon } from "../sync/syncLoop.js";
 import { checkTracked } from "../tracking/tracker.js";
 import { drawingOutline } from "../civil/drawingOutline.js";
-import { selectionOutline } from "../civil/drawingSelection.js";
+import { readSelection } from "../civil/drawingSelection.js";
 import { splitFacts } from "../knowledge/factBlock.js";
 import { addCandidates } from "../knowledge/candidateStore.js";
 import { appendFacts, knowledgePrompt, readKnowledge } from "../knowledge/knowledgeStore.js";
@@ -67,7 +67,10 @@ export async function answerChat(provider: Provider, message: string,
 
   // The selection is part of the reuse key: "이걸로 선형 만들어줘" means another object
   // once the user selects another, while the drawing revision stays the same.
-  const [scope, selection] = await Promise.all([currentDrawingScope(), selectionOutline()]);
+  const [scope, selectionRead] = await Promise.all([currentDrawingScope(), readSelection()]);
+  const selection = selectionRead.outline;
+  // In the work log: how many objects were selected, or why the selection could not be read.
+  const selected = selectionRead.error ? { error: selectionRead.error } : { count: selectionRead.count };
   void addTerms([scope.label]);
   void checkTracked(scope).catch(error => process.stderr.write(`MyCivil3DMcp tracking check failed: ${String(error)}
 `));
@@ -78,7 +81,7 @@ export async function answerChat(provider: Provider, message: string,
   if (cached) {
     remember(conversation, { provider, question, answer: cached.answer });
     void compactConversation(conversation, provider);
-    await log({ kind: "chat", drawing: scope.label, cached: true, answer: clip(cached.answer) });
+    await log({ kind: "chat", drawing: scope.label, selected, cached: true, answer: clip(cached.answer) });
     syncSoon();
     return {
       provider, answer: cached.answer, usage: NO_USAGE, totals: getUsageTotals(provider),
@@ -117,7 +120,7 @@ export async function answerChat(provider: Provider, message: string,
       }
     });
   } catch (error) {
-    await log({ kind: "chat", drawing: scope.label, tools, error: clip(error instanceof Error ? error.message : String(error), 1000) });
+    await log({ kind: "chat", drawing: scope.label, selected, tools, error: clip(error instanceof Error ? error.message : String(error), 1000) });
     syncSoon();
     throw error;
   }
@@ -144,7 +147,7 @@ export async function answerChat(provider: Provider, message: string,
   remember(conversation, { provider, question, answer: answer + appliedNote + fixNote, fixIds: fixes.map(fix => fix.id) });
   void compactConversation(conversation, provider);
   await log({
-    kind: "chat", drawing: scope.label, model: await paletteModel(provider), tools, answer: clip(answer),
+    kind: "chat", drawing: scope.label, selected, model: await paletteModel(provider), tools, answer: clip(answer),
     applied: applied.map(entry => entry.labels.join(", ")), fixes: fixes.map(fix => fix.id), recorded, candidates, usage: result.usage
   });
   syncSoon();

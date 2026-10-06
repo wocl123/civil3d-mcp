@@ -28,6 +28,11 @@ internal sealed class ChatPanel : UserControl
     private readonly TextBlock _usage = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Dictionary<string, Button> _chips = new();
     private readonly Dictionary<string, string> _states = Providers.ToDictionary(name => name, _ => "unchecked");
+    // Each ready AI's session: when it ends and how long one lasts (from the service). Using
+    // the AI starts the time again; an unused AI is released when its time runs out.
+    private readonly Dictionary<string, DateTime> _sessionEnds = new();
+    private readonly Dictionary<string, TimeSpan> _sessionLengths = new();
+    private readonly DispatcherTimer _sessionClock = new() { Interval = TimeSpan.FromSeconds(1) };
     private string? _selected;
     // Identifies this conversation to the service, which sends its recent turns with each question.
     private string _conversation = Guid.NewGuid().ToString("N");
@@ -60,6 +65,48 @@ internal sealed class ChatPanel : UserControl
 
         AddNotice("AI를 고른 뒤 열린 도면에 대해 물어보세요. 도면은 수정안에 동의할 때만 바뀌며 Ctrl+Z로 되돌릴 수 있습니다.");
         UpdateControls();
+        _sessionClock.Tick += (_, _) => TickSessions();
+        _sessionClock.Start();
+    }
+
+    // Records the time left that the service reported for an AI's session.
+    private void ReadSession(string name, JsonNode? session)
+    {
+        double? left = session?["expiresInMs"]?.GetValue<double>();
+        double? length = session?["sessionMs"]?.GetValue<double>();
+        if (left is null) { _sessionEnds.Remove(name); return; }
+        _sessionEnds[name] = DateTime.UtcNow.AddMilliseconds(left.Value);
+        if (length is not null) _sessionLengths[name] = TimeSpan.FromMilliseconds(length.Value);
+    }
+
+    // Every second: count down the shown time, and release an AI whose time ran out.
+    private void TickSessions()
+    {
+        if (_sessionEnds.Count == 0) return;
+        foreach ((string name, DateTime end) in _sessionEnds.ToList())
+        {
+            if (DateTime.UtcNow < end || _states[name] != "ready") continue;
+            // The answer being written keeps the session alive; the service extends it when done.
+            if (_busy && name == _selected) continue;
+            _sessionEnds.Remove(name);
+            _states[name] = "unchecked";
+            if (name == _selected)
+            {
+                _selected = null;
+                int minutes = (int)Math.Round((_sessionLengths.TryGetValue(name, out TimeSpan length) ? length : TimeSpan.FromMinutes(30)).TotalMinutes);
+                AddNotice($"{Display(name)}를 {minutes}분 동안 쓰지 않아 세션이 풀렸습니다. 다시 누르면 로그인을 확인하고 이어서 씁니다.");
+                UpdateControls();
+            }
+        }
+        UpdateChips();
+    }
+
+    private string SessionLeft(string name)
+    {
+        if (!_sessionEnds.TryGetValue(name, out DateTime end)) return "";
+        TimeSpan left = end - DateTime.UtcNow;
+        if (left < TimeSpan.Zero) left = TimeSpan.Zero;
+        return $" · {(int)left.TotalMinutes}:{left.Seconds:00}";
     }
 
     public async Task RefreshAllAsync()
@@ -182,6 +229,7 @@ internal sealed class ChatPanel : UserControl
             {
                 JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/provider/check", new { provider = name });
                 _states[name] = data["state"]?.ToString() ?? "unauthenticated";
+                ReadSession(name, data["session"]);
             }
             catch (System.Exception ex) { AddNotice("인증 확인 실패: " + ex.Message, error: true); }
             finally { SetBusy(false); }
@@ -212,6 +260,8 @@ internal sealed class ChatPanel : UserControl
         string question = _input.Text.Trim();
         if (_busy || _selected is null || question.Length == 0) return;
         string provider = _selected;
+        // Asking starts the session time again (the service does the same).
+        if (_sessionLengths.TryGetValue(provider, out TimeSpan sessionLength)) _sessionEnds[provider] = DateTime.UtcNow + sessionLength;
         AddBubble(question, fromUser: true);
         _input.Clear();
         (Border answer, TextBlock meta, Button copy) = AddAnswer("", Display(provider));
@@ -222,12 +272,14 @@ internal sealed class ChatPanel : UserControl
         answer.Child = new StackPanel { Children = { status, draft } };
         string step = "생각하는 중";
         Stopwatch clock = Stopwatch.StartNew();
-        void ShowStatus() => status.Text = $"{step} · {clock.Elapsed.TotalSeconds:0}초";
+        void ShowStatus() => status.Text = $"{step} · {clock.Elapsed.TotalSeconds:0}초 · 답변 중에는 도면 편집이 잠깁니다";
         DispatcherTimer ticker = new() { Interval = TimeSpan.FromSeconds(1) };
         ticker.Tick += (_, _) => ShowStatus();
         ShowStatus();
         ticker.Start();
         SetBusy(true);
+        // While the AI works, the drawing it reads must not change under it (DrawingGuard).
+        DrawingGuard.Begin();
         try
         {
             JsonNode data = await PaletteApiClient.StreamAsync("/api/chat/stream", new { provider, message = question, conversation = _conversation }, item =>
@@ -245,6 +297,7 @@ internal sealed class ChatPanel : UserControl
                 ShowStatus();
             });
             ticker.Stop();
+            ReadSession(provider, data["session"]);
             string text = data["answer"]?.ToString() ?? "답변이 없습니다.";
             answer.Child = MarkdownView.Render(text, _theme, ForwardWheel);
             copy.Tag = text;
@@ -271,6 +324,9 @@ internal sealed class ChatPanel : UserControl
         }
         finally
         {
+            DrawingGuard.End();
+            // The requests made for this answer dropped the user's grips; show them again.
+            DrawingSelection.RestoreGrips();
             SetBusy(false);
             _input.Focus();
         }
@@ -295,7 +351,10 @@ internal sealed class ChatPanel : UserControl
             JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Get, "/api/providers");
             foreach (JsonNode? item in data["providers"]?.AsArray() ?? [])
                 if (item?["provider"]?.ToString() is { } name && _states.ContainsKey(name))
+                {
                     _states[name] = item["state"]?.ToString() ?? "unchecked";
+                    ReadSession(name, item["session"]);
+                }
         }
         catch (System.Exception ex) { AddNotice("AI 상태 확인 실패: " + ex.Message, error: true); }
         if (_selected is not null && _states[_selected] != "ready") _selected = null;
@@ -517,7 +576,7 @@ internal sealed class ChatPanel : UserControl
                 FontSize = 10.5, Foreground = selected ? _theme.Text : _theme.Muted,
                 Text = state switch
                 {
-                    "ready" => selected ? "사용 중" : "사용 가능",
+                    "ready" => (selected ? "사용 중" : "사용 가능") + SessionLeft(name),
                     "missing" => "미설치",
                     "unauthenticated" => "인증 실패",
                     _ => "눌러서 확인"
@@ -532,6 +591,8 @@ internal sealed class ChatPanel : UserControl
             {
                 "unauthenticated" => "누르면 다시 확인하고, 안 되면 로그인할지 묻습니다.",
                 "missing" => "누르면 다시 확인하고, 없으면 설치할지 묻습니다.",
+                "ready" when _sessionLengths.TryGetValue(name, out TimeSpan length) =>
+                    $"남은 세션 시간입니다. 질문할 때마다 {(int)length.TotalMinutes}분으로 다시 늘어나고, 쓰지 않으면 끝날 때 풀립니다.",
                 _ => null
             };
         }

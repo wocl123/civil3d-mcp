@@ -204,6 +204,7 @@ public static class PluginBridge
                     Math.Clamp(ReadInt(parameters?["width"], 800), 200, 1600),
                     Math.Clamp(ReadInt(parameters?["height"], 600), 200, 1200))),
                 "drawing.selection" => await InDocumentContextAsync(doc => DrawingSelection.Get(doc)),
+                "drawing.summary" => await InDocumentContextAsync(doc => DrawingSummary.Read(doc)),
                 "drawing.polylines" => await InDocumentContextAsync(doc => DrawingQueries.GetPolylines(
                     doc,
                     ReadInt(parameters?["offset"], 0),
@@ -291,18 +292,24 @@ public static class PluginBridge
     {
         object? result = null;
         System.Exception? error = null;
-        await App.DocumentManager.ExecuteInCommandContextAsync(async _ =>
+        // Entering a command context clears the user's grips; DrawingSelection keeps them.
+        DrawingSelection.BridgeStarted();
+        try
         {
-            try
+            await App.DocumentManager.ExecuteInCommandContextAsync(async _ =>
             {
-                Document document = App.DocumentManager.MdiActiveDocument
-                    ?? throw new InvalidOperationException("No active drawing.");
-                using DocumentLock documentLock = document.LockDocument();
-                result = query(document);
-            }
-            catch (System.Exception ex) { error = ex; }
-            await Task.CompletedTask;
-        }, null);
+                try
+                {
+                    Document document = App.DocumentManager.MdiActiveDocument
+                        ?? throw new InvalidOperationException("No active drawing.");
+                    using DocumentLock documentLock = document.LockDocument();
+                    result = query(document);
+                }
+                catch (System.Exception ex) { error = ex; }
+                await Task.CompletedTask;
+            }, null);
+        }
+        finally { DrawingSelection.BridgeEnded(); }
         if (error is not null) throw error;
         return result!;
     }
@@ -313,20 +320,26 @@ public static class PluginBridge
     {
         object? result = null;
         System.Exception? error = null;
-        await App.DocumentManager.ExecuteInCommandContextAsync(async _ =>
+        // Entering a command context clears the user's grips; DrawingSelection keeps them.
+        DrawingSelection.BridgeStarted();
+        try
         {
-            Document? document = App.DocumentManager.MdiActiveDocument;
-            try
+            await App.DocumentManager.ExecuteInCommandContextAsync(async _ =>
             {
-                if (document is null) throw new InvalidOperationException("No active drawing.");
-                using DocumentLock documentLock = document.LockDocument();
-                document.Editor.Command("_.UNDO", "_BEgin");
-                try { result = edit(document); }
-                finally { document.Editor.Command("_.UNDO", "_End"); }
-            }
-            catch (System.Exception ex) { error = ex; }
-            await Task.CompletedTask;
-        }, null);
+                Document? document = App.DocumentManager.MdiActiveDocument;
+                try
+                {
+                    if (document is null) throw new InvalidOperationException("No active drawing.");
+                    using DocumentLock documentLock = document.LockDocument();
+                    document.Editor.Command("_.UNDO", "_BEgin");
+                    try { result = edit(document); }
+                    finally { document.Editor.Command("_.UNDO", "_End"); }
+                }
+                catch (System.Exception ex) { error = ex; }
+                await Task.CompletedTask;
+            }, null);
+        }
+        finally { DrawingSelection.BridgeEnded(); }
         if (error is not null) throw error;
         return result!;
     }

@@ -1927,6 +1927,7 @@
  "plan no use": "error: 용도를 하나 이상 정해야 한다.",
  "selection none": "",
  "selection mixed": "Selected in the drawing now (3):\n- Polyline [2A1, 레이어 C-ROAD-PLAN, 꼭짓점 4, 호 0, 길이 1534.001 m]\n- Alignment 본선 [B1, 레이어 C-ROAD-CL]\n- Polyline [2A3, 레이어 0, 꼭짓점 3, 호 0, 길이 20 m, 닫힘]",
+ "selection large": "Selected in the drawing now (31):\nAll selected by type: Solid3d 30, Polyline 1\nAll selected by layer (largest 15): 우수받이 25, 터파기 토사 5, C-ROAD-PLAN 1\n- Polyline [2A1, 레이어 C-ROAD-PLAN, 꼭짓점 4, 호 0, 길이 1534.001 m]\n- Solid3d [S0, 레이어 우수받이]\n- Solid3d [S1, 레이어 우수받이]\n- Solid3d [S2, 레이어 우수받이]\n- Solid3d [S3, 레이어 우수받이]\n- 그 밖에 26개 (get_selection으로 20개까지 볼 수 있음)",
  "check 본선 지방": {
   "criteria": {
    "id": "도로구조규칙",
@@ -3059,6 +3060,64 @@
    ]
   }
  ],
+ "check all alignments": {
+  "alignments": 2,
+  "checked": 2,
+  "totals": {
+   "plan": "통과 8 · 미달 2 · 검토 0 · 판단불가 0",
+   "profile": "통과 4 · 미달 4 · 검토 0 · 판단불가 0",
+   "withFails": 2,
+   "notRoad": 0,
+   "errors": 0,
+   "missingConditions": {
+    "maxSuperelevation": 2,
+    "area": 2,
+    "roadFunction": 2,
+    "terrain": 2
+   }
+  },
+  "rows": [
+   {
+    "name": "본선",
+    "info": "Centerline · 0+000.00~1+500.00 · 1500 m · 종단 2개",
+    "recorded": "용도: 도로",
+    "designSpeed": "선형 설계속도: 0+000.00부터 80",
+    "plan": "통과 4 · 미달 1 · 검토 0 · 판단불가 0",
+    "profile": "1개 · 통과 2 · 미달 2 · 검토 0 · 판단불가 0",
+    "missing": [
+     "maxSuperelevation",
+     "area",
+     "roadFunction",
+     "terrain"
+    ],
+    "fails": [
+     "제23조① 완화곡선 설치 · 곡선 2 (0+900.00~1+050.00)",
+     "제27조② 종단곡선 최소 변화 비율(K) · 곡선 1 볼록 (VIP 0+420.00): 37.21m/% (기준 ≥ 40m/%)",
+     "제27조① 종단곡선 필요 길이 · 곡선 1 볼록 (VIP 0+420.00): 160m (기준 ≥ 172m)"
+    ]
+   },
+   {
+    "name": "A램프",
+    "info": "Centerline · 0+000.00~1+500.00 · 1500 m · 종단 2개",
+    "recorded": "용도: 도로",
+    "designSpeed": "선형 설계속도: 0+000.00부터 80",
+    "plan": "통과 4 · 미달 1 · 검토 0 · 판단불가 0",
+    "profile": "1개 · 통과 2 · 미달 2 · 검토 0 · 판단불가 0",
+    "missing": [
+     "maxSuperelevation",
+     "area",
+     "roadFunction",
+     "terrain"
+    ],
+    "fails": [
+     "제23조① 완화곡선 설치 · 곡선 2 (0+900.00~1+050.00)",
+     "제27조② 종단곡선 최소 변화 비율(K) · 곡선 1 볼록 (VIP 0+420.00): 37.21m/% (기준 ≥ 40m/%)",
+     "제27조① 종단곡선 필요 길이 · 곡선 1 볼록 (VIP 0+420.00): 160m (기준 ≥ 172m)"
+    ]
+   }
+  ],
+  "next": "Each row already has the alignment's type, stations, length, profile count, recorded conditions, and design speed; do not call get_alignment for a summary. Details, all items, and fixes: check_alignment_criteria / check_profile_criteria on one alignment. missingConditions counts alignments whose check lacked that condition (record it on the alignment or give it)."
+ },
  "create road": {
   "applied": true,
   "fix": "선형 선형-1 생성",
