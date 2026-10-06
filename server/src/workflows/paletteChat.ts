@@ -10,6 +10,7 @@ import { historyPrompt, offeredFixes, remember, status, summaryOf } from "./conv
 import { compactConversation } from "./compaction.js";
 import { candidateCommand } from "./candidateCommands.js";
 import { drawingOutline } from "../civil/drawingOutline.js";
+import { selectionOutline } from "../civil/drawingSelection.js";
 import { splitFacts } from "../knowledge/factBlock.js";
 import { addCandidates } from "../knowledge/candidateStore.js";
 import { appendFacts, knowledgePrompt, readKnowledge } from "../knowledge/knowledgeStore.js";
@@ -29,7 +30,8 @@ export type ChatProgress = { type: "progress"; text: string } | { type: "delta";
 // settled facts again, and any facts it newly confirms are added to that knowledge.
 // Practices the user states that hold beyond the drawing become knowledge candidates
 // for people to approve with /후보 (see candidateStore.ts).
-// The outline of Civil objects saves the AI a listing call before most answers.
+// The outline of Civil objects saves the AI a listing call before most answers, and the
+// current selection lets the user point at objects before asking.
 // The conversation so far goes with the question so follow-ups make sense; it is
 // part of the reuse key, so a follow-up is reused only after the same conversation.
 // After each answer, a long conversation is summarized in the background; "/compact"
@@ -55,9 +57,11 @@ export async function answerChat(provider: Provider, message: string,
     return result;
   }
 
-  const scope = await currentDrawingScope();
+  // The selection is part of the reuse key: "이걸로 선형 만들어줘" means another object
+  // once the user selects another, while the drawing revision stays the same.
+  const [scope, selection] = await Promise.all([currentDrawingScope(), selectionOutline()]);
   const earlier = historyPrompt(conversation);
-  const key = hashKey(normalizeQuestion(question), await paletteVersion(provider), ...(earlier ? [earlier] : []));
+  const key = hashKey(normalizeQuestion(question), await paletteVersion(provider), ...(earlier ? [earlier] : []), ...(selection ? [selection] : []));
 
   const cached = await findAnswer("chat", provider, key, scope);
   if (cached) {
@@ -74,6 +78,7 @@ export async function answerChat(provider: Provider, message: string,
   const [knowledge, outline] = await Promise.all([readKnowledge(scope).then(knowledgePrompt), drawingOutline()]);
   const prompt = [
     ...(outline ? [outline, ""] : []),
+    ...(selection ? [selection, ""] : []),
     ...(knowledge ? [`Drawing knowledge for ${scope.label}:`, knowledge, ""] : []),
     ...(earlier ? [earlier, ""] : []),
     "Question:",

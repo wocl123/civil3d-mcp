@@ -24,6 +24,12 @@ export function registerDrawingTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async args => toolResult(await callPlugin("drawing.objects", args)));
 
+  server.registerTool("get_selection", {
+    title: "Current selection",
+    description: "Read the objects the user has selected in the drawing (with grips) right now: handle, type, layer, Civil object name, and for 2D polylines vertex and arc counts, length, and whether closed. Up to 20 are listed with the total count.",
+    annotations: { readOnlyHint: true, openWorldHint: false }
+  }, async () => toolResult(await callPlugin("drawing.selection")));
+
   server.registerTool("get_drawing_object", {
     title: "Inspect drawing object",
     description: "Read one Model Space or COGO point object by handle, including available geometry and bounds.",

@@ -23,7 +23,7 @@ try {
   assert.ok(client.getServerCapabilities()?.tools);
   const tools = await client.listTools();
   assert.deepEqual(tools.tools.map(tool => tool.name).sort(),
-    ["apply_drawing_change", "check_alignment_criteria", "check_profile_criteria", "get_active_drawing", "get_alignment", "get_alignment_section", "get_drawing_object", "get_profile", "get_profile_section", "list_alignments", "list_drawing_layers", "list_drawing_objects", "list_polylines", "pick_polyline", "plan_alignment_from_polyline", "read_knowledge_rule"]);
+    ["apply_drawing_change", "check_alignment_criteria", "check_profile_criteria", "get_active_drawing", "get_alignment", "get_alignment_section", "get_drawing_object", "get_profile", "get_profile_section", "get_selection", "list_alignments", "list_drawing_layers", "list_drawing_objects", "list_polylines", "pick_polyline", "plan_alignment_from_polyline", "read_knowledge_rule"]);
 } finally {
   clearTimeout(timeout);
   await client.close();
@@ -39,7 +39,7 @@ await paletteClient.connect(new StdioClientTransport({
 try {
   const paletteTools = (await paletteClient.listTools()).tools;
   assert.deepEqual(paletteTools.map(tool => tool.name).sort(),
-    ["apply_drawing_change", "check_alignment_criteria", "check_profile_criteria", "get_active_drawing", "get_alignment", "get_alignment_section", "get_drawing_object", "get_profile", "get_profile_section", "list_alignments", "list_drawing_layers", "list_drawing_objects", "list_polylines", "pick_polyline", "plan_alignment_from_polyline", "read_knowledge_rule"]);
+    ["apply_drawing_change", "check_alignment_criteria", "check_profile_criteria", "get_active_drawing", "get_alignment", "get_alignment_section", "get_drawing_object", "get_profile", "get_profile_section", "get_selection", "list_alignments", "list_drawing_layers", "list_drawing_objects", "list_polylines", "pick_polyline", "plan_alignment_from_polyline", "read_knowledge_rule"]);
   assert.deepEqual(paletteTools.filter(tool => tool.annotations?.readOnlyHint !== true).map(tool => tool.name), ["apply_drawing_change"]);
   assert.ok(paletteTools.every(tool => tool.annotations?.openWorldHint === false));
 } finally {

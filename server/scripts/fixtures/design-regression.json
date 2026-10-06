@@ -1925,6 +1925,8 @@
  },
  "plan closed": "error: 닫힌 폴리라인은 선형으로 만들지 않는다. 열린 폴리라인을 쓰세요.",
  "plan no use": "error: 용도를 하나 이상 정해야 한다.",
+ "selection none": "",
+ "selection mixed": "Selected in the drawing now (3):\n- Polyline [2A1, 레이어 C-ROAD-PLAN, 꼭짓점 4, 호 0, 길이 1534.001 m]\n- Alignment 본선 [B1, 레이어 C-ROAD-CL]\n- Polyline [2A3, 레이어 0, 꼭짓점 3, 호 0, 길이 20 m, 닫힘]",
  "check 본선 지방": {
   "criteria": {
    "id": "도로구조규칙",

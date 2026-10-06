@@ -18,6 +18,7 @@ public sealed class PluginEntry : IExtensionApplication
         try
         {
             DrawingRevisions.Start();
+            DrawingSelection.Start();
             PluginBridge.Start();
             NodeService.Start();
         }

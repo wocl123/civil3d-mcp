@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startFakeCivil } from './fixtures/fake-civil.mjs';
+import { setSelection, startFakeCivil } from './fixtures/fake-civil.mjs';
 
 const snapshotFile = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'design-regression.json');
 const update = process.argv.includes('--update');
@@ -23,6 +23,7 @@ const { checkProfileCriteria } = await import('../build/criteria/profileCriteria
 const { storeFix } = await import('../build/changes/changeStore.js');
 const { applyFix } = await import('../build/changes/applyChange.js');
 const { ReportBuilder } = await import('../build/criteria/reportBuilder.js');
+const { selectionOutline } = await import('../build/civil/drawingSelection.js');
 const { loadCriteria, table } = await import('../build/criteria/criteriaStore.js');
 
 // Values that change from run to run.
@@ -63,6 +64,11 @@ try {
   await record('plan 고속 too fast', () => planAlignmentLayout({ ...road, roadClass: '주간선도로(고속국도)', region: '도시지역', designSpeed: 120 }));
   await record('plan closed', () => failure(() => planAlignmentLayout({ polyline: '2A3', uses: ['기타'] })));
   await record('plan no use', () => failure(() => planAlignmentLayout({ polyline: '2A1', uses: [] })));
+
+  await record('selection none', () => selectionOutline());
+  setSelection(['2A1', 'B1', '2A3']);
+  await record('selection mixed', () => selectionOutline());
+  setSelection([]);
 
   await record('check 본선 지방', () => checkAlignmentCriteria({ alignment: '본선', area: '지방지역(그 밖)' }));
   await record('check 본선 100 도시', () => checkAlignmentCriteria({ alignment: '본선', designSpeed: 100, maxSuperelevation: 6, area: '도시지역' }));

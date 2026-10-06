@@ -6,6 +6,10 @@ import { applyChanges, handle as handleAlignment } from './fake-alignment.mjs';
 import { handlePolyline } from './fake-polyline.mjs';
 
 const token = 'a'.repeat(64);
+let selected = [];
+
+// Handles the fake drawing has selected, as a user selecting before asking.
+export function setSelection(handles) { selected = handles; }
 const alignments = { drawingName: 'FAKE-SITE.dwg', offset: 0, limit: 200, totalCount: 2, items: [
   { name: '본선', handle: 'B1', type: 'Centerline' }, { name: 'A램프', handle: 'B2', type: 'Centerline' }] };
 
@@ -14,6 +18,11 @@ function answer(request) {
     case 'change.apply': return applyChanges(request);
     case 'drawing.status': return { drawingName: 'FAKE-SITE.dwg', filePath: 'D:/fake/FAKE-SITE.dwg', civilDocumentAvailable: true, revision: 'sess1-42' };
     case 'alignment.list': return handlePolyline(request) ?? alignments;
+    case 'drawing.selection': return { drawingName: 'FAKE-SITE.dwg', totalCount: selected.length, items: selected.map(handle => {
+      const polyline = handlePolyline({ method: 'drawing.polylines', params: { limit: 50 } }).items.find(item => item.handle === handle);
+      return polyline ? { handle, type: 'Polyline', layer: polyline.layer, name: null, polyline }
+        : { handle, type: 'Alignment', layer: 'C-ROAD-CL', name: '본선', polyline: null };
+    }) };
     default: return handlePolyline(request) ?? handleAlignment(request) ?? { totalCount: 0, items: [] };
   }
 }

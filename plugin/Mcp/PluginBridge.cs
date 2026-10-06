@@ -196,6 +196,7 @@ public static class PluginBridge
                 "alignment.create" => await InDocumentEditAsync(doc => AlignmentCreation.Create(doc, ReadCreate(parameters))),
                 "drawing.pick_polyline" => await InDocumentContextAsync(doc => DrawingPicker.PickPolyline(
                     doc, parameters?["message"]?.ToString(), Math.Clamp(ReadInt(parameters?["timeoutSeconds"], 90), 10, 110))),
+                "drawing.selection" => await InDocumentContextAsync(doc => DrawingSelection.Get(doc)),
                 "drawing.polylines" => await InDocumentContextAsync(doc => DrawingQueries.GetPolylines(
                     doc,
                     ReadInt(parameters?["offset"], 0),
