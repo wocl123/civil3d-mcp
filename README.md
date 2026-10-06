@@ -243,7 +243,7 @@ gives is checked against it; the proviso allows up to 20 km/h less. Roads inside
 housing estates take the LH ceiling of 20 km/h. Urban areas also settle the maximum
 superelevation. The uses and conditions are written to the alignment's Description,
 for example "용도: 도로, 관망 / 기준: LH_설계지침_토목 / 도로 구분: 집산도로 / 지역:
-도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%" (`server/src/design/alignmentRecord.ts`).
+도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%" (`server/src/civil/alignmentRecord.ts`).
 Later checks read them (and say so in their notes), so nobody is asked again; the
 profile check derives its road function and terrain from them. With 도로 the alignment is a Centerline laid
 out to the criteria; otherwise it is a Utility alignment with curves only where asked.
@@ -382,6 +382,11 @@ From `server`, `npm run smoke` verifies the MCP initialize handshake and tool di
 `npm run smoke:usage` checks token and quota response parsing.
 `npm run smoke:memory` checks answer reuse rules; `npm run smoke:knowledge` checks
 drawing knowledge files, the facts block, and common rules.
+`npm run test:design` runs the design calculations (polyline paths, alignment plans,
+criteria checks, fixes, creation and recheck) against a fake Civil 3D and compares
+every result with `scripts/fixtures/design-regression.json`. Run it after any change to
+the calculations; after an intended change, `node scripts/design-regression.mjs --update`
+rewrites the snapshot, and its git diff shows exactly what changed.
 The MCP entry point is `node build/index.js`. Its tools are:
 
 | Tool | Result |
