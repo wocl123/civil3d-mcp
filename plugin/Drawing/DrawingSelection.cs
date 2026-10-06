@@ -37,23 +37,6 @@ internal static class DrawingSelection
 
     public static bool BridgeRunning => Volatile.Read(ref _bridgeRequests) > 0;
 
-    // After an AI answer: the requests it made dropped the user's grips, so they are shown
-    // again on what the user had selected, as long as the user has not selected anything since.
-    public static void RestoreGrips()
-    {
-        Document? document = App.DocumentManager.MdiActiveDocument;
-        if (document is null || !Selected.TryGetValue(document, out ObjectId[]? ids)) return;
-        ObjectId[] valid = ids.Where(id => id.IsValid && !id.IsErased && id.Database == document.Database).ToArray();
-        if (valid.Length == 0) return;
-        try
-        {
-            PromptSelectionResult current = document.Editor.SelectImplied();
-            if (current.Status == PromptStatus.OK && current.Value.Count > 0) return;
-            document.Editor.SetImpliedSelection(valid);
-        }
-        catch (System.Exception) { /* Grips are only a view; the recorded selection stays. */ }
-    }
-
     private static bool BridgeClearing =>
         Volatile.Read(ref _bridgeRequests) > 0 || Environment.TickCount64 - Interlocked.Read(ref _bridgeEndedAt) < BridgeGraceMs;
 

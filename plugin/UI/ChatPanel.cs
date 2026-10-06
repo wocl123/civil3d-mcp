@@ -325,8 +325,6 @@ internal sealed class ChatPanel : UserControl
         finally
         {
             DrawingGuard.End();
-            // The requests made for this answer dropped the user's grips; show them again.
-            DrawingSelection.RestoreGrips();
             SetBusy(false);
             _input.Focus();
         }
