@@ -31,7 +31,7 @@ await new Promise(resolve => availablePort.close(resolve));
 
 const child = spawn(process.execPath, ['build/localService.js'], {
   cwd: new URL('../', import.meta.url),
-  env: { ...process.env, MY_CIVIL3D_CONNECTION_FILE: join(temporary, 'connection.json'), MY_CIVIL3D_SERVICE_PORT: String(uiPort) },
+  env: { ...process.env, MY_CIVIL3D_CONNECTION_FILE: join(temporary, 'connection.json'), MY_CIVIL3D_SERVICE_PORT: String(uiPort), MY_CIVIL3D_DATA_DIR: join(temporary, 'data'), MY_CIVIL3D_SYNC: 'off' },
   stdio: ['ignore', 'ignore', 'pipe'],
   windowsHide: true
 });

@@ -6,6 +6,7 @@ import { hashKey } from "../memory/memoryStore.js";
 import type { DrawingScope } from "../memory/types/DrawingScope.js";
 import type { FactProposal } from "./types/FactProposal.js";
 import type { KnowledgeFact } from "./types/KnowledgeFact.js";
+import { validParameter } from "./parameters.js";
 
 // Knowledge has two layers: rules/ for common rules (rulesStore.ts) and
 // drawings/ with one Markdown file per drawing for facts confirmed by the user or read from
@@ -83,8 +84,10 @@ function validProposal(value: unknown): FactProposal | undefined {
   if (!title || !content || HEDGED.test(content)) return undefined;
   const general = item.scope === "general";
   if (general && item.basis !== "user_answer") return undefined;
+  const parameter = general ? validParameter(item.parameter) : undefined;
   return {
     ...(general ? { scope: "general" as const } : {}),
+    ...(parameter ? { parameter } : {}),
     title, content, basis: item.basis,
     evidence: typeof item.evidence === "string" ? oneLine(item.evidence, 200) : "",
     replaces: typeof item.replaces === "string" && /^F-[\w-]+$/.test(item.replaces) ? item.replaces : undefined

@@ -1,16 +1,17 @@
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { dataDir } from "../paths.js";
 import type { CheckItem } from "../criteria/types/CheckItem.js";
 import type { FixOption } from "../criteria/types/FixOption.js";
 import type { StoredFix, FixSource } from "./types/StoredFix.js";
 import type { ChangeLogEntry } from "./types/ChangeLogEntry.js";
 import { supported } from "./describe.js";
+import { logChangeEntry, recentLines } from "../logs/workLog.js";
 
 // Fixes computed by the check tools are stored under data/changes/fixes with an id, so the
 // AI can name one without restating its values, and the check that produced it can run
-// again after the fix is applied. Every apply attempt is logged in data/changes/log.jsonl.
+// again after the fix is applied. Every apply attempt is logged in data/logs/<date>/changes.jsonl.
 // The MCP server (which checks and applies) and the palette service share these files.
 const KEEP_MS = 2 * 24 * 60 * 60 * 1000;
 
@@ -35,7 +36,9 @@ export async function registerFixes(items: CheckItem[], source: FixSource): Prom
 export async function storeFix(fix: FixOption, target: string, check: string, source: FixSource): Promise<void> {
   await removeOld(dir("fixes"));
   await mkdir(dir("fixes"), { recursive: true });
-  fix.id = "fx-" + createHash("sha256").update(JSON.stringify(fix.create ?? fix.changes)).digest("hex").slice(0, 10);
+  // The request is part of the id: the same fix computed again in a later answer gets its own
+  // id, so the ids offered in one answer are never taken over by another.
+  fix.id = "fx-" + createHash("sha256").update(requestId() + JSON.stringify(fix.create ?? fix.changes)).digest("hex").slice(0, 10);
   fix.applicable = fix.status !== "conflict" &&
     (fix.create !== undefined || (fix.changes.length > 0 && fix.changes.every(supported)));
   const stored: StoredFix = { ...fix, id: fix.id, applicable: fix.applicable, target, check,
@@ -62,15 +65,11 @@ export async function fixesFor(id: string): Promise<StoredFix[]> {
 }
 
 export async function logChange(entry: Omit<ChangeLogEntry, "at" | "requestId">): Promise<void> {
-  const line: ChangeLogEntry = { at: new Date().toISOString(), requestId: requestId(), ...entry };
-  await mkdir(dirname(dir("log.jsonl")), { recursive: true });
-  await appendFile(dir("log.jsonl"), JSON.stringify(line) + "\n", "utf8");
+  await logChangeEntry({ requestId: requestId(), ...entry });
 }
 
 // Changes applied during one palette request, for the note under the answer.
 export async function appliedFor(id: string): Promise<ChangeLogEntry[]> {
-  const text = await readFile(dir("log.jsonl"), "utf8").catch(() => "");
-  return text.split("\n").filter(Boolean).slice(-200)
-    .map(line => JSON.parse(line) as ChangeLogEntry)
+  return (await recentLines("changes.jsonl") as ChangeLogEntry[])
     .filter(entry => entry.requestId === id && entry.state === "applied");
 }

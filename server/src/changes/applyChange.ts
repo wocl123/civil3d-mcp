@@ -8,6 +8,7 @@ import { describe, describeCreate } from "./describe.js";
 import { failureGuide } from "../errors/failureGuide.js";
 import type { ChangeLogEntry } from "./types/ChangeLogEntry.js";
 import type { StoredFix } from "./types/StoredFix.js";
+import { trackApplied } from "../tracking/trackApplied.js";
 
 // "곡선 2 (0+900.00~1+050.00)" → "곡선 2": a new radius moves the curve's end station,
 // so the same curve is found again by its number.
@@ -36,11 +37,12 @@ export async function applyFix(fixId: string, offered: string[]) {
       })) }) as ChangeLogEntry["result"];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await logChange({ fixId, state: "failed", title: fix.title, target: fix.target, labels, error: message });
+    await logChange({ fixId, state: "failed", title: fix.title, target: fix.target, check: fix.check, labels, error: message });
     const guide = failureGuide(message);
     return { applied: false, fix: fix.title, error: message, drawingChanged: guide.drawingChanged, guide };
   }
-  await logChange({ fixId, state: "applied", title: fix.title, target: fix.target, labels, result });
+  await logChange({ fixId, state: "applied", title: fix.title, target: fix.target, check: fix.check, labels, result });
+  await trackApplied(fix, result);
   return { applied: true, fix: fix.title, ...(result?.created ? { created: result.created } : { changes: result?.changes }),
     undo: "Ctrl+Z 한 번(또는 UNDO 1)으로 되돌릴 수 있음",
     recheck: fix.source.check === "none" ? "용도에 도로가 없어 설계 기준 검토 없음" : await recheck(fix) };

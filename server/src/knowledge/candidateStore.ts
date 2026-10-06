@@ -4,6 +4,7 @@ import { writeAtomic } from "../files.js";
 import { knowledgeDir } from "./knowledgeStore.js";
 import { rulesDir } from "./rulesStore.js";
 import type { FactProposal } from "./types/FactProposal.js";
+import { PARAMETERS, setLocalParameter, type ParameterKey } from "./parameters.js";
 
 // General knowledge goes through people before the AI uses it. When the user states a
 // practice that holds beyond one drawing ("반지름은 10 m 단위로 올린다"), the AI proposes
@@ -11,10 +12,16 @@ import type { FactProposal } from "./types/FactProposal.js";
 // approves or rejects them; approved ones are added to the common rule
 // 승인된_지식.md, which goes into every request. A misunderstanding in one
 // conversation therefore never spreads to every drawing on its own.
+// A candidate with a parameter also sets that setting on this PC when approved.
+// Pending candidates are also sent, de-identified, to the central server (sync/syncLoop.ts),
+// where a reviewer decides whether every install gets them; submittedAt records that.
+// One rejected here before it was sent is never sent.
 export type Candidate = {
   id: string; title: string; content: string; evidence: string;
   drawing: string; provider: string; at: string;
+  parameter?: { key: ParameterKey; value: number };
   status: "pending" | "approved" | "rejected"; decidedAt?: string;
+  submittedAt?: string;
 };
 
 const file = () => join(knowledgeDir(), "candidates.json");
@@ -49,7 +56,7 @@ export async function addCandidates(proposals: FactProposal[], drawing: string, 
       if (list.some(item => item.status !== "rejected" && item.content === proposal.content)) continue;
       const id = `C-${stamp}-${next++}`;
       list.push({ id, title: proposal.title, content: proposal.content, evidence: proposal.evidence, drawing, provider,
-        at: new Date().toISOString(), status: "pending" });
+        ...(proposal.parameter ? { parameter: proposal.parameter } : {}), at: new Date().toISOString(), status: "pending" });
       added.push(id);
     }
     if (added.length) await save(list);
@@ -84,6 +91,8 @@ export async function decideCandidates(ids: string[], decision: "approved" | "re
       const date = now.toLocaleString("sv-SE").slice(0, 10);
       const lines = decided.map(item => `- ${item.content} (${item.id}, 승인 ${date})`).join("\n");
       await writeAtomic(rule, text.trimEnd() + "\n\n" + lines + "\n");
+      for (const item of decided)
+        if (item.parameter) await setLocalParameter(item.parameter.key, item.parameter.value, item.id);
     }
     await save(list);
   }).catch(error => {
@@ -93,6 +102,38 @@ export async function decideCandidates(ids: string[], decision: "approved" | "re
   await writing;
   return decided;
 }
+
+// Candidates not yet sent to the central server, and marking them sent.
+export async function unsentCandidates(): Promise<Candidate[]> {
+  return (await load()).filter(item => !item.submittedAt && item.status !== "rejected");
+}
+
+export async function markSubmitted(ids: string[]): Promise<void> {
+  writing = writing.then(async () => {
+    const list = await load();
+    const now = new Date().toISOString();
+    for (const item of list) if (ids.includes(item.id)) item.submittedAt = now;
+    await save(list);
+  }).catch(error => process.stderr.write(`MyCivil3DMcp knowledge candidates were not updated: ${String(error)}\n`));
+  await writing;
+}
+
+// Decided candidates older than the given age are dropped; pending ones always stay.
+export async function pruneCandidates(maxAgeMs: number): Promise<number> {
+  let removed = 0;
+  writing = writing.then(async () => {
+    const list = await load();
+    const now = Date.now();
+    const kept = list.filter(item => item.status === "pending" || !item.decidedAt || now - Date.parse(item.decidedAt) < maxAgeMs);
+    removed = list.length - kept.length;
+    if (removed) await save(kept);
+  }).catch(error => process.stderr.write(`MyCivil3DMcp knowledge candidates were not pruned: ${String(error)}\n`));
+  await writing;
+  return removed;
+}
+
+export const parameterText = (parameter?: Candidate["parameter"]) =>
+  parameter ? `${PARAMETERS[parameter.key].label} = ${parameter.value}` : undefined;
 
 // Size of the approved rule, which shares the always-included rules' room in every request.
 export async function approvedSize(): Promise<number> {

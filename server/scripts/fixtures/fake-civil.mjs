@@ -8,6 +8,10 @@ import { created, handlePolyline, polylines } from './fake-polyline.mjs';
 
 const token = 'a'.repeat(64);
 let selected = [];
+let revision = 42;
+
+// The drawing's revision, which the plug-in raises on every edit; tests raise it after a fake user edit.
+export function bumpRevision() { revision++; }
 
 // Handles the fake drawing has selected, as a user selecting before asking.
 export function setSelection(handles) { selected = handles; }
@@ -17,7 +21,7 @@ const alignments = { drawingName: 'FAKE-SITE.dwg', offset: 0, limit: 200, totalC
 function answer(request) {
   switch (request.method) {
     case 'change.apply': return applyChanges(request);
-    case 'drawing.status': return { drawingName: 'FAKE-SITE.dwg', filePath: 'D:/fake/FAKE-SITE.dwg', civilDocumentAvailable: true, revision: 'sess1-42' };
+    case 'drawing.status': return { drawingName: 'FAKE-SITE.dwg', filePath: 'D:/fake/FAKE-SITE.dwg', civilDocumentAvailable: true, revision: `sess1-${revision}` };
     case 'alignment.list': return handlePolyline(request) ?? alignments;
     case 'drawing.capture': return capture(request.params ?? {}, polylines, [...created.values()]);
     case 'drawing.selection': return { drawingName: 'FAKE-SITE.dwg', totalCount: selected.length, items: selected.map(handle => {

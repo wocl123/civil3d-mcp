@@ -46,10 +46,16 @@ server/src/
   criteria/       design criteria data access and the code that compares drawings with it
   design/         layouts planned in code before anything is drawn (alignment from polyline)
   changes/        stored fixes and plans, applying them, and the change log
-  knowledge/      per-drawing knowledge files and the AI facts block
+  knowledge/      per-drawing knowledge, candidates, settings (parameters), central knowledge
   memory/         palette answer reuse and drawing state
+  data/           anonymous install id, central server settings, words never to send
+  logs/           local work logs (never leave this PC as they are)
+  tracking/       values the AI set, read again to see whether people changed them
+  sync/           de-identified records, outbox, central server client, retention
 server/skills/    palette AI skill shared by Claude, Codex, and Gemini
 server/knowledge-defaults/  common rules and criteria tables installed into data/knowledge
+central/src/      central server: enrolment, records, candidates, review, statistics
+docs/             design documents (데이터관리_설계.md)
 ```
 
 `server/src/index.ts`, `server/src/localService.ts`, and
@@ -115,14 +121,14 @@ for five minutes.
 
 ## Palette AI, MCP, and memory
 
-The service keeps its data in the `data` folder of the installation, beside
-`server` and `plugin`, so it moves and backs up with it: `data\palette-memory.json`,
-`data\knowledge`, and `data\ai-workspace`. If that folder cannot be written, for
-example under Program Files, the service uses `%LOCALAPPDATA%\MyCivil3DMcp\data`
-instead. Set `MY_CIVIL3D_DATA_DIR` before opening Civil 3D to choose another
-folder, such as a shared team folder. The connection file with the session token
-stays in `%LOCALAPPDATA%\MyCivil3DMcp`, because it belongs to one user's session.
-The `data` folder is excluded from Git.
+All user data lives in one folder per Windows user,
+`%LOCALAPPDATA%\MyCivil3DMcp\data`, never in the installation folder, so it is
+never split between two places: answer memory, knowledge, logs, tracking of AI
+results, the outgoing queue, and the AI workspace. Set `MY_CIVIL3D_DATA_DIR`
+before opening Civil 3D to choose another folder. The connection file with the
+session token stays in `%LOCALAPPDATA%\MyCivil3DMcp`. How data is stored,
+de-identified, sent to the central server, and deleted is specified in
+[docs/데이터관리_설계.md](docs/데이터관리_설계.md).
 
 Palette chat questions reach the selected CLI with this project's MCP server in
 its read-only `palette` profile (`MY_CIVIL3D_MCP_PROFILE=palette`). That profile
@@ -221,7 +227,8 @@ there is no separate button. The AI never sends values to the drawing:
 4. The same check then runs again, and the answer says whether the target now
    passes. If it still fails, the AI explains why and asks what to do next
    (another fix, a change by hand, or undo). The palette shows a note with what
-   changed and how to undo it. Every attempt is logged in `data\changes\log.jsonl`.
+   changed and how to undo it. Every attempt is logged in `data\logs\<date>\changes.jsonl`, and the values set
+   are tracked to see whether people change them later (`server/src/tracking`).
 
 `apply_drawing_change` is the only tool in the palette profile that is not
 read-only. Applied automatically today: PVI elevation, vertical curve length (at
@@ -347,11 +354,12 @@ included. Every MCP tool call of a palette request is written to
 (`server/src/mcp/toolLog.ts`). The logs stay on this PC and are never put into a
 prompt. They are for finding where answers fail, ask too much, or are slow, for
 spotting repeated work worth automating, for re-running real questions after a
-change, and for tracing what was done when. Nothing deletes them yet.
+change, and for tracing what was done when. Log folders older than 30 days are
+removed; de-identified copies go to the central server (see below).
 
 ### Answer reuse
 
-`data\palette-memory.json` keeps recent answers. The same
+`data\memory\answers.json` keeps recent answers. The same
 question (ignoring spacing and punctuation) to the same AI on an unchanged
 drawing is answered from it without an AI request. Each AI keeps its own
 answers, because AIs can answer differently. The plug-in counts object
@@ -378,6 +386,53 @@ use `/stats model` in Gemini for its interactive report.
 If Civil 3D already loaded an earlier version of the DLL, restart Civil 3D
 before loading the rebuilt DLL.
 
+## Central server and learning from other users
+
+`central/` is a small server (Node 20, no packages, files for storage) that
+collects de-identified records from every install and serves the knowledge a
+reviewer approved. Step-by-step setup on a laptop or any PC, changing its address,
+and moving it: [docs/중앙서버_설정_가이드.md](docs/중앙서버_설정_가이드.md).
+The quickest start is `central\start-central.bat` (run as administrator to open
+the firewall port). By hand:
+
+```powershell
+cd .\central
+npm install
+npm run build
+$env:CENTRAL_HOST = "0.0.0.0"   # default 127.0.0.1 (this PC only)
+npm start                        # port 48950, or set CENTRAL_PORT
+```
+
+Where it listens and keeps data is set in `central\settings.json` (made on first
+start); its keys are in `<data>\config.json` and move with the data folder. It speaks plain HTTP; across the internet, put an
+HTTPS proxy in front. Palette commands (answered without an AI):
+
+| Command | What it does |
+|---|---|
+| `/중앙` | connection, anonymous install id, queued and blocked packages |
+| `/중앙 연결 <address> <enrol key>` | enrol this PC; the key itself is not stored |
+| `/중앙 주소 <address>` | the server moved: new address, same enrolment |
+| `/중앙 끊기`, `/중앙 켜기`, `/중앙 동기화` | stop, resume, or sync now |
+| `/중앙 검토자 <key>` | make this PC the reviewer |
+| `/검토`, then `1 승인` / `2 반려 <reason>`; `/검토 보고` | review (reviewer only) |
+| `/설정값` | settings in force and where they come from |
+
+Every 10 minutes and shortly after each answer, the local service turns new log
+lines into records built from allowed fields only, checks the whole package for
+paths, file names, mail addresses, user, PC, and drawing names, and sends it.
+Question and answer text, drawing names, coordinates, and handles never leave
+the PC; a package that fails the check stays in `data\outbox\blocked`. Nothing
+is lost while the server is unreachable.
+
+Learning works in two ways. Knowledge candidates from several installs are
+grouped by content, so the reviewer sees how many installs stated the same
+practice. Values the AI set in a drawing are read again later; when people on
+several installs keep changing them the same way (for example radii to multiples
+of 10), the server proposes the matching setting. Only what the reviewer
+approves reaches installs, as `rules\중앙_지식.md` and central settings.
+Settings (`server/src/knowledge/parameters.ts`) are what code reads directly,
+such as the radius rounding step; this PC's approvals come before central ones.
+
 ## MCP stdio entry point and tests
 
 From `server`, `npm run smoke` verifies the MCP initialize handshake and tool discovery;
@@ -390,6 +445,11 @@ criteria checks, fixes, creation and recheck) against a fake Civil 3D and compar
 every result with `scripts/fixtures/design-regression.json`. Run it after any change to
 the calculations; after an intended change, `node scripts/design-regression.mjs --update`
 rewrites the snapshot, and its git diff shows exactly what changed.
+`npm run test:central` starts the central server and two simulated installs, and
+checks the whole data flow: de-identification (nothing private reaches the server),
+tracking of a person's change to an AI-created alignment, candidate grouping and the
+setting proposal, review, central knowledge and settings reaching the other install,
+the server's refusals, and clean-up of old logs.
 `npm run test:tools` calls each tool through MCP against the same fake and fails when
 a tool returns more text than its budget: tool output is the AI's context, so its size is
 paid on every call. The plug-in leaves absent values out of its JSON, and fixes and plans

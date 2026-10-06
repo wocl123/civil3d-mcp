@@ -9,3 +9,5 @@
 *.log
 *.gz
 **/.vs/
+/central/data/
+/central/settings.json

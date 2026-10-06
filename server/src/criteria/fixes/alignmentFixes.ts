@@ -1,6 +1,7 @@
 import type { AlignmentCurve } from "../../civil/types/AlignmentCurve.js";
 import type { AlignmentElement } from "../../civil/types/AlignmentElement.js";
 import type { FixOption } from "../types/FixOption.js";
+import { step } from "../../knowledge/parameters.js";
 import { arcExternal, arcLength, arcTangent, ceilTo, curveTangent, radians, round, spiralShift } from "../../geometry.js";
 
 export type CurveContext = { handle: string; curve: AlignmentCurve; elements: AlignmentElement[] };
@@ -31,14 +32,15 @@ function tangentCheck(fix: FixOption, growth: number, room: { before: number; af
 // length is checked against the straights on both sides.
 function largerRadius(context: CurveContext, radius: number, title: string): FixOption {
   const { simpleArc, arcs, room } = layout(context);
-  const target = ceilTo(radius);
+  const notes: string[] = [];
+  const target = ceilTo(radius, step("alignment.radiusStep", 1, notes));
   if (!simpleArc || simpleArc.radius === undefined || simpleArc.deltaDeg === undefined) {
     return {
       title,
       changes: arcs.map(arc => ({ object: { kind: "alignmentArc" as const, handle: context.handle, at: arc.startStation }, property: "radius", from: arc.radius, to: target, unit: "m" })),
       status: "unverified",
       reason: "완화곡선이 있는 곡선은 접선장 변화를 계산하지 않음. 완화곡선 파라미터 A도 함께 바뀜",
-      effects: []
+      effects: notes
     };
   }
   const delta = Math.abs(simpleArc.deltaDeg);
@@ -52,7 +54,8 @@ function largerRadius(context: CurveContext, radius: number, title: string): Fix
       `교각 ${round(delta, 4)}° 유지`,
       `접선장 T ${round(before)} → ${round(after)} m`,
       `곡선 길이 ${round(simpleArc.length)} → ${round(arcLength(target, delta))} m`,
-      `외할 E ${round(simpleArc.external ?? arcExternal(simpleArc.radius, delta))} → ${round(arcExternal(target, delta))} m (계산값)`
+      `외할 E ${round(simpleArc.external ?? arcExternal(simpleArc.radius, delta))} → ${round(arcExternal(target, delta))} m (계산값)`,
+      ...notes
     ]
   }, after - before, room);
 }
@@ -76,7 +79,8 @@ export function addSpiralFixes(context: CurveContext, minSpiral: number): FixOpt
   if (!simpleArc?.radius || simpleArc.deltaDeg === undefined) return [];
   const radius = simpleArc.radius;
   const delta = Math.abs(simpleArc.deltaDeg);
-  const length = ceilTo(minSpiral);
+  const notes: string[] = [];
+  const length = ceilTo(minSpiral, step("alignment.spiralStep", 1, notes));
   const parameter = ceilTo(Math.sqrt(radius * length));
   const shift = spiralShift(radius, length);
   const growth = curveTangent({ radius, spiral: length }, radians(delta)) - curveTangent({ radius, spiral: 0 }, radians(delta));
@@ -91,7 +95,8 @@ export function addSpiralFixes(context: CurveContext, minSpiral: number): FixOpt
     effects: [
       `완화곡선 길이 ${length} m, 파라미터 A ${parameter} (R ${round(radius)} 유지)`,
       `이정량 p ${round(shift)} m, 접선장 약 ${round(growth)} m 증가 (근사 계산값)`,
-      `원곡선 교각 ${round(delta, 4)}° → ${round(delta - spiralAngle, 4)}°`
+      `원곡선 교각 ${round(delta, 4)}° → ${round(delta - spiralAngle, 4)}°`,
+      ...notes
     ]
   };
   if (spiralAngle >= delta) {
@@ -105,13 +110,14 @@ export function addSpiralFixes(context: CurveContext, minSpiral: number): FixOpt
 // 제23조②: spiral too short. Keeping the radius, A = √(R·Ls).
 export function spiralLengthFixes(context: CurveContext, spiral: AlignmentElement, minSpiral: number): FixOption[] {
   const radius = layout(context).arcs[0]?.radius;
-  const length = ceilTo(minSpiral);
+  const notes: string[] = [];
+  const length = ceilTo(minSpiral, step("alignment.spiralStep", 1, notes));
   return [{
     title: "완화곡선 길이 늘리기",
     changes: [{ object: { kind: "alignmentSpiral", handle: context.handle, at: spiral.startStation }, property: "length", from: round(spiral.length), to: length, unit: "m" }],
     status: "unverified",
     reason: "완화곡선이 길어지면 원곡선 길이와 접선장이 함께 바뀜",
-    effects: radius ? [`파라미터 A ${spiral.spiralA ? round(spiral.spiralA, 1) : "?"} → ${ceilTo(Math.sqrt(radius * length))} (R ${round(radius)} 유지, 계산값)`] : []
+    effects: radius ? [`파라미터 A ${spiral.spiralA ? round(spiral.spiralA, 1) : "?"} → ${ceilTo(Math.sqrt(radius * length))} (R ${round(radius)} 유지, 계산값)`, ...notes] : notes
   }];
 }
 

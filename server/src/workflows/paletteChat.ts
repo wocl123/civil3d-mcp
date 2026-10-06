@@ -9,6 +9,10 @@ import { toolLabel } from "./toolLabels.js";
 import { historyPrompt, offeredFixes, remember, status, summaryOf } from "./conversation.js";
 import { compactConversation } from "./compaction.js";
 import { candidateCommand } from "./candidateCommands.js";
+import { centralCommand } from "./centralCommands.js";
+import { addTerms } from "../data/terms.js";
+import { syncSoon } from "../sync/syncLoop.js";
+import { checkTracked } from "../tracking/tracker.js";
 import { drawingOutline } from "../civil/drawingOutline.js";
 import { selectionOutline } from "../civil/drawingSelection.js";
 import { splitFacts } from "../knowledge/factBlock.js";
@@ -35,18 +39,22 @@ export type ChatProgress = { type: "progress"; text: string } | { type: "delta";
 // The conversation so far goes with the question so follow-ups make sense; it is
 // part of the reuse key, so a follow-up is reused only after the same conversation.
 // After each answer, a long conversation is summarized in the background; "/compact"
-// summarizes it at once. Every turn is written to the work log (logs/workLog.ts).
+// summarizes it at once. Every turn is written to the work log (logs/workLog.ts), and a
+// sync runs shortly after (sync/syncLoop.ts). Before answering, values the AI set earlier
+// in this drawing are read again in the background to see whether people changed them.
 
 export async function answerChat(provider: Provider, message: string,
   onProgress?: (event: ChatProgress) => void, conversation?: string) {
   const question = message.trim();
   const started = Date.now();
   const requestId = randomUUID();
+  // Keys typed into /중앙 연결 and /중앙 검토자 never reach the log.
+  const logged = /^\/중앙\s+(연결|검토자)/.test(question) ? question.replace(/^(\/중앙\s+\S+).*$/s, "$1 <가림>") : question;
   const log = (entry: Record<string, unknown>) => logTurn({
-    requestId, conversation, provider, question: clip(question, 2000), ms: Date.now() - started, ...entry
+    requestId, conversation, provider, question: clip(logged, 2000), ms: Date.now() - started, ...entry
   });
 
-  const command = await candidateCommand(question, conversation);
+  const command = await centralCommand(question, conversation) ?? await candidateCommand(question, conversation);
   if (command) {
     await log({ kind: "candidates", answer: clip(command) });
     return { provider, answer: command, usage: NO_USAGE, totals: getUsageTotals(provider), cached: false, recorded: [], conversation: status(conversation) };
@@ -60,6 +68,9 @@ export async function answerChat(provider: Provider, message: string,
   // The selection is part of the reuse key: "이걸로 선형 만들어줘" means another object
   // once the user selects another, while the drawing revision stays the same.
   const [scope, selection] = await Promise.all([currentDrawingScope(), selectionOutline()]);
+  void addTerms([scope.label]);
+  void checkTracked(scope).catch(error => process.stderr.write(`MyCivil3DMcp tracking check failed: ${String(error)}
+`));
   const earlier = historyPrompt(conversation);
   const key = hashKey(normalizeQuestion(question), await paletteVersion(provider), ...(earlier ? [earlier] : []), ...(selection ? [selection] : []));
 
@@ -68,6 +79,7 @@ export async function answerChat(provider: Provider, message: string,
     remember(conversation, { provider, question, answer: cached.answer });
     void compactConversation(conversation, provider);
     await log({ kind: "chat", drawing: scope.label, cached: true, answer: clip(cached.answer) });
+    syncSoon();
     return {
       provider, answer: cached.answer, usage: NO_USAGE, totals: getUsageTotals(provider),
       cached: true, cachedAt: new Date(cached.createdAt).toISOString(), savedUsage: cached.usage, recorded: [],
@@ -106,6 +118,7 @@ export async function answerChat(provider: Provider, message: string,
     });
   } catch (error) {
     await log({ kind: "chat", drawing: scope.label, tools, error: clip(error instanceof Error ? error.message : String(error), 1000) });
+    syncSoon();
     throw error;
   }
   const totals = addUsage(provider, result.usage);
@@ -134,6 +147,7 @@ export async function answerChat(provider: Provider, message: string,
     kind: "chat", drawing: scope.label, model: await paletteModel(provider), tools, answer: clip(answer),
     applied: applied.map(entry => entry.labels.join(", ")), fixes: fixes.map(fix => fix.id), recorded, candidates, usage: result.usage
   });
+  syncSoon();
   return {
     provider, answer, usage: result.usage, totals, cached: false, recorded, candidates, conversation: status(conversation),
     applied: applied.map(entry => ({ title: entry.title, target: entry.target, labels: entry.labels }))

@@ -15,7 +15,7 @@ let writing: Promise<void> = Promise.resolve();
 
 function memoryFile(): string {
   if (process.env.MY_CIVIL3D_MEMORY_FILE) return process.env.MY_CIVIL3D_MEMORY_FILE;
-  return join(dataDir(), "palette-memory.json");
+  return join(dataDir(), "memory", "answers.json");
 }
 
 async function load(): Promise<PaletteMemory> {

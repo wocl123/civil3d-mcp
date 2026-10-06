@@ -4,6 +4,7 @@ import type { AlignmentCurve } from "../civil/types/AlignmentCurve.js";
 import type { AlignmentDesignSpeed } from "../civil/types/AlignmentDesignSpeed.js";
 import type { AlignmentElement } from "../civil/types/AlignmentElement.js";
 import type { AlignmentSuperelevation } from "../civil/types/AlignmentSuperelevation.js";
+import { loadParameters } from "../knowledge/parameters.js";
 import { findRow, loadCriteria, options, table } from "./criteriaStore.js";
 import { describeSpeeds, designSpeedLimits, speedAt } from "./designSpeed.js";
 import { addSpiralFixes, curveLengthFixes, radiusFixes, spiralLengthFixes, superelevationFixes, type CurveContext } from "./fixes/alignmentFixes.js";
@@ -30,6 +31,7 @@ const NOT_COVERED = ["곡선부 확폭", "시거(정지·앞지르기)", "편경
 // superelevation recorded in the alignment's description when it was created) or the
 // criteria (maximum superelevation by area).
 export async function checkAlignmentCriteria(given: AlignmentCriteriaInput): Promise<CriteriaReport> {
+  await loadParameters();
   const overview = await callPlugin("alignment.get", { alignment: given.alignment }) as
     { alignment: { name: string; handle: string; description?: string | null }; settings: { superelevationType: string } };
   const record = readRecord(overview.alignment.description);

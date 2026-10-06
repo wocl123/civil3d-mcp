@@ -3,6 +3,7 @@ import type { ProfilePvi } from "../../civil/types/ProfilePvi.js";
 import type { ProfileSummary } from "../../civil/types/ProfileSummary.js";
 import type { ProfileTangent } from "../../civil/types/ProfileTangent.js";
 import type { FixOption } from "../types/FixOption.js";
+import { step } from "../../knowledge/parameters.js";
 import { ceilTo, floorTo, round, station } from "../../geometry.js";
 
 export type VerticalCurveContext = {
@@ -21,7 +22,8 @@ export function verticalCurveFixes(context: VerticalCurveContext): FixOption[] {
 
 function longerCurve(context: VerticalCurveContext, change: number): FixOption {
   const { profile, curve, curves, minK, minLength } = context;
-  const required = ceilTo(Math.max(minK * change, minLength));
+  const notes: string[] = [];
+  const required = ceilTo(Math.max(minK * change, minLength), step("profile.curveLengthStep", 1, notes));
   const sorted = [...curves].sort((a, b) => a.pviStation - b.pviStation);
   const index = sorted.findIndex(item => item.number === curve.number);
   const previous = sorted[index - 1];
@@ -38,7 +40,8 @@ function longerCurve(context: VerticalCurveContext, change: number): FixOption {
     effects: [
       `곡선 구간 ${station(curve.pviStation - required / 2)}~${station(curve.pviStation + required / 2)}`,
       `K ${round(curve.k ?? curve.length / change, 1)} → ${round(required / change, 1)}`,
-      `VIP 수직거리 ${round(change * curve.length / 800)} → ${round(change * required / 800)} m (계산값)`
+      `VIP 수직거리 ${round(change * curve.length / 800)} → ${round(change * required / 800)} m (계산값)`,
+      ...notes
     ]
   };
   if (curve.curveType === "ParabolaAsymmetric") {

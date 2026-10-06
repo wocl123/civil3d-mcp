@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dataDir } from "../paths.js";
 import { knowledgeDir } from "../knowledge/knowledgeStore.js";
 import { rulesPrompt } from "../knowledge/rulesStore.js";
+import { parameterSummary } from "../knowledge/parameters.js";
 import { connectionFile } from "../bridge/pluginClient.js";
 import type { Provider } from "./types/Provider.js";
 import type { CliLaunch } from "./types/CliLaunch.js";
@@ -84,11 +85,12 @@ ${rules}
 ` : "");
 }
 
-// Changes whenever the instructions or the model change, so saved answers made
-// under an older skill, rule set, or model are not reused.
+// Changes whenever the instructions, the model, or an approved setting change, so saved
+// answers made under an older skill, rule set, model, or setting are not reused.
 export async function paletteVersion(provider: Provider): Promise<string> {
   const model = await paletteModel(provider);
-  return createHash("sha256").update(`${model.model}|${model.effort}|${await paletteInstructions()}`).digest("hex").slice(0, 16);
+  const settings = JSON.stringify(await parameterSummary());
+  return createHash("sha256").update(`${model.model}|${model.effort}|${settings}|${await paletteInstructions()}`).digest("hex").slice(0, 16);
 }
 
 // Builds the CLI arguments for the palette AI. User CLI customizations

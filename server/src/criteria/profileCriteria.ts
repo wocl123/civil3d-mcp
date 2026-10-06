@@ -1,5 +1,6 @@
 import { callPlugin } from "../bridge/pluginClient.js";
 import { gradeConditions, notRoadNote, readRecord, type AlignmentRecord } from "../civil/alignmentRecord.js";
+import { loadParameters } from "../knowledge/parameters.js";
 import { alignmentProfiles, readSection } from "../civil/civilData.js";
 import type { AlignmentDesignSpeed } from "../civil/types/AlignmentDesignSpeed.js";
 import type { ProfileCurve } from "../civil/types/ProfileCurve.js";
@@ -35,6 +36,7 @@ const GRADE_PROVISO = 1;
 // Compares design profiles with a criteria set (by default 도로구조규칙 제25·27조).
 // Without a profile, every design profile of the alignment is checked.
 export async function checkProfileCriteria(input: ProfileCriteriaInput): Promise<CriteriaReport[]> {
+  await loadParameters();
   const set = await loadCriteria(input.criteria ?? "도로구조규칙");
   let profiles: ProfileSummary[];
   if (input.profile) {

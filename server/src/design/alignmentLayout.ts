@@ -1,6 +1,7 @@
 import { callPlugin } from "../bridge/pluginClient.js";
 import { SPIRAL_REQUIRED_FROM } from "../criteria/alignmentCriteria.js";
 import { findRow, loadCriteria, options, table } from "../criteria/criteriaStore.js";
+import { loadParameters, step } from "../knowledge/parameters.js";
 import { ceilTo, curveLength, curveTangent, floorTo, radians, round, type Curve } from "../geometry.js";
 import { criteriaHeader, label } from "../criteria/reportBuilder.js";
 import { maxSuperelevation } from "../criteria/superelevation.js";
@@ -56,6 +57,7 @@ const MAX_SEARCH_RADIUS = 100000;
 // neighbours, and any straight too short for the curves on both ends. Nothing is drawn:
 // the plan's option is applied only after the user agrees (apply_drawing_change).
 export async function planAlignmentLayout(input: AlignmentLayoutInput) {
+  await loadParameters();
   const path = await readPath(input.polyline, input.reverse);
   const uses = orderUses(input.uses);
   if (uses.length === 0) throw new Error("용도를 하나 이상 정해야 한다.");
@@ -135,7 +137,7 @@ async function roadDesign(input: AlignmentLayoutInput): Promise<RoadDesign> {
   const spiralRow = findRow(spiralTable, { designSpeed: speed });
   design.limits = {
     speed, minRadius: radiusRow.value,
-    spiral: speed >= SPIRAL_REQUIRED_FROM && typeof spiralRow?.value === "number" ? ceilTo(spiralRow.value) : 0,
+    spiral: speed >= SPIRAL_REQUIRED_FROM && typeof spiralRow?.value === "number" ? ceilTo(spiralRow.value, step("alignment.spiralStep", 1, design.notes)) : 0,
     minLength: deltaDeg => {
       const row = findRow(lengthTable, { designSpeed: speed, deltaRange: deltaDeg < 5 ? "5도 미만" : "5도 이상" });
       if (row === undefined) return undefined;
@@ -199,7 +201,7 @@ function planCurves(path: Path, road: boolean, design: RoadDesign, radii: { ip: 
       if (minLength !== undefined) needs.push([(minLength - limits.spiral) / deltaRad, `제20조 곡선 최소 길이 ${round(minLength)} m`]);
       if (limits.spiral) needs.push([limits.spiral / deltaRad * 1.001, "완화곡선 두 개가 들어갈 교각"]);
       const [governing, why] = needs.reduce((a, b) => (b[0] > a[0] ? b : a));
-      const required = ceilTo(governing, 5);
+      const required = ceilTo(governing, step("alignment.radiusStep", 5, design.notes));
       planned.minRadius = required;
       if (wanted === 0) {
         planned.status = "angle_point";

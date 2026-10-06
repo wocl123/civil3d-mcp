@@ -11,6 +11,7 @@ import { getQuota } from "../ai/quota.js";
 import { answerChat } from "../workflows/paletteChat.js";
 import { clearMemory } from "../memory/memoryStore.js";
 import { forget, isConversationId } from "../workflows/conversation.js";
+import { startSyncLoop } from "../sync/syncLoop.js";
 
 const host = "127.0.0.1";
 const configuredPort = Number(process.env.MY_CIVIL3D_SERVICE_PORT ?? "48900");
@@ -140,4 +141,6 @@ const httpServer = createServer(async (request, response) => {
 
 httpServer.listen(port, host, () => {
   process.stderr.write(`MyCivil3DMcp local service: ${host}:${port}\n`);
+  // Tracking checks, outgoing packages, central knowledge, and clean-up (docs/데이터관리_설계.md §8).
+  if (process.env.MY_CIVIL3D_SYNC !== "off") startSyncLoop();
 });
