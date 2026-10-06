@@ -31,7 +31,7 @@ export class ReportBuilder {
   readonly notes: string[] = [];
   readonly conditions: Record<string, ConditionValue | string> = {};
 
-  constructor(private readonly set: CriteriaSet, private readonly target: string) {
+  constructor(private readonly set: CriteriaSet, private readonly target: string, private readonly notCovered: string[] = []) {
     if (!set.reviewed) this.notes.push("기준표는 원문에서 옮긴 값이며 사람 검토 전이다.");
     this.notes.push(...(set.notes ?? []));
   }
@@ -39,7 +39,7 @@ export class ReportBuilder {
   // Compares actual with the row's limit. bound "min": actual ≥ limit passes; "max": actual ≤ limit passes.
   // On a failure, fixes(limit) computes the ways to correct it.
   compare(source: CriteriaTable, target: string, actual: number, value: CriteriaValue,
-    extra: { deltaDeg?: number; note?: string; fixes?: (limit: number) => FixOption[] } = {}): void {
+    extra: { deltaDeg?: number; note?: string; proviso?: number; fixes?: (limit: number) => FixOption[] } = {}): void {
     let limit: number;
     let note = extra.note;
     if (typeof value === "number") limit = value;
@@ -49,9 +49,12 @@ export class ReportBuilder {
       note = [`${value.divideByDeltaDeg} ÷ 교각 ${round(extra.deltaDeg, 4)}° (계산값)`, note].filter(Boolean).join("; ");
     }
     const pass = source.bound === "min" ? actual >= limit : actual <= limit;
+    // A proviso allows up to proviso beyond the limit when a person accepts its reasons.
+    const allowed = source.bound === "min" ? limit - (extra.proviso ?? 0) : limit + (extra.proviso ?? 0);
+    const review = !pass && !!extra.proviso && (source.bound === "min" ? actual >= allowed : actual <= allowed);
     const fixes = !pass && extra.fixes ? extra.fixes(limit) : [];
     this.items.push({ check: source.title, article: cite(source), target, actual: round(actual), limit, unit: source.unit,
-      bound: source.bound, result: pass ? "pass" : "fail", ...(note ? { note } : {}), ...(fixes.length ? { fixes } : {}) });
+      bound: source.bound, result: pass ? "pass" : review ? "review" : "fail", ...(note ? { note } : {}), ...(fixes.length ? { fixes } : {}) });
   }
 
   // A required element is absent, such as a spiral where the criteria require one.
@@ -79,10 +82,11 @@ export class ReportBuilder {
       target: this.target,
       conditions: this.conditions,
       missing: [...this.missing.values()],
-      summary: { pass: count("pass"), fail: count("fail"), notChecked: count("n/a") },
+      summary: { pass: count("pass"), fail: count("fail"), review: count("review"), notChecked: count("n/a") },
       items,
       ...(listAll ? {} : { omittedPasses: count("pass") }),
-      notes: this.notes
+      notes: this.notes,
+      notCovered: this.notCovered
     };
   }
 }

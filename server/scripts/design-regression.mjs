@@ -22,6 +22,8 @@ const { checkAlignmentCriteria } = await import('../build/criteria/alignmentCrit
 const { checkProfileCriteria } = await import('../build/criteria/profileCriteria.js');
 const { storeFix } = await import('../build/changes/changeStore.js');
 const { applyFix } = await import('../build/changes/applyChange.js');
+const { ReportBuilder } = await import('../build/criteria/reportBuilder.js');
+const { loadCriteria, table } = await import('../build/criteria/criteriaStore.js');
 
 // Values that change from run to run.
 const VOLATILE = new Set(['at', 'revision', 'requestId']);
@@ -65,6 +67,13 @@ try {
   await record('check 본선 지방', () => checkAlignmentCriteria({ alignment: '본선', area: '지방지역(그 밖)' }));
   await record('check 본선 100 도시', () => checkAlignmentCriteria({ alignment: '본선', designSpeed: 100, maxSuperelevation: 6, area: '도시지역' }));
   await record('check 본선 class', () => checkAlignmentCriteria({ alignment: '본선', roadClass: '보조간선도로', region: '도시지역' }));
+  await record('check 본선 speed review', () => checkAlignmentCriteria({ alignment: '본선', roadClass: '주간선도로(고속국도)', region: '도시지역' }));
+  await record('grade proviso review', async () => {
+    const set = await loadCriteria('도로구조규칙');
+    const report = new ReportBuilder(set, '경사 비교');
+    for (const actual of [2.9, 3.6, 4.5]) report.compare(table(set, 'max_grade'), `경사 ${actual}%`, actual, 3, { proviso: 1 });
+    return report.build().items.map(item => `${item.target}: ${item.result}`);
+  });
   await record('check profile', () => checkProfileCriteria({ alignment: '본선', roadFunction: '주간선·보조간선(그 밖의 도로)', terrain: '평지' }));
   await record('check profile fixes', () => checkProfileCriteria({ alignment: '본선', designSpeed: 80, roadFunction: '고속국도', terrain: '평지' }));
   await record('check profile missing', () => checkProfileCriteria({ alignment: '본선' }));

@@ -22,8 +22,15 @@ export type ProfileCriteriaInput = {
 const definedOnly = <T extends object>(value: T) =>
   Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
 
+// Parts of vertical alignment design this check does not compare. Owner manuals add theirs.
+const NOT_COVERED = ["오르막차로", "합성경사(편경사와 종단경사)", "시거", "평면·종단 선형의 조합"];
+const notCovered = (set: CriteriaSet) => [...NOT_COVERED,
+  ...(set.tables.some(item => item.id === "intersection_max_grade") ? ["교차로 접속부 종단경사와 완만한 구간 길이(LH 지침 8.2.3)"] : [])];
+
 // Surface profiles follow the ground and have no design grades or curves to check.
 const UNCHECKED_TYPES = new Set(["EG"]);
+// 제25조① proviso: up to 1% steeper where the terrain or the like requires it.
+const GRADE_PROVISO = 1;
 
 // Compares design profiles with a criteria set (by default 도로구조규칙 제25·27조).
 // Without a profile, every design profile of the alignment is checked.
@@ -73,7 +80,7 @@ export async function checkProfileCriteria(input: ProfileCriteriaInput): Promise
 
 async function checkOne(set: CriteriaSet, profile: ProfileSummary, input: ProfileCriteriaInput,
   speeds: AlignmentDesignSpeed[]): Promise<CriteriaReport> {
-  const report = new ReportBuilder(set, `종단 ${profile.name} (${profile.type}, 선형 ${profile.alignmentName ?? input.alignment ?? "알 수 없음"})`);
+  const report = new ReportBuilder(set, `종단 ${profile.name} (${profile.type}, 선형 ${profile.alignmentName ?? input.alignment ?? "알 수 없음"})`, notCovered(set));
   const grade = table(set, "max_grade");
   const kTable = table(set, "min_vertical_k");
   const lengthTable = table(set, "min_vertical_length");
@@ -130,8 +137,9 @@ async function checkOne(set: CriteriaSet, profile: ProfileSummary, input: Profil
       const row = findRow(grade, { designSpeed: speed.value, roadFunction: input.roadFunction!, terrain: input.terrain! });
       if (!row || typeof row.value !== "number") { report.skip(grade, target, `표에 없는 조건 (설계속도 ${speed.value}, ${input.roadFunction}, ${input.terrain})`); continue; }
       const actual = Math.abs(tangent.gradePercent);
-      const withinProviso = actual > row.value && actual <= row.value + 1;
+      const withinProviso = actual > row.value && actual <= row.value + GRADE_PROVISO;
       report.compare(grade, target, actual, row.value, {
+        proviso: GRADE_PROVISO,
         ...(withinProviso ? { note: "표의 값 + 1% 이내. 제25조① 단서 적용 여부는 사람이 판단" } : {}),
         fixes: limit => gradeFixes(profile, tangent, pvis, limit)
       });

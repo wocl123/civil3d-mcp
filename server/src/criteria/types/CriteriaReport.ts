@@ -9,8 +9,10 @@ export type CriteriaReport = {
   target: string;
   conditions: Record<string, ConditionValue | string>;
   missing: { name: string; options?: (string | number)[]; neededFor: string }[];
-  summary: { pass: number; fail: number; notChecked: number };
+  summary: { pass: number; fail: number; review: number; notChecked: number };
   items: CheckItem[];
   omittedPasses?: number;
   notes: string[];
+  // What this check never compares, so passing items are not read as a full approval.
+  notCovered: string[];
 };

@@ -21,6 +21,9 @@ export type AlignmentCriteriaInput = {
 
 export const SPIRAL_REQUIRED_FROM = 60;
 
+// Parts of horizontal alignment design this check does not compare.
+const NOT_COVERED = ["곡선부 확폭", "시거(정지·앞지르기)", "편경사 접속 설치율", "설계속도 60 km/h 미만의 완화구간(제23조③)", "곡선 사이 직선 길이"];
+
 // Compares an alignment's curves, spirals, and superelevation with a criteria set
 // (by default 도로구조규칙 제8·19·20·21·23조). Conditions not given are taken from the
 // drawing where possible (design speeds, and the criteria, road class, area, and maximum
@@ -53,7 +56,7 @@ export async function checkAlignmentCriteria(given: AlignmentCriteriaInput): Pro
     readSection<AlignmentSuperelevation>("alignment.section", { alignment: key }, "superelevation")
   ]);
 
-  const report = new ReportBuilder(set, `선형 ${overview.alignment.name}`);
+  const report = new ReportBuilder(set, `선형 ${overview.alignment.name}`, NOT_COVERED);
   const radius = table(set, "min_curve_radius");
   const length = table(set, "min_curve_length");
   const superTable = table(set, "max_superelevation");
@@ -133,7 +136,8 @@ export async function checkAlignmentCriteria(given: AlignmentCriteriaInput): Pro
 }
 
 // 제8조①: each design speed of the alignment against the speed for its road class and
-// area, less what the proviso allows; roads in housing estates against the LH ceiling.
+// area; a lower speed the proviso allows is for review. Roads in housing estates are
+// checked against the LH ceiling.
 function checkDesignSpeed(report: ReportBuilder, set: CriteriaSet, input: AlignmentCriteriaInput,
   speeds: AlignmentDesignSpeed[], from: "input" | "drawing"): void {
   if (!input.roadClass || !input.region) return;
@@ -145,11 +149,13 @@ function checkDesignSpeed(report: ReportBuilder, set: CriteriaSet, input: Alignm
   try {
     const limits = designSpeedLimits(set, input.roadClass, input.region);
     const source = table(set, input.roadClass === APARTMENT_ROAD ? "apartment_road_speed" : "design_speed");
-    const note = limits.highest === undefined && limits.lowest < limits.standard
-      ? `표 값 ${limits.standard} km/h, 단서로 ${limits.lowest} km/h까지 감속 허용` : undefined;
+    // Below the table value, the proviso allows down to lowest for reasons a person judges.
+    const proviso = limits.highest === undefined ? limits.standard - limits.lowest : 0;
+    const note = proviso ? `표 값보다 낮으면 단서(지형·경제성 등)로 ${limits.lowest} km/h까지 감속 가능. 적용 여부는 사람이 판단` : undefined;
     if (entries.length === 0) report.skip(source, "선형 설계속도", "선형에 설계속도가 없음");
     for (const entry of entries)
-      report.compare(source, `설계속도 ${entry.stationText}`, entry.speed, limits.highest ?? limits.lowest, note ? { note } : {});
+      report.compare(source, `설계속도 ${entry.stationText}`, entry.speed, limits.highest ?? limits.standard,
+        { proviso, ...(note && entry.speed < limits.standard ? { note } : {}) });
   } catch (error) {
     report.notes.push(error instanceof Error ? error.message : String(error));
   }

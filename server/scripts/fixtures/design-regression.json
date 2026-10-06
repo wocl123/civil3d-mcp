@@ -1949,6 +1949,7 @@
   "summary": {
    "pass": 7,
    "fail": 1,
+   "review": 0,
    "notChecked": 0
   },
   "items": [
@@ -2065,6 +2066,13 @@
   "notes": [
    "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
    "적용 최대 편경사는 제21조①의 지방지역(그 밖) 최대값 8%를 썼다."
+  ],
+  "notCovered": [
+   "곡선부 확폭",
+   "시거(정지·앞지르기)",
+   "편경사 접속 설치율",
+   "설계속도 60 km/h 미만의 완화구간(제23조③)",
+   "곡선 사이 직선 길이"
   ]
  },
  "check 본선 100 도시": {
@@ -2094,6 +2102,7 @@
   "summary": {
    "pass": 6,
    "fail": 2,
+   "review": 0,
    "notChecked": 0
   },
   "items": [
@@ -2233,6 +2242,13 @@
   ],
   "notes": [
    "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+  ],
+  "notCovered": [
+   "곡선부 확폭",
+   "시거(정지·앞지르기)",
+   "편경사 접속 설치율",
+   "설계속도 60 km/h 미만의 완화구간(제23조③)",
+   "곡선 사이 직선 길이"
   ]
  },
  "check 본선 class": {
@@ -2267,6 +2283,7 @@
   "summary": {
    "pass": 8,
    "fail": 1,
+   "review": 0,
    "notChecked": 0
   },
   "items": [
@@ -2275,11 +2292,10 @@
     "article": "제8조①",
     "target": "설계속도 0+000.00부터",
     "actual": 80,
-    "limit": 40,
+    "limit": 60,
     "unit": "km/h",
     "bound": "min",
-    "result": "pass",
-    "note": "표 값 60 km/h, 단서로 40 km/h까지 감속 허용"
+    "result": "pass"
    },
    {
     "check": "최소 평면곡선 반지름",
@@ -2394,8 +2410,189 @@
   "notes": [
    "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
    "적용 최대 편경사는 제21조①의 도시지역 최대값 6%를 썼다."
+  ],
+  "notCovered": [
+   "곡선부 확폭",
+   "시거(정지·앞지르기)",
+   "편경사 접속 설치율",
+   "설계속도 60 km/h 미만의 완화구간(제23조③)",
+   "곡선 사이 직선 길이"
   ]
  },
+ "check 본선 speed review": {
+  "criteria": {
+   "id": "도로구조규칙",
+   "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
+   "effective": "2026-06-03",
+   "reviewed": false,
+   "verification": "2026-06-03 시행 원문과 일치"
+  },
+  "target": "선형 본선",
+  "conditions": {
+   "designSpeed": "선형 설계속도: 0+000.00부터 80",
+   "area": {
+    "value": "도시지역",
+    "from": "drawing"
+   },
+   "roadClass": {
+    "value": "주간선도로(고속국도)",
+    "from": "input"
+   },
+   "region": {
+    "value": "도시지역",
+    "from": "input"
+   },
+   "maxSuperelevation": {
+    "value": 6,
+    "from": "criteria"
+   }
+  },
+  "missing": [],
+  "summary": {
+   "pass": 7,
+   "fail": 1,
+   "review": 1,
+   "notChecked": 0
+  },
+  "items": [
+   {
+    "check": "설계속도",
+    "article": "제8조①",
+    "target": "설계속도 0+000.00부터",
+    "actual": 80,
+    "limit": 100,
+    "unit": "km/h",
+    "bound": "min",
+    "result": "review",
+    "note": "표 값보다 낮으면 단서(지형·경제성 등)로 80 km/h까지 감속 가능. 적용 여부는 사람이 판단"
+   },
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "제19조",
+    "target": "곡선 1 (0+300.00~0+670.00)",
+    "actual": 600,
+    "limit": 280,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "제20조",
+    "target": "곡선 1 (0+300.00~0+670.00)",
+    "actual": 370,
+    "limit": 90,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "제23조②",
+    "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+300.00~0+360.00",
+    "actual": 60,
+    "limit": 50,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선의 최소 길이",
+    "article": "제23조②",
+    "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+610.00~0+670.00",
+    "actual": 60,
+    "limit": 50,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "최소 평면곡선 반지름",
+    "article": "제19조",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "actual": 380,
+    "limit": 280,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "평면곡선의 최소 길이(완화곡선 포함)",
+    "article": "제20조",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "actual": 150,
+    "limit": 90,
+    "unit": "m",
+    "bound": "min",
+    "result": "pass"
+   },
+   {
+    "check": "완화곡선 설치",
+    "article": "제23조①",
+    "target": "곡선 2 (0+900.00~1+050.00)",
+    "unit": "m",
+    "result": "fail",
+    "note": "완화곡선 없음. 설계속도 60 km/h 이상은 완화곡선을 설치해야 함",
+    "fixes": [
+     {
+      "title": "완화곡선 추가 (양쪽 클로소이드)",
+      "changes": [
+       {
+        "object": {
+         "kind": "alignmentSpiral",
+         "handle": "B1"
+        },
+        "property": "spiralInLength",
+        "to": 50,
+        "unit": "m"
+       },
+       {
+        "object": {
+         "kind": "alignmentSpiral",
+         "handle": "B1"
+        },
+        "property": "spiralOutLength",
+        "to": 50,
+        "unit": "m"
+       }
+      ],
+      "status": "feasible",
+      "effects": [
+       "완화곡선 길이 50 m, 파라미터 A 138 (R 380 유지)",
+       "이정량 p 0.274 m, 접선장 약 25.051 m 증가 (근사 계산값)",
+       "원곡선 교각 22.6155° → 15.0766°"
+      ]
+     }
+    ]
+   },
+   {
+    "check": "최대 편경사",
+    "article": "제21조①",
+    "target": "선형 전체 최대 편경사",
+    "actual": 6,
+    "limit": 6,
+    "unit": "%",
+    "bound": "max",
+    "result": "pass"
+   }
+  ],
+  "notes": [
+   "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
+   "적용 최대 편경사는 제21조①의 도시지역 최대값 6%를 썼다."
+  ],
+  "notCovered": [
+   "곡선부 확폭",
+   "시거(정지·앞지르기)",
+   "편경사 접속 설치율",
+   "설계속도 60 km/h 미만의 완화구간(제23조③)",
+   "곡선 사이 직선 길이"
+  ]
+ },
+ "grade proviso review": [
+  "경사 2.9%: pass",
+  "경사 3.6%: review",
+  "경사 4.5%: fail"
+ ],
  "check profile": [
   {
    "criteria": {
@@ -2421,6 +2618,7 @@
    "summary": {
     "pass": 5,
     "fail": 2,
+    "review": 0,
     "notChecked": 0
    },
    "items": [
@@ -2546,6 +2744,12 @@
    ],
    "notes": [
     "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+   ],
+   "notCovered": [
+    "오르막차로",
+    "합성경사(편경사와 종단경사)",
+    "시거",
+    "평면·종단 선형의 조합"
    ]
   }
  ],
@@ -2577,6 +2781,7 @@
    "summary": {
     "pass": 5,
     "fail": 2,
+    "review": 0,
     "notChecked": 0
    },
    "items": [
@@ -2702,6 +2907,12 @@
    ],
    "notes": [
     "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+   ],
+   "notCovered": [
+    "오르막차로",
+    "합성경사(편경사와 종단경사)",
+    "시거",
+    "평면·종단 선형의 조합"
    ]
   }
  ],
@@ -2741,6 +2952,7 @@
    "summary": {
     "pass": 2,
     "fail": 2,
+    "review": 0,
     "notChecked": 0
    },
    "items": [
@@ -2836,6 +3048,12 @@
    ],
    "notes": [
     "기준표는 원문에서 옮긴 값이며 사람 검토 전이다."
+   ],
+   "notCovered": [
+    "오르막차로",
+    "합성경사(편경사와 종단경사)",
+    "시거",
+    "평면·종단 선형의 조합"
    ]
   }
  ],
@@ -2870,11 +3088,10 @@
      "article": "도로구조규칙 제8조①",
      "target": "설계속도 입력값",
      "actual": 50,
-     "limit": 30,
+     "limit": 50,
      "unit": "km/h",
      "bound": "min",
-     "result": "pass",
-     "note": "표 값 50 km/h, 단서로 30 km/h까지 감속 허용"
+     "result": "pass"
     },
     {
      "check": "최소 평면곡선 반지름",
@@ -2947,6 +3164,7 @@
      "target": "선형 선형-1",
      "pass": 5,
      "fail": 0,
+     "review": 0,
      "notChecked": 3
     }
    ]
@@ -2984,6 +3202,7 @@
   "summary": {
    "pass": 5,
    "fail": 0,
+   "review": 0,
    "notChecked": 3
   },
   "items": [
@@ -2992,11 +3211,10 @@
     "article": "도로구조규칙 제8조①",
     "target": "설계속도 0+000.00부터",
     "actual": 50,
-    "limit": 30,
+    "limit": 50,
     "unit": "km/h",
     "bound": "min",
-    "result": "pass",
-    "note": "표 값 50 km/h, 단서로 30 km/h까지 감속 허용"
+    "result": "pass"
    },
    {
     "check": "최소 평면곡선 반지름",
@@ -3069,6 +3287,13 @@
    "8.1.3 가의 설계속도 표와 20 km/h 감속 허용은 법령 제8조①과 같다.",
    "8.2.2 가의 최대 종단경사 표는 법령 제25조①과 같다(2026-10-02 대조). 사업지구 계획지형이 산지 등의 조건을 충족하면 산지 등의 값을 적용한다(8.2.2 주2).",
    "선형 설명에 기록된 조건을 썼다: 기준: LH_설계지침_토목 / 도로 구분: 집산도로 / 지역: 도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%"
+  ],
+  "notCovered": [
+   "곡선부 확폭",
+   "시거(정지·앞지르기)",
+   "편경사 접속 설치율",
+   "설계속도 60 km/h 미만의 완화구간(제23조③)",
+   "곡선 사이 직선 길이"
   ]
  },
  "create utility": {
@@ -3098,13 +3323,15 @@
   "summary": {
    "pass": 0,
    "fail": 0,
+   "review": 0,
    "notChecked": 0
   },
   "items": [],
   "notes": [
    "기준표는 원문에서 옮긴 값이며 사람 검토 전이다.",
    "선형 설명의 용도가 관망이라 도로 기준으로 검토하지 않음. 도로이면 설명의 용도에 도로를 넣으세요."
-  ]
+  ],
+  "notCovered": []
  },
  "plan name taken": {
   "title": "선형 선형-1 생성",
