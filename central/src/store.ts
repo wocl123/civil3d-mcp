@@ -1,44 +1,76 @@
+// 중앙 서버가 보관하는 모든 것. 데이터 폴더의 평범한 파일이고, 시작할 때 메모리로 읽는다.
+// 작은 팀은 한 달에 기록 수천 건을 보낸다. 커지면 이 파일만 DB로 바꾸면 된다.
+//   installs.json            등록된 설치 (토큰은 해시만)
+//   packages.txt             이미 받은 묶음 id, 한 줄에 하나
+//   records/<YYYY-MM>.jsonl  모든 기록 (설치·묶음과 함께)
+//   candidates.json          지식 후보와 검토 상태
+//   official.json            지금 적용 중인 승인 지식
+//   history/v<n>.json        발행한 모든 버전
+//   decisions.jsonl          모든 검토 결정
+
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { dataDir } from "./config.js";
 
-// Everything the central server keeps, as plain files under its data folder, read into
-// memory at start. Small teams send a few thousand records a month; when that grows,
-// only this file needs to change to use a database.
-//   installs.json           enrolled installs (token hashes only)
-//   packages.txt            ids of packages already taken, one per line
-//   records/<YYYY-MM>.jsonl every record with its install and package
-//   candidates.json         knowledge candidates and their review state
-//   official.json           the approved central knowledge now in force
-//   history/v<n>.json       every published version
-//   decisions.jsonl         every review decision
 export type InstallRow = { installId: string; tokenHash: string; enrolledAt: string; lastSeen: string };
+
 export type StoredRecord = { installId: string; packageId: string; receivedAt: string; record: Record<string, unknown> };
+
 export type CandidateRow = {
-  id: string; installId: string; localId: string; title: string; content: string; groupKey: string;
-  parameter?: { key: string; value: number }; provider?: string; at?: string; localStatus?: string; receivedAt: string;
-  status: "pending" | "approved" | "rejected"; decidedAt?: string; reason?: string;
+  id: string;            // S-1, S-2, ...
+  installId: string;
+  localId: string;       // 설치 쪽 후보 id (C-20261006-1)
+  title: string;
+  content: string;
+  groupKey: string;      // 같은 내용을 묶는 키 (review.ts)
+  parameter?: { key: string; value: number };
+  provider?: string;
+  at?: string;
+  localStatus?: string;  // 그 PC에서 이미 승인했는지
+  receivedAt: string;
+  status: "pending" | "approved" | "rejected";
+  decidedAt?: string;
+  reason?: string;       // 반려 사유
 };
-export type OfficialItem = { id: string; content: string; approvedAt: string; parameter?: { key: string; value: number }; from: string };
+
+export type OfficialItem = {
+  id: string;            // K-1, K-2, ...
+  content: string;
+  approvedAt: string;
+  parameter?: { key: string; value: number };
+  from: string;          // 승인한 검토 항목 id (G-… 또는 P-…)
+};
+
 export type Official = { version: number; publishedAt?: string; items: OfficialItem[]; parameters: Record<string, number> };
+
 export type Decision = { at: string; id: string; decision: string; reason?: string; content?: string; version: number };
 
 const path = (...parts: string[]) => join(dataDir, ...parts);
 
 function readJson<T>(file: string, fallback: T): T {
-  try { return JSON.parse(readFileSync(path(file), "utf8")) as T; } catch { return fallback; }
+  try {
+    return JSON.parse(readFileSync(path(file), "utf8")) as T;
+  } catch {
+    return fallback;
+  }
 }
 
+// 임시 파일에 쓰고 바꿔치기(반쯤 쓴 파일이 남지 않게).
 function writeJson(file: string, value: unknown): void {
   const target = path(file);
   writeFileSync(target + ".tmp", JSON.stringify(value, null, 1), "utf8");
   renameSync(target + ".tmp", target);
 }
 
+// 한 줄에 JSON 하나인 파일. 깨진 줄은 건너뛴다.
 function readLines<T>(file: string): T[] {
   if (!existsSync(path(file))) return [];
   return readFileSync(path(file), "utf8").split("\n").filter(Boolean).flatMap(line => {
-    try { return [JSON.parse(line) as T]; } catch { return []; }
+    try {
+      return [JSON.parse(line) as T];
+    } catch {
+      return [];
+    }
   });
 }
 
@@ -50,31 +82,45 @@ export class Store {
   official: Official;
   decisions: Decision[];
 
+  // 시작할 때 모두 읽는다.
   constructor() {
     mkdirSync(path("records"), { recursive: true });
     mkdirSync(path("history"), { recursive: true });
     this.installs = readJson("installs.json", {});
-    this.packages = new Set(existsSync(path("packages.txt")) ? readFileSync(path("packages.txt"), "utf8").split("\n").filter(Boolean) : []);
-    this.records = readdirSync(path("records")).filter(name => name.endsWith(".jsonl")).sort()
+    this.packages = new Set(existsSync(path("packages.txt"))
+      ? readFileSync(path("packages.txt"), "utf8").split("\n").filter(Boolean)
+      : []);
+    this.records = readdirSync(path("records"))
+      .filter(name => name.endsWith(".jsonl"))
+      .sort()
       .flatMap(name => readLines<StoredRecord>(join("records", name)));
     this.candidates = readJson("candidates.json", []);
     this.official = readJson("official.json", { version: 0, items: [], parameters: {} });
     this.decisions = readLines("decisions.jsonl");
   }
 
-  saveInstalls(): void { writeJson("installs.json", this.installs); }
+  saveInstalls(): void {
+    writeJson("installs.json", this.installs);
+  }
 
+  // 묶음 하나를 받는다: 기록은 달별 파일에 붙이고, 묶음 id를 남긴다.
   addPackage(installId: string, packageId: string, records: Record<string, unknown>[]): void {
     const receivedAt = new Date().toISOString();
     const rows = records.map(record => ({ installId, packageId, receivedAt, record }));
-    if (rows.length) appendFileSync(path("records", `${receivedAt.slice(0, 7)}.jsonl`), rows.map(row => JSON.stringify(row)).join("\n") + "\n", "utf8");
+    if (rows.length) {
+      const lines = rows.map(row => JSON.stringify(row)).join("\n") + "\n";
+      appendFileSync(path("records", `${receivedAt.slice(0, 7)}.jsonl`), lines, "utf8");
+    }
     appendFileSync(path("packages.txt"), packageId + "\n", "utf8");
     this.packages.add(packageId);
     this.records.push(...rows);
   }
 
-  saveCandidates(): void { writeJson("candidates.json", this.candidates); }
+  saveCandidates(): void {
+    writeJson("candidates.json", this.candidates);
+  }
 
+  // 새 버전의 승인 지식을 발행한다(버전 +1, 기록 보관, 결정 기록).
   publish(official: Official, decision: Omit<Decision, "at" | "version">): void {
     official.version = this.official.version + 1;
     official.publishedAt = new Date().toISOString();
@@ -84,6 +130,7 @@ export class Store {
     this.decide(decision);
   }
 
+  // 검토 결정 하나를 기록한다.
   decide(decision: Omit<Decision, "at" | "version">): void {
     const row: Decision = { at: new Date().toISOString(), ...decision, version: this.official.version };
     appendFileSync(path("decisions.jsonl"), JSON.stringify(row) + "\n", "utf8");
