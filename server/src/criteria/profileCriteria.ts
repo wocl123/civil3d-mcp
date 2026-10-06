@@ -1,8 +1,5 @@
 import { callPlugin } from "../bridge/pluginClient.js";
 import { gradeConditions, notRoadNote, readRecord, type AlignmentRecord } from "../civil/alignmentRecord.js";
-
-const definedOnly = <T extends object>(value: T) =>
-  Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
 import { alignmentProfiles, readSection } from "../civil/civilData.js";
 import type { AlignmentDesignSpeed } from "../civil/types/AlignmentDesignSpeed.js";
 import type { ProfileCurve } from "../civil/types/ProfileCurve.js";
@@ -21,6 +18,9 @@ export type ProfileCriteriaInput = {
   profile?: string; alignment?: string; criteria?: string;
   designSpeed?: number; roadFunction?: string; terrain?: string;
 };
+
+const definedOnly = <T extends object>(value: T) =>
+  Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
 
 // Surface profiles follow the ground and have no design grades or curves to check.
 const UNCHECKED_TYPES = new Set(["EG"]);

@@ -8,6 +8,7 @@ import { findRow, loadCriteria, options, table } from "./criteriaStore.js";
 import { describeSpeeds, designSpeedLimits, speedAt } from "./designSpeed.js";
 import { addSpiralFixes, curveLengthFixes, radiusFixes, spiralLengthFixes, superelevationFixes, type CurveContext } from "./fixes/alignmentFixes.js";
 import { label, ReportBuilder } from "./reportBuilder.js";
+import { maxSuperelevation } from "./superelevation.js";
 import { APARTMENT_ROAD, notRoadNote, readRecord, superelevationArea, writeRecord, type Region, type RoadClass } from "../civil/alignmentRecord.js";
 import type { CriteriaSet } from "./types/CriteriaSet.js";
 import type { CriteriaReport } from "./types/CriteriaReport.js";
@@ -69,12 +70,9 @@ export async function checkAlignmentCriteria(given: AlignmentCriteriaInput): Pro
 
   // 제19조 needs the maximum superelevation the design applies; without it, the
   // area's maximum from 제21조 is used.
-  let emax: { value: number; from: "input" | "drawing" | "criteria" } | undefined;
-  if (input.maxSuperelevation !== undefined) emax = { value: input.maxSuperelevation, from: given.maxSuperelevation !== undefined ? "input" : "drawing" };
-  else if (input.area) {
-    const row = findRow(superTable, { area: input.area });
-    if (typeof row?.value === "number") emax = { value: row.value, from: "criteria" };
-  }
+  const found = maxSuperelevation(superTable, input.maxSuperelevation, input.area);
+  const emax = found && { value: found.value,
+    from: found.fromTable ? "criteria" as const : given.maxSuperelevation !== undefined ? "input" as const : "drawing" as const };
   if (emax) report.conditions.maxSuperelevation = emax;
   else report.need("maxSuperelevation", label(radius), options(radius, "maxSuperelevation"));
   if (emax?.from === "criteria") report.notes.push(`적용 최대 편경사는 ${superTable.article}의 ${input.area} 최대값 ${emax.value}%를 썼다.`);

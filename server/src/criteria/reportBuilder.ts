@@ -17,6 +17,12 @@ export const label = (source: Pick<CriteriaTable, "article" | "title" | "documen
 // "LH 지침 8.1.3 나" or "도로구조규칙 제19조" when the set extends another, else just the article.
 const cite = (source: Pick<CriteriaTable, "article" | "document">) => source.document ? `${source.document} ${source.article}` : source.article;
 
+// Which criteria a report or plan used, and how far its tables have been checked.
+export const criteriaHeader = (set: CriteriaSet): CriteriaReport["criteria"] => ({
+  id: set.id, title: set.title, effective: set.source.effective?.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3"),
+  reviewed: set.reviewed, verification: verificationText(set)
+});
+
 // Collects comparison items for one target. Each check names its criteria table,
 // so the article, unit, and bound always come from the criteria data.
 export class ReportBuilder {
@@ -69,8 +75,7 @@ export class ReportBuilder {
     const listAll = this.items.length <= MAX_LISTED;
     const items = listAll ? this.items : this.items.filter(item => item.result !== "pass");
     return {
-      criteria: { id: this.set.id, title: this.set.title, effective: this.set.source.effective?.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3"), reviewed: this.set.reviewed,
-        verification: verificationText(this.set) },
+      criteria: criteriaHeader(this.set),
       target: this.target,
       conditions: this.conditions,
       missing: [...this.missing.values()],
