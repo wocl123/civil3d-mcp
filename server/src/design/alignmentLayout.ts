@@ -1,14 +1,14 @@
 import { callPlugin } from "../bridge/pluginClient.js";
 import { SPIRAL_REQUIRED_FROM } from "../criteria/alignmentCriteria.js";
 import { findRow, loadCriteria, options, table, verificationText } from "../criteria/criteriaStore.js";
-import { ceilTo, floorTo, radians, round } from "../criteria/fixes/geometry.js";
+import { ceilTo, curveLength, curveTangent, floorTo, radians, round, type Curve } from "../geometry.js";
 import { label } from "../criteria/reportBuilder.js";
 import type { ConditionValue, CriteriaReport } from "../criteria/types/CriteriaReport.js";
 import type { FixOption } from "../criteria/types/FixOption.js";
 import type { FixSource } from "../changes/types/StoredFix.js";
 import { deflection, distance, polylinePath } from "./polylinePath.js";
 import { APARTMENT_ROAD, orderUses, REGIONS, ROAD_CLASSES, superelevationArea, writeRecord,
-  type AlignmentUse, type Region, type RoadClass } from "./alignmentRecord.js";
+  type AlignmentUse, type Region, type RoadClass } from "../civil/alignmentRecord.js";
 import { designSpeedLimits } from "../criteria/designSpeed.js";
 import type { AlignmentCreateRequest, PlannedIp, PolylineVertex } from "./types/AlignmentLayout.js";
 
@@ -24,27 +24,12 @@ type PolylineObject = {
   geometry?: { closed: boolean; vertexCount: number; vertices: PolylineVertex[]; verticesTruncated: boolean };
 };
 
-// A curve at one IP: a circular arc, with clothoids of length spiral on both sides when spiral > 0.
-type Curve = { radius: number; spiral: number };
-
 const NAME_PREFIX = "선형-";
 const MAX_SEARCH_RADIUS = 100000;
 
-// Tangent length from the IP to the start of the curve. With clothoids the arc shifts
-// inward by p and the tangent grows by k (standard series to the second term).
-function tangentLength({ radius, spiral }: Curve, deltaRad: number): number {
-  if (!spiral) return radius * Math.tan(deltaRad / 2);
-  const shift = spiral ** 2 / (24 * radius) - spiral ** 4 / (2688 * radius ** 3);
-  const k = spiral / 2 - spiral ** 3 / (240 * radius ** 2);
-  return (radius + shift) * Math.tan(deltaRad / 2) + k;
-}
-
-// Arc plus both spirals: RΔ − Ls + 2Ls.
-const curveLength = ({ radius, spiral }: Curve, deltaRad: number) => radius * deltaRad + spiral;
-
 // The largest radius whose tangent still fits in the room, or undefined when even the smallest does not.
 function largestFitting(spiral: number, deltaRad: number, room: number, smallest: number): number | undefined {
-  const fits = (radius: number) => tangentLength({ radius, spiral }, deltaRad) <= room;
+  const fits = (radius: number) => curveTangent({ radius, spiral }, deltaRad) <= room;
   if (!fits(smallest)) return undefined;
   if (fits(MAX_SEARCH_RADIUS)) return MAX_SEARCH_RADIUS;
   let [low, high] = [smallest, MAX_SEARCH_RADIUS];
@@ -215,7 +200,7 @@ export async function planAlignmentLayout(input: AlignmentLayoutInput) {
 
     if (curve) {
       planned.radius = curve.radius;
-      planned.tangent = round(tangentLength(curve, deltaRad));
+      planned.tangent = round(curveTangent(curve, deltaRad));
       planned.curveLength = round(curveLength(curve, deltaRad));
       if (curve.spiral) Object.assign(planned, { spiralLength: curve.spiral, spiralA: round(Math.sqrt(curve.radius * curve.spiral), 1) });
     }

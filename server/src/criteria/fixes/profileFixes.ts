@@ -3,7 +3,7 @@ import type { ProfilePvi } from "../../civil/types/ProfilePvi.js";
 import type { ProfileSummary } from "../../civil/types/ProfileSummary.js";
 import type { ProfileTangent } from "../../civil/types/ProfileTangent.js";
 import type { FixOption } from "../types/FixOption.js";
-import { ceilTo, floorTo, round, station } from "./geometry.js";
+import { ceilTo, floorTo, round, station } from "../../geometry.js";
 
 export type VerticalCurveContext = {
   profile: ProfileSummary; curve: ProfileCurve; curves: ProfileCurve[]; pvis: ProfilePvi[];

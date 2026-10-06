@@ -3,7 +3,7 @@ import { z } from "zod";
 import { callPlugin } from "../../bridge/pluginClient.js";
 import { storeFix } from "../../changes/changeStore.js";
 import { planAlignmentLayout } from "../../design/alignmentLayout.js";
-import { ALIGNMENT_USES, REGIONS, ROAD_CLASSES, SUPERELEVATION_AREAS } from "../../design/alignmentRecord.js";
+import { ALIGNMENT_USES, REGIONS, ROAD_CLASSES, SUPERELEVATION_AREAS } from "../../civil/alignmentRecord.js";
 import { CRITERIA_SETS } from "../../criteria/criteriaStore.js";
 import { toolResult } from "../toolResult.js";
 

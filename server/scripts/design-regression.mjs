@@ -28,6 +28,14 @@ const VOLATILE = new Set(['at', 'revision', 'requestId']);
 const stable = value => JSON.parse(JSON.stringify(value, (key, item) => VOLATILE.has(key) ? undefined : item));
 const failure = async run => { try { await run(); return 'no error'; } catch (error) { return `error: ${error.message}`; } };
 
+// Each value that differs, as "case.path: expected → actual".
+function diff(expected, actual, path) {
+  if (expected && actual && typeof expected === 'object' && typeof actual === 'object')
+    return [...new Set([...Object.keys(expected), ...Object.keys(actual)])].flatMap(key => diff(expected[key], actual[key], `${path}.${key}`));
+  try { assert.deepEqual(actual, expected); return []; }
+  catch { return [`${path}: ${JSON.stringify(expected)} → ${JSON.stringify(actual)}`]; }
+}
+
 const results = {};
 const record = async (name, run) => { results[name] = stable(await run()); };
 const b15 = Math.tan(Math.PI / 12);
@@ -79,11 +87,11 @@ try {
     console.log(`design regression snapshot written: ${Object.keys(results).length} cases`);
   } else {
     const expected = JSON.parse(await readFile(snapshotFile, 'utf8'));
-    const changed = Object.keys({ ...expected, ...results }).filter(name => {
-      try { assert.deepEqual(results[name], expected[name]); return false; } catch { return true; }
-    });
-    for (const name of changed) assert.deepEqual(results[name], expected[name], `case "${name}" changed`);
-    console.log(`design regression ok: ${Object.keys(results).length} cases`);
+    const differences = Object.keys({ ...expected, ...results }).flatMap(name => diff(expected[name], results[name], name));
+    if (differences.length) {
+      console.error(differences.join('\n'));
+      process.exitCode = 1;
+    } else console.log(`design regression ok: ${Object.keys(results).length} cases`);
   }
 } finally {
   bridge.close();

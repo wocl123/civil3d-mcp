@@ -1,3 +1,4 @@
+import { round } from "../geometry.js";
 import { verificationText } from "./criteriaStore.js";
 import type { CheckItem } from "./types/CheckItem.js";
 import type { FixOption } from "./types/FixOption.js";
@@ -7,8 +8,6 @@ import type { ConditionValue, CriteriaReport } from "./types/CriteriaReport.js";
 
 // Above this many items only failures and unchecked items are listed; passes are counted.
 const MAX_LISTED = 40;
-
-export const round = (value: number, digits = 3) => Math.round(value * 10 ** digits) / 10 ** digits;
 
 // "제19조 최소 평면곡선 반지름": names a check by article and title, never by article alone.
 // With a set that extends another, the document's short name comes first: "LH 지침 8.1.3 나 …", "도로구조규칙 제19조 …".

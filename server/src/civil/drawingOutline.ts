@@ -1,6 +1,6 @@
 import { callPlugin } from "../bridge/pluginClient.js";
 import { alignmentProfiles } from "./civilData.js";
-import { readUses } from "../design/alignmentRecord.js";
+import { readUses } from "./alignmentRecord.js";
 
 const MAX_ALIGNMENTS = 15;
 

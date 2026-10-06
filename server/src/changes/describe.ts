@@ -1,5 +1,5 @@
 import type { DesignChange } from "../criteria/types/DesignChange.js";
-import { station } from "../criteria/fixes/geometry.js";
+import { station } from "../geometry.js";
 import type { AlignmentCreateRequest } from "../design/types/AlignmentLayout.js";
 
 // Kinds and properties the plug-in can apply (DesignChanges.cs). Others stay suggestions.

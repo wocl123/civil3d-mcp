@@ -8,7 +8,7 @@ import { findRow, loadCriteria, options, table } from "./criteriaStore.js";
 import { describeSpeeds, designSpeedLimits, speedAt } from "./designSpeed.js";
 import { addSpiralFixes, curveLengthFixes, radiusFixes, spiralLengthFixes, superelevationFixes, type CurveContext } from "./fixes/alignmentFixes.js";
 import { label, ReportBuilder } from "./reportBuilder.js";
-import { APARTMENT_ROAD, notRoadNote, readRecord, superelevationArea, writeRecord, type Region, type RoadClass } from "../design/alignmentRecord.js";
+import { APARTMENT_ROAD, notRoadNote, readRecord, superelevationArea, writeRecord, type Region, type RoadClass } from "../civil/alignmentRecord.js";
 import type { CriteriaSet } from "./types/CriteriaSet.js";
 import type { CriteriaReport } from "./types/CriteriaReport.js";
 

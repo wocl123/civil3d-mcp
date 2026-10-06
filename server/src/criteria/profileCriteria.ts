@@ -1,5 +1,5 @@
 import { callPlugin } from "../bridge/pluginClient.js";
-import { gradeConditions, notRoadNote, readRecord, type AlignmentRecord } from "../design/alignmentRecord.js";
+import { gradeConditions, notRoadNote, readRecord, type AlignmentRecord } from "../civil/alignmentRecord.js";
 
 const definedOnly = <T extends object>(value: T) =>
   Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
@@ -12,7 +12,8 @@ import type { ProfileTangent } from "../civil/types/ProfileTangent.js";
 import { findRow, loadCriteria, options, table } from "./criteriaStore.js";
 import { describeSpeeds, speedAt } from "./designSpeed.js";
 import { gradeFixes, verticalCurveFixes } from "./fixes/profileFixes.js";
-import { label, ReportBuilder, round } from "./reportBuilder.js";
+import { label, ReportBuilder } from "./reportBuilder.js";
+import { round } from "../geometry.js";
 import type { CriteriaReport } from "./types/CriteriaReport.js";
 import type { CriteriaSet } from "./types/CriteriaSet.js";
 

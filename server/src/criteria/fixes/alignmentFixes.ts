@@ -1,7 +1,7 @@
 import type { AlignmentCurve } from "../../civil/types/AlignmentCurve.js";
 import type { AlignmentElement } from "../../civil/types/AlignmentElement.js";
 import type { FixOption } from "../types/FixOption.js";
-import { arcExternal, arcLength, arcTangent, ceilTo, radians, round } from "./geometry.js";
+import { arcExternal, arcLength, arcTangent, ceilTo, curveTangent, radians, round, spiralShift } from "../../geometry.js";
 
 export type CurveContext = { handle: string; curve: AlignmentCurve; elements: AlignmentElement[] };
 
@@ -70,7 +70,7 @@ export function curveLengthFixes(context: CurveContext, minLength: number): FixO
 }
 
 // 제23조①: a spiral is required but missing. Clothoids of the minimum length go on both
-// sides; each takes Ls/(2R) of the deflection angle and shifts the arc inward by p ≈ Ls²/24R.
+// sides; each takes Ls/(2R) of the deflection angle and shifts the arc inward by p (geometry.ts).
 export function addSpiralFixes(context: CurveContext, minSpiral: number): FixOption[] {
   const { simpleArc, room } = layout(context);
   if (!simpleArc?.radius || simpleArc.deltaDeg === undefined) return [];
@@ -78,8 +78,8 @@ export function addSpiralFixes(context: CurveContext, minSpiral: number): FixOpt
   const delta = Math.abs(simpleArc.deltaDeg);
   const length = ceilTo(minSpiral);
   const parameter = ceilTo(Math.sqrt(radius * length));
-  const shift = length ** 2 / (24 * radius);
-  const growth = length / 2 + shift * Math.tan(radians(delta) / 2);
+  const shift = spiralShift(radius, length);
+  const growth = curveTangent({ radius, spiral: length }, radians(delta)) - curveTangent({ radius, spiral: 0 }, radians(delta));
   const spiralAngle = length / radius * 180 / Math.PI;
   const fix: FixOption = {
     title: "완화곡선 추가 (양쪽 클로소이드)",

@@ -5,7 +5,7 @@ import { checkProfileCriteria } from "../../criteria/profileCriteria.js";
 import { registerFixes } from "../../changes/changeStore.js";
 import { toolResult } from "../toolResult.js";
 import { CRITERIA_SETS } from "../../criteria/criteriaStore.js";
-import { REGIONS, ROAD_CLASSES, SUPERELEVATION_AREAS } from "../../design/alignmentRecord.js";
+import { REGIONS, ROAD_CLASSES, SUPERELEVATION_AREAS } from "../../civil/alignmentRecord.js";
 
 const key = z.string().min(1).max(255);
 const criteria = z.enum(CRITERIA_SETS).optional()

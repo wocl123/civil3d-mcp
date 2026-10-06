@@ -1,5 +1,5 @@
 import type { AlignmentDesignSpeed } from "../civil/types/AlignmentDesignSpeed.js";
-import { APARTMENT_ROAD, type Region, type RoadClass } from "../design/alignmentRecord.js";
+import { APARTMENT_ROAD, type Region, type RoadClass } from "../civil/alignmentRecord.js";
 import { findRow, table } from "./criteriaStore.js";
 import { label } from "./reportBuilder.js";
 import type { CriteriaSet } from "./types/CriteriaSet.js";
