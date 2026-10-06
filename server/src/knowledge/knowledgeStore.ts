@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { writeAtomic } from "../files.js";
 import { dataDir } from "../paths.js";
 import { hashKey } from "../memory/memoryStore.js";
 import type { DrawingScope } from "../memory/types/DrawingScope.js";
@@ -119,9 +120,7 @@ export async function appendFacts(scope: DrawingScope, proposals: FactProposal[]
       added.push(id);
     }
     if (!added.length) return;
-    await mkdir(dirname(file), { recursive: true });
-    await writeFile(file + ".tmp", text, "utf8");
-    await rename(file + ".tmp", file);
+    await writeAtomic(file, text);
   }).catch(error => {
     added.length = 0;
     process.stderr.write(`MyCivil3DMcp knowledge was not saved: ${String(error)}\n`);

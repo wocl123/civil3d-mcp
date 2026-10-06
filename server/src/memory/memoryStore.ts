@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { writeAtomic } from "../files.js";
 import { dataDir } from "../paths.js";
 import type { CachedAnswer } from "./types/CachedAnswer.js";
 import type { DrawingScope } from "./types/DrawingScope.js";
@@ -33,11 +34,7 @@ async function load(): Promise<PaletteMemory> {
 function persist(data: PaletteMemory): Promise<void> {
   const file = memoryFile();
   const text = JSON.stringify(data);
-  writing = writing.then(async () => {
-    await mkdir(dirname(file), { recursive: true });
-    await writeFile(file + ".tmp", text, "utf8");
-    await rename(file + ".tmp", file);
-  }).catch(error => {
+  writing = writing.then(() => writeAtomic(file, text)).catch(error => {
     process.stderr.write(`MyCivil3DMcp memory was not saved: ${String(error)}\n`);
   });
   return writing;

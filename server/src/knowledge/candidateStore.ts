@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { writeAtomic } from "../files.js";
 import { knowledgeDir } from "./knowledgeStore.js";
 import { rulesDir } from "./rulesStore.js";
 import type { FactProposal } from "./types/FactProposal.js";
@@ -34,11 +35,7 @@ async function load(): Promise<Candidate[]> {
   catch { return []; }
 }
 
-async function save(list: Candidate[]): Promise<void> {
-  await mkdir(dirname(file()), { recursive: true });
-  await writeFile(file() + ".tmp", JSON.stringify(list, null, 1), "utf8");
-  await rename(file() + ".tmp", file());
-}
+const save = (list: Candidate[]) => writeAtomic(file(), JSON.stringify(list, null, 1));
 
 // Stores new candidates; one the same as a pending or approved candidate is skipped.
 export async function addCandidates(proposals: FactProposal[], drawing: string, provider: string): Promise<string[]> {
@@ -86,8 +83,7 @@ export async function decideCandidates(ids: string[], decision: "approved" | "re
       const text = await readFile(rule, "utf8").catch(() => APPROVED_HEADER);
       const date = now.toLocaleString("sv-SE").slice(0, 10);
       const lines = decided.map(item => `- ${item.content} (${item.id}, 승인 ${date})`).join("\n");
-      await mkdir(dirname(rule), { recursive: true });
-      await writeFile(rule, text.trimEnd() + "\n\n" + lines + "\n", "utf8");
+      await writeAtomic(rule, text.trimEnd() + "\n\n" + lines + "\n");
     }
     await save(list);
   }).catch(error => {
