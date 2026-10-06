@@ -6,12 +6,12 @@ using Autodesk.Civil.DatabaseServices;
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// Read-only queries for alignments. An alignment is answered
-/// as an overview first and then section by section, so one answer stays small.
+/// 선형 조회(읽기만). 선형 하나는 먼저 개요, 그다음 구간(section)별로 답해
+/// 한 번의 답이 작게 유지되게 한다.
 /// </summary>
 public static class AlignmentQueries
 {
-
+    // 선형 목록(이름순).
     public static AlignmentPage ListAlignments(Document document, int offset = 0, int limit = 50)
     {
         DrawingQueries.ValidatePage(offset, limit);
@@ -21,12 +21,14 @@ public static class AlignmentQueries
         return new AlignmentPage(document.Name, offset, limit, items.Count, items.Skip(offset).Take(limit).ToArray());
     }
 
+    // 개요.
     public static AlignmentOverview GetAlignment(Document document, string key)
     {
         using Transaction transaction = document.Database.TransactionManager.StartTransaction();
         return Snapshot(document, transaction, ResolveAlignment(transaction, key)).Overview;
     }
 
+    // 구간 한 페이지(요소, 곡선, 설계속도, 편경사 등).
     public static AlignmentSectionPage GetAlignmentSection(Document document, string key, string section,
         double? from, double? to, int offset = 0, int limit = 50)
     {
@@ -38,8 +40,7 @@ public static class AlignmentQueries
             offset, limit, items.Count, items.Skip(offset).Take(limit).ToArray());
     }
 
-    // Snapshots are reused until the drawing changes, so paging through sections
-    // does not read the alignment again.
+    // 스냅숏은 도면이 바뀌기 전까지 재사용한다. 구간을 넘겨 볼 때 선형을 다시 읽지 않게.
     private static readonly Dictionary<string, (string Revision, AlignmentSnapshot Snapshot)> Snapshots = new();
 
     private static AlignmentSnapshot Snapshot(Document document, Transaction transaction, Alignment alignment)
@@ -53,7 +54,7 @@ public static class AlignmentQueries
         return snapshot;
     }
 
-    // Alignments can sit in sites or be siteless; both sets are merged without duplicates.
+    // 선형은 부지(site) 안에 있거나 부지 없이 있을 수 있다. 둘을 중복 없이 합친다.
     internal static List<Alignment> AllAlignments(Transaction transaction)
     {
         CivilDocument civil = CivilApplication.ActiveDocument
@@ -67,6 +68,7 @@ public static class AlignmentQueries
         return ids.Select(id => transaction.GetObject(id, OpenMode.ForRead)).OfType<Alignment>().ToList();
     }
 
+    // 선형 찾기: 핸들로, 아니면 이름으로. 같은 이름이 여럿이면 핸들을 달라고 한다.
     internal static Alignment ResolveAlignment(Transaction transaction, string key)
     {
         if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("An alignment handle or name is required.");
@@ -83,6 +85,7 @@ public static class AlignmentQueries
         };
     }
 
+    // 선형 요약 한 줄.
     internal static AlignmentSummary Summarize(Transaction transaction, Alignment alignment)
     {
         string? site = null;
@@ -100,6 +103,7 @@ public static class AlignmentQueries
         };
     }
 
+    // 종단 요약 한 줄. 최저·최고 표고는 못 구하면 비운다.
     internal static ProfileSummary SummarizeProfile(Alignment alignment, Profile profile)
     {
         double? min = null, max = null;

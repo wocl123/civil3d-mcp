@@ -6,16 +6,13 @@ using CogoPoint = Autodesk.Civil.DatabaseServices.CogoPoint;
 
 namespace MyCivil3DMcp.Plugin;
 
-
-
-
-
 /// <summary>
-/// Read-only drawing queries. Later transports can call these methods from a
-/// valid Civil 3D command context without depending on the command-line UI.
+/// 도면 조회(읽기만). 브리지나 명령이 올바른 Civil 3D 명령 컨텍스트에서 부른다.
+/// 목록은 offset/limit로 나눠 준다(limit 1~200).
 /// </summary>
 public static class DrawingQueries
 {
+    // 도면 이름·경로·버전, 모형 공간 객체 수, 단위·좌표계, 리비전.
     public static DrawingStatus GetStatus(Document document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -45,6 +42,7 @@ public static class DrawingQueries
         };
     }
 
+    // 모형 공간 객체 목록(레이어로 거를 수 있음).
     public static DrawingObjectPage GetObjects(Document document, int offset = 0, int limit = 20,
         string? layer = null)
     {
@@ -75,6 +73,7 @@ public static class DrawingQueries
         return new DrawingObjectPage(document.Name, offset, limit, totalCount, items);
     }
 
+    // 2D 폴리선만, 요약과 함께.
     public static PolylinePage GetPolylines(Document document, int offset = 0, int limit = 20, string? layer = null)
     {
         ValidatePage(offset, limit);
@@ -93,6 +92,7 @@ public static class DrawingQueries
         return new PolylinePage(document.Name, offset, limit, totalCount, items);
     }
 
+    // 폴리선 요약: 꼭짓점 수, 호 구간 수, 닫힘, 길이, 시작·끝 점.
     internal static PolylineSummary Summarize(Polyline polyline)
     {
         int last = polyline.NumberOfVertices - 1;
@@ -105,6 +105,8 @@ public static class DrawingQueries
             [Math.Round(end.X, 3), Math.Round(end.Y, 3)]);
     }
 
+    // 레이어 목록(이름순): 켜짐·동결·잠금과 레이어별 객체 종류 수.
+    // COGO 점은 모형 공간 목록에 없을 수 있어 따로 센다.
     public static DrawingLayerPage GetLayers(Document document, int offset = 0, int limit = 50)
     {
         ValidatePage(offset, limit);
@@ -130,6 +132,7 @@ public static class DrawingQueries
                 types[nameof(CogoPoint)] = types.GetValueOrDefault(nameof(CogoPoint)) + 1;
             }
 
+        // 객체가 없는 레이어도 목록에 넣는다.
         LayerTable table = (LayerTable)transaction.GetObject(document.Database.LayerTableId, OpenMode.ForRead);
         List<DrawingLayer> layers = new();
         foreach (ObjectId id in table)
@@ -144,6 +147,7 @@ public static class DrawingQueries
             layers.Skip(offset).Take(limit).ToArray());
     }
 
+    // 핸들 하나의 상세(모형 공간, 없으면 COGO 점에서 찾는다).
     public static DrawingObjectDetail GetObject(Document document, string handle)
     {
         if (string.IsNullOrWhiteSpace(handle) || handle.Length > 16)
@@ -164,6 +168,7 @@ public static class DrawingQueries
         throw new ArgumentException("Object handle was not found in the active drawing.");
     }
 
+    // 종류별 형상 + 범위. 폴리선 꼭짓점은 100개까지.
     private static DrawingObjectDetail Describe(Entity entity)
     {
         object? geometry = entity switch
@@ -172,11 +177,19 @@ public static class DrawingQueries
             CogoPoint point => new { position = Coordinates(point.Location), pointNumber = point.PointNumber,
                 rawDescription = point.RawDescription },
             Line line => new { start = Coordinates(line.StartPoint), end = Coordinates(line.EndPoint) },
-            Polyline polyline => new { elevation = polyline.Elevation,
-                vertexCount = polyline.NumberOfVertices, closed = polyline.Closed,
-                vertices = Enumerable.Range(0, Math.Min(polyline.NumberOfVertices, 100)).Select(index => new {
-                    x = polyline.GetPoint2dAt(index).X, y = polyline.GetPoint2dAt(index).Y,
-                    bulge = polyline.GetBulgeAt(index) }).ToArray(), verticesTruncated = polyline.NumberOfVertices > 100 },
+            Polyline polyline => new
+            {
+                elevation = polyline.Elevation,
+                vertexCount = polyline.NumberOfVertices,
+                closed = polyline.Closed,
+                vertices = Enumerable.Range(0, Math.Min(polyline.NumberOfVertices, 100)).Select(index => new
+                {
+                    x = polyline.GetPoint2dAt(index).X,
+                    y = polyline.GetPoint2dAt(index).Y,
+                    bulge = polyline.GetBulgeAt(index)
+                }).ToArray(),
+                verticesTruncated = polyline.NumberOfVertices > 100
+            },
             Polyline3d polyline => new { closed = polyline.Closed },
             Circle circle => new { center = Coordinates(circle.Center), radius = circle.Radius },
             _ => null

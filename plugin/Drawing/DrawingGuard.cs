@@ -4,14 +4,14 @@ using App = Autodesk.AutoCAD.ApplicationServices.Application;
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// Keeps the user from changing the drawing while the palette AI is answering, so what the
-/// AI read, checked, and may change is still what is in the drawing. Commands the user starts
-/// are vetoed; looking around (zoom, pan, orbit, regen) and selecting objects still work,
-/// and the plug-in's own requests (which run while the AI works) pass.
+/// 팔레트 AI가 답하는 동안 사용자가 도면을 바꾸지 못하게 한다.
+/// AI가 읽고 검토하고 바꿀 수도 있는 내용이 실제 도면과 어긋나지 않게 하려는 것.
+/// 사용자가 시작한 명령은 막고(veto), 둘러보기(확대·이동·궤도·재생성)와 객체 선택은 된다.
+/// AI가 일하는 동안 들어오는 플러그인 자체 요청은 통과한다.
 /// </summary>
 internal static class DrawingGuard
 {
-    // Commands that only move the view or redraw it.
+    // 화면만 움직이거나 다시 그리는 명령(+ 이 플러그인의 조회 명령).
     private static readonly HashSet<string> ViewOnly = new(StringComparer.OrdinalIgnoreCase)
     {
         "ZOOM", "PAN", "REDRAW", "REDRAWALL", "REGEN", "REGENALL", "3DORBIT", "3DFORBIT", "3DCORBIT",
@@ -22,6 +22,7 @@ internal static class DrawingGuard
 
     public static bool Active => _active > 0;
 
+    // 답변 시작/끝. 겹쳐 불려도 되게 횟수로 센다.
     public static void Begin()
     {
         if (_active++ == 0) App.DocumentManager.DocumentLockModeChanged += OnLockModeChanged;
@@ -37,10 +38,10 @@ internal static class DrawingGuard
     {
         if (DrawingSelection.BridgeRunning) return;
         string command = e.GlobalCommandName.TrimStart('#', '\'', '_', '.').ToUpperInvariant();
-        // Locks without a command come from AutoCAD itself (display, autosave), not the user.
+        // 명령 이름이 없는 잠금은 AutoCAD 자체(화면, 자동 저장)에서 온 것이라 막지 않는다.
         if (command.Length == 0 || ViewOnly.Contains(command)) return;
         e.Veto();
-        // One line per few seconds, so holding a key does not flood the command line.
+        // 안내는 몇 초에 한 줄만(키를 누르고 있어도 명령줄이 넘치지 않게).
         if (Environment.TickCount64 - _lastMessage < 3000) return;
         _lastMessage = Environment.TickCount64;
         e.Document?.Editor.WriteMessage($"\nAI가 답변하는 동안에는 도면을 바꿀 수 없습니다({command} 취소). 화면 이동·확대와 선택은 됩니다.\n");

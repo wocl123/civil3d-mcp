@@ -13,8 +13,8 @@ using System.Windows.Threading;
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// Chat-style AI palette: AI choices with their sign-in state, the conversation as
-/// bubbles, an input box (Enter sends, Shift+Enter adds a line), and one usage line.
+/// 대화형 AI 팔레트: 위에서부터 제목, AI 선택(로그인 상태·남은 세션 시간), 말풍선 대화,
+/// 입력칸(Enter 보내기, Shift+Enter 줄바꿈), 사용량 한 줄.
 /// </summary>
 internal sealed class ChatPanel : UserControl
 {
@@ -28,20 +28,20 @@ internal sealed class ChatPanel : UserControl
     private readonly TextBlock _usage = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Dictionary<string, Button> _chips = new();
     private readonly Dictionary<string, string> _states = Providers.ToDictionary(name => name, _ => "unchecked");
-    // Each ready AI's session: when it ends and how long one lasts (from the service). Using
-    // the AI starts the time again; an unused AI is released when its time runs out.
+    // 준비된 AI마다 세션이 끝나는 시각과 세션 길이(서비스가 알려 줌).
+    // 쓰면 시간이 처음부터 다시 시작되고, 안 쓰면 시간이 다 됐을 때 풀린다.
     private readonly Dictionary<string, DateTime> _sessionEnds = new();
     private readonly Dictionary<string, TimeSpan> _sessionLengths = new();
     private readonly DispatcherTimer _sessionClock = new() { Interval = TimeSpan.FromSeconds(1) };
     private string? _selected;
-    // Identifies this conversation to the service, which sends its recent turns with each question.
+    // 이 대화의 id. 서비스는 이 id로 최근 대화를 찾아 질문과 함께 AI에 보낸다.
     private string _conversation = Guid.NewGuid().ToString("N");
     private bool _busy;
     private string _lastUsage = "이번 —";
     private string _totalUsage = "누적 —";
     private string _quota = "한도 —";
 
-    /// <summary>Raised when the input box gains or loses keyboard focus.</summary>
+    /// <summary>입력칸이 키보드 포커스를 얻거나 잃을 때.</summary>
     public event Action<bool>? InputFocusChanged;
 
     public ChatPanel()
@@ -69,7 +69,7 @@ internal sealed class ChatPanel : UserControl
         _sessionClock.Start();
     }
 
-    // Records the time left that the service reported for an AI's session.
+    // 서비스가 알려 준 AI 세션의 남은 시간을 적어 둔다.
     private void ReadSession(string name, JsonNode? session)
     {
         double? left = session?["expiresInMs"]?.GetValue<double>();
@@ -79,14 +79,14 @@ internal sealed class ChatPanel : UserControl
         if (length is not null) _sessionLengths[name] = TimeSpan.FromMilliseconds(length.Value);
     }
 
-    // Every second: count down the shown time, and release an AI whose time ran out.
+    // 1초마다: 보이는 시간을 줄이고, 시간이 다 된 AI는 풀어 준다.
     private void TickSessions()
     {
         if (_sessionEnds.Count == 0) return;
         foreach ((string name, DateTime end) in _sessionEnds.ToList())
         {
             if (DateTime.UtcNow < end || _states[name] != "ready") continue;
-            // The answer being written keeps the session alive; the service extends it when done.
+            // 답을 쓰는 중이면 세션을 유지한다. 끝나면 서비스가 늘려 준다.
             if (_busy && name == _selected) continue;
             _sessionEnds.Remove(name);
             _states[name] = "unchecked";
@@ -101,6 +101,7 @@ internal sealed class ChatPanel : UserControl
         UpdateChips();
     }
 
+    // 남은 시간 글("29:41").
     private string SessionLeft(string name)
     {
         if (!_sessionEnds.TryGetValue(name, out DateTime end)) return "";
@@ -109,6 +110,7 @@ internal sealed class ChatPanel : UserControl
         return $" · {(int)left.TotalMinutes}:{left.Seconds:00}";
     }
 
+    // 팔레트를 열 때: AI 상태와 사용량을 새로 읽는다.
     public async Task RefreshAllAsync()
     {
         if (_busy) return;
@@ -117,6 +119,8 @@ internal sealed class ChatPanel : UserControl
         await RefreshProvidersAsync();
         if (_selected is not null) await RefreshUsageAsync(_selected, refreshQuota: false);
     }
+
+    // ── 화면 구성
 
     private UIElement Header()
     {
@@ -175,7 +179,7 @@ internal sealed class ChatPanel : UserControl
             await SendAsync();
         };
         _input.TextChanged += (_, _) => UpdateControls();
-        // Civil 3D returns keystrokes to the command line unless the palette keeps focus.
+        // 팔레트가 포커스를 잡고 있지 않으면 Civil 3D가 키 입력을 명령줄로 가져간다.
         _input.GotKeyboardFocus += (_, _) => InputFocusChanged?.Invoke(true);
         _input.LostKeyboardFocus += (_, _) => InputFocusChanged?.Invoke(false);
 
@@ -218,10 +222,13 @@ internal sealed class ChatPanel : UserControl
         return footer;
     }
 
+    // ── AI 고르기, 질문 보내기
+
+    // AI 버튼을 눌렀을 때: 준비됐으면 고르고, 아니면 설치·로그인을 물어본다.
     private async Task ChooseAsync(string name)
     {
         if (_busy) return;
-        // Every click checks again, so a CLI installed or signed in a moment ago is picked up.
+        // 누를 때마다 다시 확인한다. 방금 설치·로그인한 CLI도 바로 잡힌다.
         if (_states[name] != "ready")
         {
             SetBusy(true);
@@ -255,17 +262,18 @@ internal sealed class ChatPanel : UserControl
         _input.Focus();
     }
 
+    // 질문 보내기: 진행 상황과 답 글자를 오는 대로 보여 주고, 끝나면 사용량·적용 내역을 붙인다.
     private async Task SendAsync()
     {
         string question = _input.Text.Trim();
         if (_busy || _selected is null || question.Length == 0) return;
         string provider = _selected;
-        // Asking starts the session time again (the service does the same).
+        // 질문하면 세션 시간이 처음부터 다시 시작된다(서비스도 똑같이 한다).
         if (_sessionLengths.TryGetValue(provider, out TimeSpan sessionLength)) _sessionEnds[provider] = DateTime.UtcNow + sessionLength;
         AddBubble(question, fromUser: true);
         _input.Clear();
         (Border answer, TextBlock meta, Button copy) = AddAnswer("", Display(provider));
-        // While the AI works: what it is doing and for how long, then the answer text as it arrives.
+        // AI가 일하는 동안: 무엇을 하는지와 걸린 시간, 그다음 오는 대로 답 글자.
         TextBlock status = new() { Foreground = _theme.Muted, FontSize = 11.5 };
         TextBox draft = SelectableText("", _theme.Text);
         draft.Visibility = Visibility.Collapsed;
@@ -278,7 +286,7 @@ internal sealed class ChatPanel : UserControl
         ShowStatus();
         ticker.Start();
         SetBusy(true);
-        // While the AI works, the drawing it reads must not change under it (DrawingGuard).
+        // AI가 일하는 동안 AI가 읽는 도면이 바뀌면 안 된다(DrawingGuard).
         DrawingGuard.Begin();
         try
         {
@@ -305,10 +313,16 @@ internal sealed class ChatPanel : UserControl
             bool cached = data["cached"]?.GetValue<bool>() == true;
             int recorded = (data["recorded"] as JsonArray)?.Count ?? 0;
             int candidates = (data["candidates"] as JsonArray)?.Count ?? 0;
-            string tokens = cached ? "저장된 답변 재사용 · 토큰 0" : "입력 " + Tokens(data["usage"]?["inputTokens"]) + " · 출력 " + Tokens(data["usage"]?["outputTokens"]);
+            string tokens = cached
+                ? "저장된 답변 재사용 · 토큰 0"
+                : "입력 " + Tokens(data["usage"]?["inputTokens"]) + " · 출력 " + Tokens(data["usage"]?["outputTokens"]);
             int summarized = data["conversation"]?["summarized"]?.GetValue<int>() ?? 0;
-            meta.Text = $"{Display(provider)} · {tokens}" + (cached ? "" : $" · {clock.Elapsed.TotalSeconds:0}초") +
-                (recorded > 0 ? $" · 도면 지식 {recorded}건 기록" : "") + (candidates > 0 ? $" · 지식 후보 {candidates}건 (/후보)" : "") + (summarized > 0 ? $" · 앞 대화 {summarized}개 요약됨" : "");
+            // 답 아래 한 줄: AI · 토큰 · 걸린 시간 · 기록한 지식 · 지식 후보 · 요약한 대화
+            meta.Text = $"{Display(provider)} · {tokens}"
+                + (cached ? "" : $" · {clock.Elapsed.TotalSeconds:0}초")
+                + (recorded > 0 ? $" · 도면 지식 {recorded}건 기록" : "")
+                + (candidates > 0 ? $" · 지식 후보 {candidates}건 (/후보)" : "")
+                + (summarized > 0 ? $" · 앞 대화 {summarized}개 요약됨" : "");
             _lastUsage = cached ? "이번 0" : "이번 " + Tokens(data["usage"]?["inputTokens"]);
             _totalUsage = Totals(data["totals"]);
             UpdateFooter();
@@ -330,6 +344,7 @@ internal sealed class ChatPanel : UserControl
         }
     }
 
+    // 새 대화: 화면을 비우고 새 대화 id를 쓴다.
     private void StartNewConversation()
     {
         if (_busy) return;
@@ -337,11 +352,14 @@ internal sealed class ChatPanel : UserControl
         _conversation = Guid.NewGuid().ToString("N");
         _messages.Children.Clear();
         AddNotice("새 대화를 시작합니다.");
-        // The service forgets the old turns on its own after a few hours; this only frees them sooner.
+        // 서비스는 몇 시간 뒤 옛 대화를 스스로 잊는다. 이건 조금 더 일찍 비우는 것뿐.
         _ = PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/conversation/clear", new { conversation = previous })
             .ContinueWith(_ => { }, TaskScheduler.Default);
     }
 
+    // ── 상태 새로 읽기
+
+    // AI마다 설치·로그인 상태와 세션.
     private async Task RefreshProvidersAsync()
     {
         try
@@ -361,6 +379,7 @@ internal sealed class ChatPanel : UserControl
         UpdateControls();
     }
 
+    // 고른 AI의 누적 사용량과(원하면) 한도.
     private async Task RefreshUsageAsync(string provider, bool refreshQuota)
     {
         try
@@ -386,6 +405,9 @@ internal sealed class ChatPanel : UserControl
         UpdateFooter();
     }
 
+    // ── 대화 항목
+
+    // 내 질문 말풍선.
     private void AddBubble(string text, bool fromUser)
     {
         Border bubble = new()
@@ -401,7 +423,7 @@ internal sealed class ChatPanel : UserControl
         ScrollToEnd();
     }
 
-    // Answers get most of the panel width so tables fit; the copy button appears once the answer arrives.
+    // AI 답: 표가 들어가도록 패널 너비 대부분을 쓴다. 복사 버튼은 답이 다 오면 보인다.
     private (Border Answer, TextBlock Meta, Button Copy) AddAnswer(string text, string meta)
     {
         Border bubble = new()
@@ -437,13 +459,13 @@ internal sealed class ChatPanel : UserControl
             Clipboard.SetText(MarkdownView.PlainText(text));
             copy.Content = "복사됨";
         }
-        // Another program can hold the clipboard for a moment.
+        // 다른 프로그램이 잠깐 클립보드를 잡고 있을 수 있다.
         catch (System.Runtime.InteropServices.COMException) { copy.Content = "복사 실패"; }
     }
 
     private void ForwardWheel(MouseWheelEventArgs e) => _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset - e.Delta / 3.0);
 
-    // The AI changed the drawing in this answer: what changed, and how to undo it.
+    // 이 답에서 AI가 도면을 바꿨을 때: 무엇이 바뀌었는지와 되돌리는 방법.
     private void AddAppliedNote(JsonNode change)
     {
         StackPanel body = new();
@@ -463,6 +485,7 @@ internal sealed class ChatPanel : UserControl
         ScrollToEnd();
     }
 
+    // 안내·오류 한 줄.
     private void AddNotice(string text, bool error = false)
     {
         _messages.Children.Add(new TextBlock
@@ -474,9 +497,9 @@ internal sealed class ChatPanel : UserControl
         ScrollToEnd();
     }
 
-    // Picking an AI that is not installed (or not signed in) asks first. Only [설치] / [로그인]
-    // opens server/setup/setup-ai-cli.ps1 for that one AI in its own window, where it installs
-    // and goes on to the sign-in; the user signs in there with their own account.
+    // 설치(또는 로그인)되지 않은 AI를 고르면 먼저 묻는다. [설치]/[로그인]을 눌렀을 때만
+    // 그 AI 하나에 대해 server/setup/setup-ai-cli.ps1 을 새 창으로 연다. 거기서 설치하고
+    // 이어서 로그인까지 하며, 로그인은 사용자가 자기 계정으로 직접 한다.
     private void AskSetup(string name, string action, string text)
     {
         StackPanel body = new();
@@ -518,7 +541,9 @@ internal sealed class ChatPanel : UserControl
         ScrollToEnd();
     }
 
-    // Answers stay selectable so values can be copied into the drawing or a report.
+    // ── 작은 부품
+
+    // 선택할 수 있는 글(값을 도면이나 보고서로 복사할 수 있게).
     private static TextBox SelectableText(string text, Brush foreground) => new()
     {
         Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0),
@@ -532,26 +557,43 @@ internal sealed class ChatPanel : UserControl
         BorderThickness = new Thickness(1), Template = FlatTemplate()
     };
 
-    // A plain rounded border keeps the theme colors; the default Windows button
-    // chrome would repaint hover and disabled states in system colors.
+    // 둥근 테두리만 있는 버튼 모양. 기본 Windows 버튼은 마우스를 올리거나 비활성일 때
+    // 시스템 색으로 다시 칠해 테마 색이 깨진다.
     private static ControlTemplate FlatTemplate()
     {
         FrameworkElementFactory border = new(typeof(Border));
         border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
-        border.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding("Background") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
-        border.SetBinding(Border.BorderBrushProperty, new System.Windows.Data.Binding("BorderBrush") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
-        border.SetBinding(Border.BorderThicknessProperty, new System.Windows.Data.Binding("BorderThickness") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
-        border.SetBinding(Border.PaddingProperty, new System.Windows.Data.Binding("Padding") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
+        // 버튼의 색·테두리·여백을 그대로 테두리에 넘긴다.
+        Bind(border, Border.BackgroundProperty, "Background");
+        Bind(border, Border.BorderBrushProperty, "BorderBrush");
+        Bind(border, Border.BorderThicknessProperty, "BorderThickness");
+        Bind(border, Border.PaddingProperty, "Padding");
         FrameworkElementFactory content = new(typeof(ContentPresenter));
-        content.SetBinding(ContentPresenter.HorizontalAlignmentProperty, new System.Windows.Data.Binding("HorizontalContentAlignment") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
+        Bind(content, ContentPresenter.HorizontalAlignmentProperty, "HorizontalContentAlignment");
         content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
         border.AppendChild(content);
         ControlTemplate template = new(typeof(Button)) { VisualTree = border };
-        template.Triggers.Add(new Trigger { Property = UIElement.IsMouseOverProperty, Value = true, Setters = { new Setter(UIElement.OpacityProperty, 0.85) } });
-        template.Triggers.Add(new Trigger { Property = UIElement.IsEnabledProperty, Value = false, Setters = { new Setter(UIElement.OpacityProperty, 0.45) } });
+        // 마우스를 올리면 조금, 비활성이면 많이 흐리게.
+        template.Triggers.Add(new Trigger
+        {
+            Property = UIElement.IsMouseOverProperty, Value = true, Setters = { new Setter(UIElement.OpacityProperty, 0.85) }
+        });
+        template.Triggers.Add(new Trigger
+        {
+            Property = UIElement.IsEnabledProperty, Value = false, Setters = { new Setter(UIElement.OpacityProperty, 0.45) }
+        });
         return template;
     }
 
+    private static void Bind(FrameworkElementFactory element, DependencyProperty property, string source) =>
+        element.SetBinding(property, new System.Windows.Data.Binding(source)
+        {
+            RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent
+        });
+
+    // ── 화면 갱신
+
+    // AI 버튼: 상태 점 색, 고른 것 강조, 남은 세션 시간.
     private void UpdateChips()
     {
         foreach ((string name, Button chip) in _chips)
@@ -566,7 +608,10 @@ internal sealed class ChatPanel : UserControl
                 _ => _theme.Attention
             };
             StackPanel content = new() { Orientation = Orientation.Horizontal };
-            content.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = dot, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
+            content.Children.Add(new Ellipse
+            {
+                Width = 8, Height = 8, Fill = dot, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center
+            });
             StackPanel label = new();
             label.Children.Add(new TextBlock { Text = Display(name), FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal });
             label.Children.Add(new TextBlock
@@ -596,6 +641,7 @@ internal sealed class ChatPanel : UserControl
         }
     }
 
+    // 입력칸·보내기 버튼: AI를 골랐고 답을 기다리는 중이 아닐 때만.
     private void UpdateControls()
     {
         _placeholder.Visibility = _input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -606,6 +652,7 @@ internal sealed class ChatPanel : UserControl
             : "도면에 대해 물어보세요 · Enter 보내기";
     }
 
+    // 사용량 줄: 이번 · 누적 · 한도.
     private void UpdateFooter() => _usage.Text = _selected is null
         ? "AI를 고르면 사용량과 한도가 표시됩니다."
         : $"{_lastUsage} · {_totalUsage} · {_quota}";
@@ -625,6 +672,8 @@ internal sealed class ChatPanel : UserControl
         grid.Children.Add(element);
     }
 
+    // ── 글 만들기
+
     private static string Display(string name) => char.ToUpperInvariant(name[0]) + name[1..];
 
     private static string LoginCommand(string name) => name switch
@@ -637,7 +686,7 @@ internal sealed class ChatPanel : UserControl
     private static string Totals(JsonNode? totals) =>
         $"누적 {totals?["requests"]?.ToString() ?? "0"}회 {Tokens(totals?["inputTokens"])}";
 
-    // 8,412 tokens read as 8.4k so the usage line stays on one line.
+    // 8,412 토큰은 8.4k로(사용량 줄이 한 줄에 들어가게).
     private static string Tokens(JsonNode? value)
     {
         if (!double.TryParse(value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double count))

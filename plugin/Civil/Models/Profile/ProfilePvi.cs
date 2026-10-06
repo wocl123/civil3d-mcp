@@ -1,6 +1,6 @@
 namespace MyCivil3DMcp.Plugin;
 
-/// <summary>A PVI; grades are in percent.</summary>
+/// <summary>PVI 하나. 경사는 %.</summary>
 public sealed record ProfilePvi(int Number, double Station, string StationText, double Elevation,
     double? GradeInPercent, double? GradeOutPercent, string CurveType)
 {

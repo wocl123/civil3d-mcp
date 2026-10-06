@@ -4,6 +4,8 @@ using System.Text.Json.Nodes;
 
 namespace MyCivil3DMcp.Plugin;
 
+// 팔레트 → Node 로컬 서비스 HTTP 호출. 브리지와 같은 세션 토큰으로 인증한다.
+// 포트는 48900 (MY_CIVIL3D_SERVICE_PORT 로 바꿀 수 있음). 긴 답을 기다리도록 4분 제한.
 internal static class PaletteApiClient
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(4) };
@@ -21,8 +23,8 @@ internal static class PaletteApiClient
     }
 
     /// <summary>
-    /// Reads a stream of JSON lines. Each event goes to onEvent as it arrives (on the
-    /// caller's thread); the "done" event is returned and an "error" event is thrown.
+    /// 한 줄에 JSON 하나씩 오는 응답을 읽는다. 각 이벤트는 오는 대로 onEvent로 넘기고(호출한 스레드에서),
+    /// "done" 이벤트는 반환하고, "error" 이벤트는 예외로 던진다.
     /// </summary>
     public static async Task<JsonNode> StreamAsync(string path, object body, Action<JsonNode> onEvent)
     {
@@ -47,6 +49,7 @@ internal static class PaletteApiClient
         throw new InvalidOperationException("서비스 응답이 중간에 끊겼습니다.");
     }
 
+    // 보통 요청: 응답 JSON 전체를 받는다. 실패하면 서버가 준 error 문구로 예외.
     public static async Task<JsonNode> RequestAsync(HttpMethod method, string path, object? body = null)
     {
         using HttpRequestMessage request = Request(method, path, body);

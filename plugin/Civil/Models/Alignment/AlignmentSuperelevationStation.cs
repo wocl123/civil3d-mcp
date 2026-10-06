@@ -1,6 +1,6 @@
 namespace MyCivil3DMcp.Plugin;
 
-/// <summary>A superelevation critical station; lane slopes are in percent.</summary>
+/// <summary>편경사 임계 측점. 차로 경사는 %.</summary>
 public sealed record AlignmentSuperelevationStation(string CurveName, double Station, string StationText,
     string Type, string Region)
 {

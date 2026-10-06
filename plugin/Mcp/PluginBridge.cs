@@ -10,11 +10,14 @@ using App = Autodesk.AutoCAD.ApplicationServices.Application;
 
 namespace MyCivil3DMcp.Plugin;
 
-/// <summary>Local JSON-RPC bridge for the Node process.</summary>
+/// <summary>Node 프로세스가 플러그인을 부르는 로컬 JSON-RPC 브리지.</summary>
+// 127.0.0.1:48761(MY_CIVIL3D_PORT)에서 연결 하나에 요청 한 줄, 응답 한 줄.
+// 시작할 때 무작위 토큰을 만들어 %LOCALAPPDATA%\MyCivil3DMcp\connection.json 에 쓰고,
+// 그 토큰을 가진 요청만 받는다. 도면 작업은 모두 Civil 3D 명령 컨텍스트에서 실행한다.
 public static class PluginBridge
 {
-    // Absent values are left out rather than written as null: every result goes into an
-    // AI's context, and a line element alone has some twenty optional fields.
+    // 값이 없는 항목은 null로 쓰지 않고 뺀다: 결과가 모두 AI 문맥에 들어가는데,
+    // 선형 요소 하나만 해도 선택 항목이 스무 개쯤 된다.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -33,6 +36,7 @@ public static class PluginBridge
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "MyCivil3DMcp", "connection.json");
 
+    // 포트를 열고, 토큰을 만들어 연결 파일에 쓴 뒤 접속을 받기 시작한다.
     public static void Start()
     {
         if (_listener is not null) return;
@@ -69,6 +73,7 @@ public static class PluginBridge
         _ = AcceptLoopAsync(listener, cancellation.Token);
     }
 
+    // 닫는다. 연결 파일은 내 토큰이 들어 있을 때만 지운다(다른 Civil 3D가 쓴 파일은 두기).
     public static void Stop()
     {
         string? ownToken = _token;
@@ -106,6 +111,7 @@ public static class PluginBridge
         }
     }
 
+    // 연결 하나: 요청 한 줄 읽기 → 처리 → 응답 한 줄 쓰기. 10분이 넘으면 끊는다.
     private static async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
     {
         using (client)
@@ -127,6 +133,7 @@ public static class PluginBridge
         }
     }
 
+    // 줄바꿈까지 읽는다(1 MiB까지).
     private static async Task<string> ReadRequestAsync(NetworkStream stream, CancellationToken cancellationToken)
     {
         byte[] buffer = new byte[8192];
@@ -144,6 +151,11 @@ public static class PluginBridge
         }
     }
 
+    // JSON-RPC 요청 검사(형식, 토큰) 후 method에 맞는 조회·편집을 실행한다.
+    //   drawing.*    도면 상태, 객체, 레이어, 선택, 요약, 캡처, 폴리선 고르기
+    //   alignment.*  선형 목록·상세·구간, 선형 만들기
+    //   profile.*    종단 상세·구간
+    //   change.apply 설계 값 바꾸기 (편집은 Undo 한 번으로 되돌릴 수 있게 묶음)
     private static async Task<object> DispatchAsync(string requestText)
     {
         JsonNode? request;
@@ -165,6 +177,7 @@ public static class PluginBridge
             JsonObject? parameters = requestObject["params"] as JsonObject;
             object result = requestObject["method"]?.ToString() switch
             {
+                // ── 도면 조회
                 "drawing.status" => await InDocumentContextAsync(doc => DrawingQueries.GetStatus(doc)),
                 "drawing.objects" => await InDocumentContextAsync(doc => DrawingQueries.GetObjects(
                     doc,
@@ -177,6 +190,7 @@ public static class PluginBridge
                     ReadInt(parameters?["limit"], 50))),
                 "drawing.object" => await InDocumentContextAsync(doc => DrawingQueries.GetObject(
                     doc, ReadString(parameters?["handle"]))),
+                // ── 선형·종단 조회
                 "alignment.list" => await InDocumentContextAsync(doc => AlignmentQueries.ListAlignments(
                     doc,
                     ReadInt(parameters?["offset"], 0),
@@ -195,8 +209,10 @@ public static class PluginBridge
                     doc,
                     ReadString(parameters?["profile"]),
                     parameters?["alignment"]?.ToString())),
+                // ── 도면 편집
                 "change.apply" => await InDocumentEditAsync(doc => DesignChanges.Apply(doc, ReadChanges(parameters?["changes"]))),
                 "alignment.create" => await InDocumentEditAsync(doc => AlignmentCreation.Create(doc, ReadCreate(parameters))),
+                // ── 사용자에게 고르게 하기, 화면 캡처, 선택·요약, 그 밖의 조회
                 "drawing.pick_polyline" => await InDocumentContextAsync(doc => DrawingPicker.PickPolyline(
                     doc, parameters?["message"]?.ToString(), Math.Clamp(ReadInt(parameters?["timeoutSeconds"], 90), 10, 110))),
                 "drawing.capture" => await InDocumentContextAsync(doc => DrawingCapture.Capture(
@@ -229,6 +245,8 @@ public static class PluginBridge
         catch (ArgumentException ex) { return Failure(id, -32602, ex.Message); }
         catch (System.Exception ex) { return Failure(id, -32603, ex.Message); }
     }
+
+    // ── 매개변수 읽기. 형식이 틀리면 ArgumentException(→ -32602).
 
     private static int ReadInt(JsonNode? value, int fallback)
     {
@@ -277,6 +295,7 @@ public static class PluginBridge
             ? number : throw new ArgumentException("Each station must be a finite number.")).ToArray();
     }
 
+    // 토큰 비교(시간이 일정한 비교).
     private static bool IsAuthorized(string? candidate)
     {
         if (_token is null || candidate is null) return false;
@@ -288,11 +307,12 @@ public static class PluginBridge
         catch (FormatException) { return false; }
     }
 
+    // 조회: 명령 컨텍스트에서 도면을 잠그고 실행한다.
     private static async Task<object> InDocumentContextAsync(Func<Document, object> query)
     {
         object? result = null;
         System.Exception? error = null;
-        // Entering a command context clears the user's grips; DrawingSelection keeps them.
+        // 명령 컨텍스트에 들어가면 사용자의 그립이 지워진다. DrawingSelection이 선택을 기억해 둔다.
         DrawingSelection.BridgeStarted();
         try
         {
@@ -314,13 +334,13 @@ public static class PluginBridge
         return result!;
     }
 
-    // Like InDocumentContextAsync, but the edits form one UNDO group, so one Ctrl+Z
-    // (or UNDO 1) reverts all of them. The group is closed even when the edit fails.
+    // 편집: InDocumentContextAsync와 같지만 편집을 UNDO 그룹 하나로 묶는다.
+    // Ctrl+Z 한 번(UNDO 1)으로 모두 되돌릴 수 있고, 편집이 실패해도 그룹은 닫는다.
     private static async Task<object> InDocumentEditAsync(Func<Document, object> edit)
     {
         object? result = null;
         System.Exception? error = null;
-        // Entering a command context clears the user's grips; DrawingSelection keeps them.
+        // 명령 컨텍스트에 들어가면 사용자의 그립이 지워진다. DrawingSelection이 선택을 기억해 둔다.
         DrawingSelection.BridgeStarted();
         try
         {

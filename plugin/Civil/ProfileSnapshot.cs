@@ -5,9 +5,9 @@ using Autodesk.Civil.DatabaseServices;
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// Everything this plug-in reads from one profile, grouped into sections. Values
-/// Civil 3D computes, such as K, high or low points, and sight distances, are read
-/// rather than recomputed. Grades are converted from ratios to percent.
+/// 종단 하나에서 읽는 모든 것을 구간(section)별로 묶은 것.
+/// K값, 최고·최저점, 시거처럼 Civil 3D가 계산한 값은 다시 계산하지 않고 읽는다.
+/// 경사는 비율에서 %로 바꾼다.
 /// </summary>
 internal sealed class ProfileSnapshot
 {
@@ -35,8 +35,8 @@ internal sealed class ProfileSnapshot
         }
 
         bool checks = Try("settings", () => profile.UseDesignCheckSet);
-        // A tuple is never null, so the failed read is marked by a nullable tuple; without it a
-        // failure gave (null, null) and the next line threw "Value cannot be null".
+        // 튜플은 null이 될 수 없어서, 읽기 실패를 nullable 튜플로 표시한다.
+        // 이렇게 하지 않으면 실패 때 (null, null)이 되어 다음 줄에서 "Value cannot be null"이 났다.
         (List<ProfileTangentInfo> tangents, List<ProfileCurveInfo> curves) =
             Try<(List<ProfileTangentInfo>, List<ProfileCurveInfo>)?>("entities", () => ReadEntities(alignment, profile, checks)) ?? (new(), new());
         List<ProfilePvi> pvis = Try("pvis", () => ReadPvis(alignment, profile)) ?? new();
@@ -44,7 +44,7 @@ internal sealed class ProfileSnapshot
         ProfileSettings settings = Try("settings", () => ReadSettings(transaction, profile))
             ?? new ProfileSettings("Unknown", null, null, null, false, false, false, null);
 
-        // Extremes come from tangent and curve end points and curve high or low points.
+        // 최고·최저 표고는 경사구간·곡선의 끝점과 곡선의 최고·최저점에서 구한다.
         List<ProfilePoint> candidates = tangents.SelectMany(item => new[]
         {
             new ProfilePoint(item.StartStation, item.StartStationText, item.StartElevation),
@@ -72,7 +72,7 @@ internal sealed class ProfileSnapshot
         };
     }
 
-    /// <summary>Items of one section, limited to a station range when one is given. Elevations are read by Sample.</summary>
+    /// <summary>구간 하나의 항목. 측점 범위를 주면 그 안의 것만. 표고(elevations)는 Sample로 읽는다.</summary>
     public IEnumerable<object> Section(string name, double? from, double? to)
     {
         bool Overlaps(double start, double end) => (from is null || end >= from) && (to is null || start <= to);
@@ -89,7 +89,7 @@ internal sealed class ProfileSnapshot
         };
     }
 
-    // Given stations are used as is; otherwise stations are spaced by the interval over the range.
+    // 측점을 주면 그대로 쓰고, 아니면 범위를 간격(interval)으로 나눈다.
     public double[] SampleStations(double? from, double? to, double[] stations, double? interval)
     {
         if (stations.Length > 0) return stations.Take(MaxSamples).ToArray();
@@ -103,8 +103,8 @@ internal sealed class ProfileSnapshot
         return result.ToArray();
     }
 
-    // Elevations are read from the profile opened for this request; snapshots hold
-    // values only, because drawing objects close when their transaction ends.
+    // 표고는 이번 요청에서 연 종단에서 읽는다. 스냅숏에는 값만 둔다:
+    // 도면 객체는 트랜잭션이 끝나면 닫히기 때문.
     public static IEnumerable<object> Sample(Alignment alignment, Profile profile, double[] stations) => stations.Select(station =>
     {
         double? elevation = null, grade = null;
@@ -113,6 +113,7 @@ internal sealed class ProfileSnapshot
         return (object)new ProfileSample(AlignmentSnapshot.Round(station), AlignmentSnapshot.StationText(alignment, station), elevation, grade);
     }).ToList();
 
+    // 경사구간(tangent)과 종단곡선. 경사는 %, 곡선은 K·길이·시거 등.
     private static (List<ProfileTangentInfo>, List<ProfileCurveInfo>) ReadEntities(Alignment alignment, Profile profile, bool checks)
     {
         List<ProfileTangentInfo> tangents = new();
@@ -156,7 +157,7 @@ internal sealed class ProfileSnapshot
         VerticalCurveType crestOrSag, double pviStation, double pviElevation, double gradeIn, double gradeOut,
         double gradeChange, double k, double highLowStation, double highLowElevation, double tangentOffset)
     {
-        // A high or low point is reported only when it lies on the curve.
+        // 최고·최저점은 곡선 위에 있을 때만 알려 준다.
         bool onCurve = double.IsFinite(highLowStation) && double.IsFinite(highLowElevation) &&
             highLowStation >= entity.StartStation - 1e-6 && highLowStation <= entity.EndStation + 1e-6;
         return new ProfileCurveInfo(number, type, crestOrSag.ToString(), R(entity.StartStation), R(entity.EndStation),
@@ -166,7 +167,7 @@ internal sealed class ProfileSnapshot
         {
             TangentOffsetAtPvi = AlignmentSnapshot.Finite(tangentOffset),
             HighLowPoint = onCurve ? new ProfilePoint(R(highLowStation), Text(alignment, highLowStation), R(highLowElevation)) : null,
-            // Civil 3D throws for these on curves without design criteria.
+            // 설계 기준이 없는 곡선에서는 Civil 3D가 이 값들에 예외를 낸다.
             MinimumKStopping = Optional(() => entity.MinimumKValueSSD),
             MinimumKPassing = Optional(() => entity.MinimumKValuePSD),
             MinimumKHeadlight = Optional(() => entity.MinimumKValueHSD),
@@ -174,6 +175,7 @@ internal sealed class ProfileSnapshot
         };
     }
 
+    // PVI 목록: 측점, 표고, 앞뒤 경사, 곡선.
     private static List<ProfilePvi> ReadPvis(Alignment alignment, Profile profile)
     {
         List<ProfilePvi> pvis = new();
@@ -209,6 +211,7 @@ internal sealed class ProfileSnapshot
         return pvis;
     }
 
+    // 이 선형의 종단 뷰들.
     private static List<ProfileViewInfo> ReadViews(Transaction transaction, Alignment alignment)
     {
         List<ProfileViewInfo> views = new();
@@ -220,6 +223,7 @@ internal sealed class ProfileSnapshot
         return views;
     }
 
+    // 종단 설정(설계 기준 파일, 검토 세트 등).
     private static ProfileSettings ReadSettings(Transaction transaction, Profile profile)
     {
         double? offset = null;
@@ -240,6 +244,7 @@ internal sealed class ProfileSnapshot
             string.IsNullOrWhiteSpace(profile.DesignCheckSetName) ? null : profile.DesignCheckSetName);
     }
 
+    // 설계 검토 세트에서 통과하지 못한 항목.
     private static IReadOnlyList<string>? Violations(ProfileEntity entity)
     {
         try
@@ -253,7 +258,7 @@ internal sealed class ProfileSnapshot
         catch (System.Exception) { return null; }
     }
 
-    // Civil 3D returns grades as ratios; answers use percent.
+    // Civil 3D는 경사를 비율로 준다. 답은 %로.
     internal static double? Percent(double ratio) => double.IsFinite(ratio) ? Math.Round(ratio * 100, 4) : null;
     private static double? Optional(Func<double> read)
     {

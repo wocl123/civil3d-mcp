@@ -9,14 +9,14 @@ using System.Windows.Media;
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// Renders the small Markdown subset the palette AI is told to use: "#" headings,
-/// **bold**, `code`, "-" and "1." lists, pipe tables, and code fences.
-/// Anything else is shown as plain text.
+/// 팔레트 AI에게 쓰라고 한 작은 Markdown만 그린다: "#" 제목, **굵게**, `코드`,
+/// "-"·"1." 목록, | 표, ``` 코드 블록. 그 밖은 평범한 글로 보인다.
 /// </summary>
 internal static partial class MarkdownView
 {
     private static readonly FontFamily Mono = new("Consolas");
 
+    // ── 줄 모양 판별
     [GeneratedRegex(@"^#{1,6}\s+(.*)$")]
     private static partial Regex Heading();
 
@@ -35,15 +35,15 @@ internal static partial class MarkdownView
     [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase)]
     private static partial Regex LineBreakTag();
 
-    // Numbers, stations (0+120.00), and percentages read best right-aligned.
+    // 숫자, 측점(0+120.00), 백분율 칸은 오른쪽 정렬이 읽기 좋다.
     [GeneratedRegex(@"^[+\-−]?[\d,]*\.?\d+(\s*(%|m|㎡|m²|m³))?$|^\d+\+\d+(\.\d+)?$")]
     private static partial Regex NumberCell();
 
     /// <summary>
-    /// The whole answer as one read-only rich text document, so it can be selected by
-    /// dragging (across paragraphs, lists, and tables) and copied with Ctrl+C.
+    /// 답 전체를 읽기 전용 서식 문서 하나로 만든다. 문단·목록·표를 넘어 드래그로 선택하고
+    /// Ctrl+C로 복사할 수 있다.
     /// </summary>
-    /// <param name="wheel">Receives mouse-wheel turns over the answer so the chat keeps scrolling.</param>
+    /// <param name="wheel">답 위에서 굴린 마우스 휠. 대화창이 계속 스크롤되게 넘긴다.</param>
     public static FrameworkElement Render(string markdown, ChatTheme theme, Action<MouseWheelEventArgs> wheel)
     {
         FlowDocument document = new()
@@ -127,8 +127,8 @@ internal static partial class MarkdownView
             SelectionBrush = theme.Accent, Cursor = Cursors.IBeam
         };
         box.PreviewMouseWheel += (_, e) => { e.Handled = true; wheel(e); };
-        // A flow-document table does not share out leftover width by itself, so the first
-        // column gets what the other columns leave of the answer's width.
+        // FlowDocument 표는 남는 너비를 스스로 나누지 않는다. 그래서 첫 열에
+        // 다른 열이 쓰고 남은 너비를 직접 준다(크기가 바뀔 때마다).
         box.SizeChanged += (_, e) =>
         {
             foreach (Table table in document.Blocks.OfType<Table>())
@@ -141,7 +141,7 @@ internal static partial class MarkdownView
         return box;
     }
 
-    /// <summary>Plain text for the clipboard; tables become tab-separated rows that paste into Excel.</summary>
+    /// <summary>클립보드용 평범한 글. 표는 탭으로 나눈 줄이 되어 Excel에 그대로 붙는다.</summary>
     public static string PlainText(string markdown)
     {
         StringBuilder result = new();
@@ -166,6 +166,7 @@ internal static partial class MarkdownView
     private static string Strip(string text) => Inline().Replace(LineBreakTag().Replace(text, " "), match =>
         match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value);
 
+    // 표 시작: 이 줄에 |가 있고 다음 줄이 |---| 구분선.
     private static bool IsTableStart(string[] lines, int i) =>
         lines[i].TrimStart().StartsWith('|') && i + 1 < lines.Length && TableRule().IsMatch(lines[i + 1].Trim());
 
@@ -177,6 +178,7 @@ internal static partial class MarkdownView
         return trimmed.Split('|').Select(cell => cell.Trim()).ToList();
     }
 
+    // 구분선의 :---, ---:, :---: 로 열 정렬.
     private static List<TextAlignment?> Alignments(string rule) => Cells(rule).Select(cell =>
         cell.EndsWith(':') ? (cell.StartsWith(':') ? TextAlignment.Center : TextAlignment.Right)
         : cell.StartsWith(':') ? TextAlignment.Left : (TextAlignment?)null).ToList();
@@ -187,7 +189,7 @@ internal static partial class MarkdownView
 
     private static void AddInlines(InlineCollection target, string text, ChatTheme theme)
     {
-        // Some AIs break a table cell with <br>; show it as a line break.
+        // 어떤 AI는 표 칸 안에서 <br>로 줄을 바꾼다. 줄바꿈으로 보여 준다.
         string[] parts = LineBreakTag().Split(text);
         for (int i = 0; i < parts.Length; i++)
         {
@@ -198,7 +200,7 @@ internal static partial class MarkdownView
 
     private static void AddStyledRuns(InlineCollection target, string text, ChatTheme theme)
     {
-        // WPF may break a line after "+", which splits stations such as 0+339.21.
+        // WPF는 "+" 뒤에서 줄을 바꿀 수 있어 0+339.21 같은 측점이 쪼개진다(→ 줄바꿈 없는 + 로).
         text = StationPlus().Replace(text, "⁠+⁠");
         int at = 0;
         foreach (Match match in Inline().Matches(text))
@@ -213,7 +215,7 @@ internal static partial class MarkdownView
         if (at < text.Length) target.Add(new Run(text[at..]));
     }
 
-    // A hanging indent keeps wrapped lines under the text, not under the bullet.
+    // 내어쓰기: 줄이 넘어가도 글머리표 아래가 아니라 글 아래에서 이어진다.
     private static Paragraph ListRow(Match item, ChatTheme theme)
     {
         int depth = item.Groups[1].Value.Replace("\t", "  ").Length / 2;
@@ -225,8 +227,8 @@ internal static partial class MarkdownView
         return row;
     }
 
-    // The first column (usually names) takes the room left and wraps; the others are as wide
-    // as their longest value, so they stay on one line.
+    // 첫 열(보통 이름)은 남는 너비를 쓰고 줄바꿈한다. 나머지 열은 가장 긴 값만큼 넓어
+    // 한 줄로 유지된다.
     private static Table Table(List<string> rows, List<TextAlignment?> alignments, ChatTheme theme)
     {
         List<List<string>> cells = rows.Select(Cells).ToList();
@@ -250,7 +252,12 @@ internal static partial class MarkdownView
                 string value = c < cells[r].Count ? cells[r][c] : "";
                 TextAlignment alignment = (c < alignments.Count ? alignments[c] : null)
                     ?? (!header && NumberCell().IsMatch(Strip(value)) ? TextAlignment.Right : TextAlignment.Left);
-                Paragraph text = new() { TextAlignment = alignment, FontWeight = header ? FontWeights.SemiBold : FontWeights.Normal, Margin = new Thickness(0) };
+                Paragraph text = new()
+                {
+                    TextAlignment = alignment,
+                    FontWeight = header ? FontWeights.SemiBold : FontWeights.Normal,
+                    Margin = new Thickness(0)
+                };
                 AddInlines(text.Inlines, value, theme);
                 row.Cells.Add(new TableCell(text)
                 {
@@ -264,6 +271,7 @@ internal static partial class MarkdownView
         return table;
     }
 
+    // 글자 너비(열 너비 계산용).
     private static double TextWidth(string text, bool bold) => new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
         FlowDirection.LeftToRight, new Typeface(Body, FontStyles.Normal, bold ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal),
         BodySize, Brushes.Black, 1.0).WidthIncludingTrailingWhitespace;

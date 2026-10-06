@@ -1,6 +1,6 @@
 namespace MyCivil3DMcp.Plugin;
 
-/// <summary>One line, arc, or spiral in station order. Angles are in degrees.</summary>
+/// <summary>직선·원곡선·완화곡선 하나(측점 순서). 각도는 도(°).</summary>
 public sealed record AlignmentElement(int Order, int CurveGroup, string Kind, string GroupType,
     double StartStation, double EndStation, string StartStationText, string EndStationText, double Length,
     double[] StartPoint, double[] EndPoint)

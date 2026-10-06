@@ -3,6 +3,9 @@ using System.Diagnostics;
 
 namespace MyCivil3DMcp.Plugin;
 
+// Node 로컬 서비스(server/build/localService.js)를 띄우고 끈다.
+// 팔레트는 이 서비스(127.0.0.1:48900)에 질문을 보내고, 서비스가 AI CLI를 실행한다.
+// MY_CIVIL3D_SERVER_ENTRY 로 다른 경로의 서비스를 쓸 수 있다.
 internal static class NodeService
 {
     private static Process? _process;
@@ -12,6 +15,7 @@ internal static class NodeService
     public static void Start()
     {
         if (IsRunning) return;
+        // 기본 위치: 플러그인 dll 기준 ../../../../server/build/localService.js
         string? configured = Environment.GetEnvironmentVariable("MY_CIVIL3D_SERVER_ENTRY");
         string assemblyDirectory = Path.GetDirectoryName(typeof(NodeService).Assembly.Location)!;
         string entry = string.IsNullOrWhiteSpace(configured)
@@ -32,7 +36,7 @@ internal static class NodeService
             WindowStyle = ProcessWindowStyle.Hidden
         };
         start.ArgumentList.Add(entry);
-        // The service exits when this Civil 3D does, and stops a leftover service holding its port.
+        // 이 Civil 3D가 끝나면 서비스도 끝나고, 포트를 잡고 있는 이전 서비스는 서비스가 직접 내린다.
         start.Environment["MY_CIVIL3D_PARENT_PID"] = Environment.ProcessId.ToString();
         try
         {
@@ -45,6 +49,7 @@ internal static class NodeService
         }
     }
 
+    // 서비스와 그 자식 프로세스(실행 중인 AI CLI)까지 끈다.
     public static void Stop()
     {
         if (_process is null) return;

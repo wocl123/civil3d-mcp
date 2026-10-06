@@ -1,10 +1,10 @@
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// An alignment planned by the Node service from a polyline: its IPs from start to end and
-/// the curve at each inner IP (Curves[i] belongs to Points[i + 1]; no radius leaves an angle point).
-/// Polyline holds the vertices the plan was made from, so a moved polyline is not used.
-/// Description records the alignment's uses ("용도: 도로, 관망").
+/// Node 서비스가 폴리선으로 계획한 선형: 시작부터 끝까지의 IP와, 안쪽 IP마다의 곡선
+/// (Curves[i]는 Points[i + 1]의 곡선. 반지름이 없으면 꺾인 점으로 남는다).
+/// Polyline에는 계획에 쓴 꼭짓점이 있어, 그 뒤 움직인 폴리선은 쓰지 않는다.
+/// Description에는 선형의 용도를 적는다("용도: 도로, 관망").
 /// </summary>
 public sealed record AlignmentCreateRequest(string Name, string Type, PlannedPolyline Polyline,
     IReadOnlyList<PlannedPoint> Points, IReadOnlyList<PlannedCurve> Curves, double? DesignSpeed, string? Description);

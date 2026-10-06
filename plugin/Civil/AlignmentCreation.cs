@@ -8,10 +8,10 @@ using Autodesk.Civil.Settings;
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// Creates an alignment from a layout the Node service planned along a polyline: fixed
-/// lines from IP to IP, then a free curve (or spiral-curve-spiral) between each pair of
-/// lines that has a radius. Civil 3D trims the lines to the curves. The polyline must
-/// still be as it was planned. If any step fails, nothing is committed.
+/// Node 서비스가 폴리선을 따라 계획한 배치로 선형을 만든다:
+/// IP에서 IP까지 고정 직선을 놓고, 반지름이 있는 직선 쌍 사이에 자유 원곡선(또는 완화-원-완화)을 넣는다.
+/// 직선은 Civil 3D가 곡선에 맞춰 자른다. 폴리선은 계획할 때 그대로여야 한다.
+/// 한 단계라도 실패하면 아무것도 커밋하지 않는다.
 /// </summary>
 internal static class AlignmentCreation
 {
@@ -20,6 +20,7 @@ internal static class AlignmentCreation
 
     public static AlignmentCreateResult Create(Document document, AlignmentCreateRequest request)
     {
+        // ── 요청 검사
         AlignmentType type = request.Type switch
         {
             "Centerline" => AlignmentType.Centerline,
@@ -31,6 +32,7 @@ internal static class AlignmentCreation
         if (request.Points.Count < 2 || request.Curves.Count != request.Points.Count - 2)
             throw new ArgumentException("The layout needs at least two points and one curve entry per inner point.");
 
+        // ── 같은 이름의 선형이 없고, 폴리선이 계획 때 그대로인지
         Database database = document.Database;
         CivilDocument civil = CivilDocument.GetCivilDocument(database);
         using Transaction transaction = database.TransactionManager.StartTransaction();
@@ -40,6 +42,7 @@ internal static class AlignmentCreation
                 throw new InvalidOperationException($"선형 {request.Name}이(가) 이미 있어 만들지 않았습니다.");
         CheckPolyline(transaction, database, request.Polyline);
 
+        // ── 도면 설정의 선형 스타일·라벨 세트(없으면 첫 번째)
         SettingsAlignment settings = civil.Settings.GetSettings<SettingsAlignment>();
         ObjectId styleId = settings.StyleSettings.AlignmentStyleId.Value;
         if (styleId.IsNull && civil.Styles.AlignmentStyles.Count > 0) styleId = civil.Styles.AlignmentStyles[0];
@@ -47,13 +50,16 @@ internal static class AlignmentCreation
         if (labelSetId.IsNull && civil.Styles.LabelSetStyles.AlignmentLabelSetStyles.Count > 0)
             labelSetId = civil.Styles.LabelSetStyles.AlignmentLabelSetStyles[0];
 
-        ObjectId id = Alignment.Create(civil, request.Name, ObjectId.Null, Layer(transaction, civil, database), styleId, labelSetId, type);
+        // ── 선형 만들기, IP 사이 고정 직선
+        ObjectId layerId = Layer(transaction, civil, database);
+        ObjectId id = Alignment.Create(civil, request.Name, ObjectId.Null, layerId, styleId, labelSetId, type);
         Alignment alignment = (Alignment)transaction.GetObject(id, OpenMode.ForWrite);
         if (!string.IsNullOrWhiteSpace(request.Description)) alignment.Description = request.Description;
         List<int> lines = new();
         for (int index = 0; index < request.Points.Count - 1; index++)
             lines.Add(alignment.Entities.AddFixedLine(Point(request.Points[index]), Point(request.Points[index + 1])).EntityId);
 
+        // ── 곡선: 완화곡선 길이가 있으면 SCS(클로소이드), 없으면 원곡선. 반지름이 계획과 다르면 실패.
         List<CreatedCurve> curves = new();
         for (int index = 0; index < request.Curves.Count; index++)
         {
@@ -69,6 +75,7 @@ internal static class AlignmentCreation
             curves.Add(new CreatedCurve(index + 1, Math.Round(actual, 4), planned.SpiralLength));
         }
 
+        // ── 설계속도(중심선 선형만)
         if (type == AlignmentType.Centerline && request.DesignSpeed is double speed)
         {
             if (alignment.DesignSpeeds.Count > 0) alignment.DesignSpeeds[0].Value = speed;
@@ -81,7 +88,7 @@ internal static class AlignmentCreation
         return result with { Revision = DrawingRevisions.Of(database) };
     }
 
-    // The polyline must still have the vertices the layout was planned from.
+    // 폴리선의 꼭짓점(좌표·볼록도)이 계획할 때와 그대로인지.
     private static void CheckPolyline(Transaction transaction, Database database, PlannedPolyline planned)
     {
         if (!long.TryParse(planned.Handle, System.Globalization.NumberStyles.HexNumber, null, out long value) ||
@@ -98,7 +105,7 @@ internal static class AlignmentCreation
         if (!same) throw new InvalidOperationException($"폴리라인 {planned.Handle}이(가) 계획 뒤에 바뀌어 만들지 않았습니다. 다시 계획하세요.");
     }
 
-    // The drawing's layer for alignments (Drawing Settings, Object Layers), else the current layer.
+    // 도면 설정(Object Layers)의 선형 레이어. 없으면 현재 레이어.
     private static ObjectId Layer(Transaction transaction, CivilDocument civil, Database database)
     {
         string name = civil.Settings.DrawingSettings.ObjectLayerSettings.GetObjectLayerSetting(SettingsObjectLayerType.Alignment).LayerName;

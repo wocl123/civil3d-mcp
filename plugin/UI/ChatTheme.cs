@@ -4,7 +4,9 @@ using App = Autodesk.AutoCAD.ApplicationServices.Application;
 
 namespace MyCivil3DMcp.Plugin;
 
-/// <summary>Colors for the chat panel, matched to the Civil 3D dark or light theme.</summary>
+/// <summary>팔레트 색. Civil 3D 어두운/밝은 테마에 맞춘다.</summary>
+// 순서: 배경, 카드, 테두리, 글자, 흐린 글자, 강조, 강조 위 글자, 내 말풍선, AI 말풍선, 오류,
+//       상태 점(준비됨, 확인 필요, 사용 불가)
 internal sealed record ChatTheme(Brush Background, Brush Surface, Brush Border, Brush Text, Brush Muted,
     Brush Accent, Brush OnAccent, Brush UserBubble, Brush AssistantBubble, Brush Error,
     Brush Ready, Brush Attention, Brush Unavailable)
@@ -19,14 +21,14 @@ internal sealed record ChatTheme(Brush Background, Brush Surface, Brush Border, 
         Brush("#2F6FB3"), Brush("#FFFFFF"), Brush("#2F6FB3"), Brush("#FFFFFF"), Brush("#C62828"),
         Brush("#1E9E62"), Brush("#B7791F"), Brush("#9AA1AB"));
 
-    // COLORTHEME is 0 for the dark theme and 1 for the light theme.
+    // COLORTHEME: 0 = 어두운 테마, 1 = 밝은 테마. 못 읽으면 어두운 테마.
     public static ChatTheme Current()
     {
         try { return ReadColorTheme() == 1 ? Light : Dark; }
         catch (System.Exception) { return Dark; }
     }
 
-    // Kept separate so a missing AutoCAD runtime fails inside the try above.
+    // 따로 둔 이유: AutoCAD 런타임이 없을 때 위의 try 안에서 실패하게 하려고(인라인 금지).
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static int ReadColorTheme() => Convert.ToInt32(App.GetSystemVariable("COLORTHEME"));
 

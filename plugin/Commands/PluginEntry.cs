@@ -9,10 +9,17 @@ using App = Autodesk.AutoCAD.ApplicationServices.Application;
 
 namespace MyCivil3DMcp.Plugin;
 
+// 플러그인 시작점. NETLOAD 하면 Initialize가 불리고, Civil 3D가 닫힐 때 Terminate가 불린다.
+// 명령:
+//   MYC3DCHAT        AI 팔레트 열기
+//   MYC3DCONNECTION  브리지·Node 서비스 연결 상태
+//   MYC3DSTATUS      도면 상태(JSON)
+//   MYC3DOBJECTS     도면 객체 목록(JSON, 시작 번호·개수를 물음)
 public sealed class PluginEntry : IExtensionApplication
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    // 도면 리비전·선택 추적 → 브리지(Node가 플러그인을 부르는 통로) → Node 서비스 순서로 시작한다.
     public void Initialize()
     {
         try
@@ -84,6 +91,7 @@ public sealed class PluginEntry : IExtensionApplication
         Run(doc => DrawingQueries.GetObjects(doc, offset, limit));
     }
 
+    // 조회 결과를 명령줄에 JSON으로 찍는다.
     private static void Run<T>(Func<Document, T> query)
     {
         Document? document = App.DocumentManager.MdiActiveDocument;

@@ -11,8 +11,8 @@ using Rectangle = System.Drawing.Rectangle;
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// Renders Model Space to a PNG in an off-screen view, framed on the given objects (or the
-/// whole drawing), so the AI can look at what it created. The user's view is not touched.
+/// 모형 공간을 화면 밖 뷰에서 PNG로 그린다. 주어진 객체(없으면 도면 전체)가 꽉 차게 맞춘다.
+/// AI가 자기가 만든 것을 눈으로 확인하게 하려는 것. 사용자의 화면은 건드리지 않는다.
 /// </summary>
 internal static class DrawingCapture
 {
@@ -25,6 +25,7 @@ internal static class DrawingCapture
         Database database = document.Database;
         using Transaction transaction = database.TransactionManager.StartTransaction();
 
+        // 맞출 객체들의 범위를 합친다. 없는 핸들은 건너뛴다.
         Extents3d? frame = null;
         List<string> framed = new();
         foreach (string handle in handles)
@@ -42,7 +43,7 @@ internal static class DrawingCapture
         if (handles.Count > 0 && frame is null) throw new ArgumentException("None of the objects to frame was found.");
         frame ??= new Extents3d(database.Extmin, database.Extmax);
 
-        // Pad the frame and widen it to the image's aspect ratio.
+        // 여백(8%)을 두고 그림의 가로세로 비율에 맞게 넓힌다.
         Point3d min = frame.Value.MinPoint, max = frame.Value.MaxPoint;
         double fieldWidth = Math.Max(max.X - min.X, 1) * (1 + 2 * Margin);
         double fieldHeight = Math.Max(max.Y - min.Y, 1) * (1 + 2 * Margin);
@@ -52,6 +53,7 @@ internal static class DrawingCapture
 
         BlockTableRecord modelSpace = (BlockTableRecord)transaction.GetObject(
             SymbolUtilityServices.GetBlockModelSpaceId(database), OpenMode.ForRead);
+        // 화면 밖 장치에 모형 공간을 위에서 내려다보게 놓고 찍는다.
         Manager manager = document.GraphicsManager;
         using KernelDescriptor descriptor = new();
         descriptor.addRequirement(KernelDescriptor.Drawing3D);
@@ -80,6 +82,7 @@ internal static class DrawingCapture
         finally { Manager.ReleaseGraphicsKernel(kernel); }
     }
 
+    // 범위가 없는 객체(빈 블록 등)는 null.
     private static Extents3d? Bounds(Entity entity)
     {
         try { return entity.GeometricExtents; }

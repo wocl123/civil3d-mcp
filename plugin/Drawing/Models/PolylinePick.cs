@@ -1,4 +1,4 @@
 namespace MyCivil3DMcp.Plugin;
 
-/// <summary>What the user did at the pick prompt: picked (with the polyline), cancelled, or timeout.</summary>
+/// <summary>고르기 결과: picked(폴리선과 함께), cancelled(취소), timeout(시간 초과).</summary>
 public sealed record PolylinePick(string Status, PolylineSummary? Polyline);

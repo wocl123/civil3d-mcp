@@ -6,14 +6,14 @@ using DBObject = Autodesk.AutoCAD.DatabaseServices.DBObject;
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// Applies computed design fixes to the drawing. The only code that writes Civil objects.
-/// Every change first checks that the value is still what the fix was computed from;
-/// if any check or change fails, nothing is committed. All changes are one undo step.
+/// 계산한 설계 수정안을 도면에 적용한다. Civil 객체 값을 바꾸는 코드는 여기(와 AlignmentCreation)뿐이다.
+/// 바꾸기 전에 지금 값이 수정안을 계산할 때의 값(From)과 같은지 확인하고,
+/// 하나라도 확인·변경에 실패하면 아무것도 커밋하지 않는다. 모든 변경은 Undo 한 번으로 되돌린다.
 /// </summary>
 internal static class DesignChanges
 {
-    private const double StationTolerance = 0.01;
-    private const double ValueTolerance = 0.001;
+    private const double StationTolerance = 0.01;   // 측점으로 요소를 찾을 때 허용 차(m)
+    private const double ValueTolerance = 0.001;    // 값 비교 허용 차
 
     public static DesignChangeOutcome Apply(Document document, IReadOnlyList<DesignChangeRequest> requests)
     {
@@ -29,20 +29,31 @@ internal static class DesignChanges
         return new DesignChangeOutcome(results, DrawingRevisions.Of(database));
     }
 
+    // 변경 하나: 대상 찾기 → 지금 값 확인 → 쓰기 → 다시 읽어 확인.
     private static DesignChangeResult ApplyOne(Transaction transaction, Database database, DesignChangeRequest request)
     {
         DBObject target = Open(transaction, database, request.Handle);
         (Func<double> read, Action<double> write) = (request.Kind, request.Property, target) switch
         {
-            ("profilePvi", "elevation", Profile profile) => Accessor(Pvi(profile, request), pvi => pvi.Elevation, (pvi, value) => pvi.Elevation = value),
-            ("profileCurve", "length", Profile profile) => Accessor(Curve(profile, request), curve => curve.Length, (curve, value) => curve.Length = value),
-            ("alignmentArc", "radius", Alignment alignment) => Accessor(Arc(alignment, request), arc => arc.Radius, (arc, value) => arc.Radius = value),
+            // 종단 PVI 표고
+            ("profilePvi", "elevation", Profile profile) =>
+                Accessor(Pvi(profile, request), pvi => pvi.Elevation, (pvi, value) => pvi.Elevation = value),
+            // 종단곡선 길이
+            ("profileCurve", "length", Profile profile) =>
+                Accessor(Curve(profile, request), curve => curve.Length, (curve, value) => curve.Length = value),
+            // 평면 원곡선 반지름
+            ("alignmentArc", "radius", Alignment alignment) =>
+                Accessor(Arc(alignment, request), arc => arc.Radius, (arc, value) => arc.Radius = value),
             _ => throw new NotSupportedException($"{request.Kind}.{request.Property} 변경은 아직 자동으로 적용할 수 없습니다.")
         };
+
+        // 계획 뒤에 사람이 값을 바꿨으면 적용하지 않는다.
         double before = read();
         if (request.From is double expected && Math.Abs(before - expected) > ValueTolerance)
             throw new InvalidOperationException(
                 $"{request.Kind} {request.Property} 값이 {Round(before)}로 바뀌어 있어 적용하지 않았습니다(수정안 기준 {Round(expected)}). 다시 검토하세요.");
+
+        // Civil 3D가 다른 값으로 맞춰 버리면(고정 조건 등) 실패로 본다.
         write(request.To);
         double after = read();
         if (Math.Abs(after - request.To) > ValueTolerance)
@@ -51,9 +62,11 @@ internal static class DesignChanges
         return new DesignChangeResult(request.Kind, request.Handle, request.At, request.Property, Round(before), Round(after));
     }
 
+    // 요소 하나의 읽기/쓰기 짝.
     private static (Func<double>, Action<double>) Accessor<T>(T item, Func<T, double> get, Action<T, double> set) =>
         (() => get(item), value => set(item, value));
 
+    // 핸들로 객체를 쓰기 모드로 연다.
     private static DBObject Open(Transaction transaction, Database database, string handle)
     {
         if (!long.TryParse(handle, System.Globalization.NumberStyles.HexNumber, null, out long value) ||
@@ -65,6 +78,7 @@ internal static class DesignChanges
     private static double At(DesignChangeRequest request) =>
         request.At ?? throw new ArgumentException($"{request.Kind} needs a station.");
 
+    // 측점에 있는 PVI.
     private static ProfilePVI Pvi(Profile profile, DesignChangeRequest request)
     {
         double station = At(request);
@@ -75,7 +89,7 @@ internal static class DesignChanges
     private static ProfileEntity Curve(Profile profile, DesignChangeRequest request) =>
         Pvi(profile, request).VerticalCurve ?? throw new ArgumentException($"The PVI at {At(request)} has no vertical curve.");
 
-    // Only a single arc entity can take a new radius here; arcs inside spiral groups are not changed.
+    // 그 측점에서 시작하는 단독 원곡선. 완화곡선 묶음(SCS) 안의 원곡선은 여기서 바꾸지 않는다.
     private static AlignmentArc Arc(Alignment alignment, DesignChangeRequest request)
     {
         double station = At(request);

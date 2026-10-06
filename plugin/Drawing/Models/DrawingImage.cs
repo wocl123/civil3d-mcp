@@ -1,4 +1,4 @@
 namespace MyCivil3DMcp.Plugin;
 
-/// <summary>A rendered view of Model Space: a PNG (base64), the area it shows [minX, minY, maxX, maxY], and the objects it was framed on.</summary>
+/// <summary>모형 공간을 그린 그림: PNG(base64), 보이는 범위 [minX, minY, maxX, maxY], 맞춘 객체.</summary>
 public sealed record DrawingImage(int Width, int Height, string Png, double[] Area, IReadOnlyList<string> Framed);

@@ -6,10 +6,9 @@ using Autodesk.Civil.DatabaseServices;
 namespace MyCivil3DMcp.Plugin;
 
 /// <summary>
-/// Everything this plug-in reads from one alignment, grouped into sections. A
-/// snapshot is built once per drawing revision and served section by section.
-/// Values Civil 3D computes, such as deflection angles and key stations, are read
-/// rather than recomputed. Parts that cannot be read are listed in Unavailable.
+/// 선형 하나에서 읽는 모든 것을 구간(section)별로 묶은 것. 도면 리비전마다 한 번 만들고
+/// 구간별로 나눠 준다. 교각, 주요 측점처럼 Civil 3D가 계산한 값은 다시 계산하지 않고 읽는다.
+/// 읽지 못한 부분은 Unavailable에 적는다.
 /// </summary>
 internal sealed class AlignmentSnapshot
 {
@@ -28,6 +27,7 @@ internal sealed class AlignmentSnapshot
 
     public static AlignmentSnapshot Read(Transaction transaction, Alignment alignment)
     {
+        // 한 부분이 실패하면 그 이유만 적고 계속한다.
         List<string> unavailable = new();
         T? Try<T>(string part, Func<T> read)
         {
@@ -39,6 +39,7 @@ internal sealed class AlignmentSnapshot
             }
         }
 
+        // ── 구간별로 읽기
         bool checks = alignment.UseDesignCheckSet;
         (List<AlignmentElement> elements, List<AlignmentCurve> curves) =
             Try<(List<AlignmentElement>, List<AlignmentCurve>)?>("elements", () => ReadElements(alignment, checks)) ?? (new(), new());
@@ -56,6 +57,7 @@ internal sealed class AlignmentSnapshot
             : [];
         List<AlignmentRelated> related = Try("related", () => ReadRelated(transaction, alignment)) is { } links ? [links] : [];
 
+        // ── 개요: 요약, 설정, 구간별 개수
         AlignmentSummary summary = AlignmentQueries.Summarize(transaction, alignment);
         AlignmentSettings settings = new(
             Round(alignment.ReferencePointStation), Point(alignment.ReferencePoint), Round(alignment.StationIndexIncrement),
@@ -85,7 +87,7 @@ internal sealed class AlignmentSnapshot
         };
     }
 
-    /// <summary>Items of one section, limited to a station range when one is given.</summary>
+    /// <summary>구간 하나의 항목. 측점 범위를 주면 그 범위와 겹치는 것만.</summary>
     public IEnumerable<object> Section(string name, double? from, double? to)
     {
         bool Overlaps(double start, double end) => (from is null || end >= from) && (to is null || start <= to);
@@ -105,6 +107,8 @@ internal sealed class AlignmentSnapshot
         };
     }
 
+    // 요소(직선·원곡선·완화곡선 하나하나)와 곡선(요소를 Civil 3D 엔티티 단위로 묶은 것: 예 SCS 하나).
+    // 곡선에는 최소 반지름, 교각 합, 완화곡선 A(앞·뒤)를 모아 둔다.
     private static (List<AlignmentElement>, List<AlignmentCurve>) ReadElements(Alignment alignment, bool checks)
     {
         List<AlignmentElement> elements = new();
@@ -137,6 +141,7 @@ internal sealed class AlignmentSnapshot
         return (elements, curves);
     }
 
+    // 요소 하나: 공통 값 + 종류별 값(직선 방위각, 원곡선 R·교각·접선장 등, 완화곡선 A·K·P 등).
     private static AlignmentElement Describe(Alignment alignment, AlignmentSubEntity sub, int order, int curveGroup,
         string group, bool checks)
     {
@@ -148,7 +153,7 @@ internal sealed class AlignmentSnapshot
         };
         return sub switch
         {
-            // The azimuth is computed from the end points: degrees clockwise from grid north.
+            // 방위각은 양 끝점으로 계산한다: 도북에서 시계 방향 각도(도).
             AlignmentSubEntityLine line => element with { AzimuthDeg = Azimuth(line.StartPoint, line.EndPoint) },
             AlignmentSubEntityArc arc => element with
             {
@@ -171,6 +176,7 @@ internal sealed class AlignmentSnapshot
         };
     }
 
+    // 설계 검토 세트에서 통과하지 못한 항목.
     private static IReadOnlyList<string>? Violations(AlignmentSubEntity sub)
     {
         try
@@ -183,7 +189,7 @@ internal sealed class AlignmentSnapshot
         catch (System.Exception) { return null; }
     }
 
-    // Geometry points and PI points come from Civil 3D; duplicates at the same station and type are merged.
+    // 주요 측점(기하 점, PI 점)은 Civil 3D에서 받는다. 같은 측점·종류의 중복은 합친다.
     private static List<AlignmentKeyPoint> ReadKeyPoints(Alignment alignment)
     {
         IEnumerable<Station> stations = alignment.GetStationSet(StationTypes.GeometryPoint)
@@ -195,6 +201,7 @@ internal sealed class AlignmentSnapshot
             .OrderBy(item => item.Station).ToList();
     }
 
+    // 편경사 임계 측점과 차로별 횡단경사(%).
     private static List<AlignmentSuperelevationStation> ReadSuperelevation(Alignment alignment)
     {
         List<AlignmentSuperelevationStation> stations = new();
@@ -212,7 +219,7 @@ internal sealed class AlignmentSnapshot
         return stations.OrderBy(item => item.Station).ToList();
     }
 
-    // Slopes are returned as ratios; a value above 1 is taken to be a percent already.
+    // 경사는 비율로 온다. 1보다 크면 이미 %로 본다.
     private static double? Slope(SuperelevationCriticalStation station, SuperelevationCrossSegmentType type)
     {
         try
@@ -223,6 +230,7 @@ internal sealed class AlignmentSnapshot
         catch (System.Exception) { return null; }
     }
 
+    // 오프셋 선형이면 부모 선형과 오프셋 거리·방향.
     private static AlignmentOffsetInfo ReadOffset(Transaction transaction, Alignment alignment)
     {
         OffsetAlignmentInfo info = alignment.OffsetAlignmentInfo;
@@ -231,6 +239,7 @@ internal sealed class AlignmentSnapshot
         return new AlignmentOffsetInfo(parent?.Name, parent?.Handle.ToString(), Round(info.NominalOffset), info.Side.ToString());
     }
 
+    // 관련 객체: 종단, 종단 뷰 수, 샘플 라인 그룹, 자식 오프셋 선형.
     private static AlignmentRelated ReadRelated(Transaction transaction, Alignment alignment)
     {
         List<ProfileSummary> profiles = new();
@@ -246,6 +255,7 @@ internal sealed class AlignmentSnapshot
         return new AlignmentRelated(profiles, alignment.GetProfileViewIds().Count, groups, children);
     }
 
+    // 측점 표기(측점 방정식 반영, 예 "0+120.000"). 못 구하면 숫자 그대로.
     internal static string StationText(Alignment alignment, double station)
     {
         try { return alignment.GetStationStringWithEquations(station); }
@@ -260,6 +270,7 @@ internal sealed class AlignmentSnapshot
         return Math.Round(degrees < 0 ? degrees + 360 : degrees, 4);
     }
 
+    // ── 숫자 정리(소수 4자리, 무한대·NaN은 비움)
     private static double? Degrees(double radians) => double.IsFinite(radians) ? Math.Round(Math.Abs(radians) * 180 / Math.PI, 4) : null;
     private static double[] Point(Point2d point) => [Math.Round(point.X, 4), Math.Round(point.Y, 4)];
     private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
