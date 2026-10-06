@@ -3,6 +3,7 @@ import { z } from "zod";
 import { checkAlignmentCriteria } from "../../criteria/alignmentCriteria.js";
 import { checkProfileCriteria } from "../../criteria/profileCriteria.js";
 import { registerFixes } from "../../changes/changeStore.js";
+import { itemsView } from "../fixView.js";
 import { toolResult } from "../toolResult.js";
 import { CRITERIA_SETS } from "../../criteria/criteriaStore.js";
 import { REGIONS, ROAD_CLASSES, SUPERELEVATION_AREAS } from "../../civil/alignmentRecord.js";
@@ -31,7 +32,7 @@ export function registerCriteriaTools(server: McpServer): void {
   }, async args => {
     const report = await checkAlignmentCriteria(args);
     await registerFixes(report.items, { check: "alignment", input: args });
-    return toolResult(report);
+    return toolResult({ ...report, items: itemsView(report.items) });
   });
 
   server.registerTool("check_profile_criteria", {
@@ -46,6 +47,6 @@ export function registerCriteriaTools(server: McpServer): void {
   }, async args => {
     const reports = await checkProfileCriteria(args);
     await registerFixes(reports.flatMap(report => report.items), { check: "profile", input: args });
-    return toolResult(reports);
+    return toolResult(reports.map(report => ({ ...report, items: itemsView(report.items) })));
   });
 }

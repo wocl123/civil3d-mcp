@@ -28,6 +28,7 @@ try {
   const filter = new FactsFilter();
   assert.equal(noted.match(/.{1,5}/gs).map(part => filter.push(part)).join(''), '지역은요?\n1. 도시지역');
   assert.equal(dropSelfNotes('Civil 3D 선형은 3개입니다.'), 'Civil 3D 선형은 3개입니다.');
+  assert.equal(dropSelfNotes('반지름 수정안(fx-63b8b73948)을 적용할까요? 1안 fx-8d6601cb1a'), '반지름 수정안을 적용할까요? 1안');
   assert.equal(dropSelfNotes('English only answer, nothing else here.'), 'English only answer, nothing else here.');
 
   const scope = { key: 'd:/site/a.dwg', label: 'a.dwg', state: 'r1' };

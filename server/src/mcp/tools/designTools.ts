@@ -5,6 +5,7 @@ import { storeFix } from "../../changes/changeStore.js";
 import { planAlignmentLayout } from "../../design/alignmentLayout.js";
 import { ALIGNMENT_USES, REGIONS, ROAD_CLASSES, SUPERELEVATION_AREAS } from "../../civil/alignmentRecord.js";
 import { CRITERIA_SETS } from "../../criteria/criteriaStore.js";
+import { fixView } from "../fixView.js";
 import { toolResult } from "../toolResult.js";
 
 const PICK_SECONDS = 90;
@@ -55,6 +56,6 @@ export function registerDesignTools(server: McpServer): void {
   }, async args => {
     const { option, source, ...plan } = await planAlignmentLayout(args);
     if (option && source) await storeFix(option, `선형 ${option.create!.name}`, "선형 생성", source);
-    return toolResult({ ...plan, ...(option ? { option } : {}) });
+    return toolResult({ ...plan, ...(option ? { option: fixView(option) } : {}) });
   });
 }

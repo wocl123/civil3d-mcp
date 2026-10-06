@@ -390,6 +390,11 @@ criteria checks, fixes, creation and recheck) against a fake Civil 3D and compar
 every result with `scripts/fixtures/design-regression.json`. Run it after any change to
 the calculations; after an intended change, `node scripts/design-regression.mjs --update`
 rewrites the snapshot, and its git diff shows exactly what changed.
+`npm run test:payload` calls each tool through MCP against the same fake and fails when
+a tool returns more text than its budget: tool output is the AI's context, so its size is
+paid on every call. The plug-in leaves absent values out of its JSON, and fixes and plans
+reach the AI without how they are applied (the stored copy keeps that). Each palette tool
+call's output size is written to the work log (`outputChars`).
 The MCP entry point is `node build/index.js`. Its tools are:
 
 | Tool | Result |

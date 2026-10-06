@@ -3,6 +3,7 @@ import { z } from "zod";
 import { callPlugin } from "../../bridge/pluginClient.js";
 import { applyFix } from "../../changes/applyChange.js";
 import { loadFix } from "../../changes/changeStore.js";
+import { itemsView } from "../fixView.js";
 import { toolResult } from "../toolResult.js";
 
 // The only tool that changes the drawing. It takes a fix id, never values: the values
@@ -16,7 +17,9 @@ export function registerChangeTools(server: McpServer): void {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
   }, async ({ fixId }) => {
     const offered = (process.env.MY_CIVIL3D_OFFERED_FIXES ?? "").split(",").filter(Boolean);
-    const result = await applyFix(fixId, offered);
+    const applied = await applyFix(fixId, offered);
+    const result = "recheck" in applied && typeof applied.recheck === "object" && applied.recheck
+      ? { ...applied, recheck: { ...applied.recheck, targetItems: itemsView(applied.recheck.targetItems) } } : applied;
     const created = "created" in result ? result.created as { handle?: string } | undefined : undefined;
     const image = created?.handle ? await captureCreated(fixId, created.handle) : undefined;
     return image

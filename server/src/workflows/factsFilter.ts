@@ -24,10 +24,13 @@ function answerStart(text: string, final: boolean): number | undefined {
   }
 }
 
-// The answer without leading self-notes; unchanged when nothing Korean would remain.
+// The answer without leading self-notes (unless nothing Korean would remain) and without
+// fix ids such as "(fx-63b8b73948)": the ids go with the answer into the conversation
+// separately, and the user agrees by number or title.
 export function dropSelfNotes(answer: string): string {
   const start = answerStart(answer, true) ?? 0;
-  return /[가-힣]/.test(answer.slice(start)) ? answer.slice(start).trimStart() : answer;
+  const text = /[가-힣]/.test(answer.slice(start)) ? answer.slice(start).trimStart() : answer;
+  return text.replace(/ ?[(（]?fx-[a-f\d]{10}[)）]?/g, "");
 }
 
 // Passes streamed answer text through, but holds back leading self-notes and the

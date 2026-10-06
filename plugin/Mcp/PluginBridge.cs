@@ -13,9 +13,12 @@ namespace MyCivil3DMcp.Plugin;
 /// <summary>Local JSON-RPC bridge for the Node process.</summary>
 public static class PluginBridge
 {
+    // Absent values are left out rather than written as null: every result goes into an
+    // AI's context, and a line element alone has some twenty optional fields.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
     private const int DefaultPort = 48761;
     private const int MaxRequestBytes = 1024 * 1024;
