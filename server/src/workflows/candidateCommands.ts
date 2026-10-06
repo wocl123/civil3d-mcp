@@ -1,22 +1,26 @@
 import { approvedSize, decideCandidates, parameterText, pendingCandidates, type Candidate } from "../knowledge/candidateStore.js";
 import { lastShown, parseDecision, pick, setShown } from "./shownLists.js";
 
-// Palette commands for knowledge candidates, answered by the service without an AI:
-//   /후보                 list the pending candidates with numbers
-//   1, 3 승인 / 2 반려    right after a list, decide by number ("모두 승인" for all)
-//   /후보 승인 1, 3       the same at any time
-// The numbers refer to the last list shown in this conversation.
+// 지식 후보 팔레트 명령. AI 없이 서비스가 바로 답한다.
+//   /후보                 대기 중인 후보를 번호와 함께 보여 줌
+//   1, 3 승인 / 2 반려    목록 바로 뒤에 번호로 결정 ("모두 승인"은 전부)
+//   /후보 승인 1, 3       언제든 같은 일
+// 번호는 이 대화에서 마지막으로 보여 준 목록을 가리킨다.
+
+// 승인된 지식이 이 글자 수를 넘으면 매 질문 비용이 늘어난다고 알린다.
 const APPROVED_WARN_CHARS = 2500;
 
 const LIST = /^\/후보\s*$/;
 const DIRECT = /^\/후보\s+(승인|반려)\s+(.+)$/;
 
+// 후보 명령이면 답 글을, 아니면 undefined(→ AI에게 넘어감).
 export async function candidateCommand(question: string, conversation?: string): Promise<string | undefined> {
   if (LIST.test(question)) {
     const pending = await pendingCandidates();
     setShown(conversation, "candidates", pending.map(item => item.id));
     return listText(pending);
   }
+  // "/후보 승인 1"은 언제든, "1 승인"은 마지막 목록이 후보 목록일 때만 받는다.
   const direct = DIRECT.exec(question);
   const listed = lastShown(conversation, "candidates");
   const reply = direct ? parseDecision(`${direct[2]} ${direct[1]}`) : listed ? parseDecision(question) : undefined;
@@ -42,6 +46,7 @@ export async function candidateCommand(question: string, conversation?: string):
   ].join("\n");
 }
 
+// 후보 목록 글.
 function listText(pending: Candidate[]): string {
   if (!pending.length) return "검토할 지식 후보가 없습니다. 대화 중에 사용자가 말한 일반적인 작업 관행이 후보로 모입니다.";
   return [

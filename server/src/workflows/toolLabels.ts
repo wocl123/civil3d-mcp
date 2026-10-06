@@ -1,4 +1,4 @@
-// Korean labels for the palette's progress line while the AI calls tools.
+// AI가 도구를 부르는 동안 팔레트 진행 줄에 보여 줄 한국어 문구.
 const LABELS: Record<string, string> = {
   get_active_drawing: "도면 정보 읽는 중",
   get_drawing_summary: "도면 전체 요약 읽는 중",
@@ -22,6 +22,7 @@ const LABELS: Record<string, string> = {
   read_knowledge_rule: "규칙 확인 중"
 };
 
+// 목록에 없는 도구는 "도구이름 실행 중".
 export function toolLabel(name: string): string {
   return LABELS[name] ?? `${name} 실행 중`;
 }
