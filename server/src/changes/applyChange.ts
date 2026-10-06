@@ -5,6 +5,7 @@ import type { CheckItem } from "../criteria/types/CheckItem.js";
 import type { CriteriaReport } from "../criteria/types/CriteriaReport.js";
 import { loadFix, logChange, registerFixes } from "./changeStore.js";
 import { describe, describeCreate } from "./describe.js";
+import { failureGuide } from "../errors/failureGuide.js";
 import type { ChangeLogEntry } from "./types/ChangeLogEntry.js";
 import type { StoredFix } from "./types/StoredFix.js";
 
@@ -36,7 +37,8 @@ export async function applyFix(fixId: string, offered: string[]) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await logChange({ fixId, state: "failed", title: fix.title, target: fix.target, labels, error: message });
-    return { applied: false, fix: fix.title, error: message, drawingChanged: false };
+    const guide = failureGuide(message);
+    return { applied: false, fix: fix.title, error: message, drawingChanged: guide.drawingChanged, guide };
   }
   await logChange({ fixId, state: "applied", title: fix.title, target: fix.target, labels, result });
   return { applied: true, fix: fix.title, ...(result?.created ? { created: result.created } : { changes: result?.changes }),

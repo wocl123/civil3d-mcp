@@ -17,7 +17,7 @@
     "service": "node build/localService.js",
     "law:fetch": "npm run build && node scripts/law-fetch.mjs",
     "test:design": "npm run build && node scripts/design-regression.mjs",
-    "test:payload": "npm run build && node scripts/payload-budget.mjs"
+    "test:tools": "npm run build && node scripts/tool-contract.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

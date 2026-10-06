@@ -8,9 +8,11 @@ import { registerChangeTools } from "./tools/changeTools.js";
 import { registerDesignTools } from "./tools/designTools.js";
 import { mcpProfile, paletteServer } from "./profile.js";
 import { loggedServer } from "./toolLog.js";
+import { guidedServer } from "./toolErrors.js";
 
 const server = new McpServer({ name: "my-civil3d-mcp", version: "0.1.0" });
-const tools = loggedServer(mcpProfile() === "palette" ? paletteServer(server) : server);
+// Errors are logged as thrown, then returned to the AI with their failure guide.
+const tools = loggedServer(guidedServer(mcpProfile() === "palette" ? paletteServer(server) : server));
 registerDrawingTools(tools);
 registerAlignmentTools(tools);
 registerCriteriaTools(tools);

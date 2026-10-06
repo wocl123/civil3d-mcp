@@ -390,11 +390,22 @@ criteria checks, fixes, creation and recheck) against a fake Civil 3D and compar
 every result with `scripts/fixtures/design-regression.json`. Run it after any change to
 the calculations; after an intended change, `node scripts/design-regression.mjs --update`
 rewrites the snapshot, and its git diff shows exactly what changed.
-`npm run test:payload` calls each tool through MCP against the same fake and fails when
+`npm run test:tools` calls each tool through MCP against the same fake and fails when
 a tool returns more text than its budget: tool output is the AI's context, so its size is
 paid on every call. The plug-in leaves absent values out of its JSON, and fixes and plans
 reach the AI without how they are applied (the stored copy keeps that). Each palette tool
 call's output size is written to the work log (`outputChars`).
+
+**Failures.** A tool that fails returns its error with a guide from
+`server/src/errors/failureGuide.ts`: the kind of failure, what it means, what the user
+can do, what the AI does next, and whether the drawing changed (`false`, or `unknown`
+after a timeout or lost connection while editing). Every AI therefore explains the same
+failure the same way and does not retry what cannot work. The kinds are old_plugin,
+not_connected, timeout, disconnected, no_drawing, too_large, ambiguous_name,
+fix_not_offered, fix_conflict, changed_since, manual_only, name_taken,
+polyline_unusable, not_found, criteria_gap, civil_refused, and unexpected.
+`test:tools` checks that each message the code raises gets its kind. Failures of the AI
+CLI itself (not logged in, usage limit, no answer) reach the palette in Korean.
 The MCP entry point is `node build/index.js`. Its tools are:
 
 | Tool | Result |

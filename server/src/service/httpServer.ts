@@ -1,3 +1,4 @@
+import { paletteMessage } from "../errors/failureGuide.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { timingSafeEqual } from "node:crypto";
@@ -101,9 +102,9 @@ const httpServer = createServer(async (request, response) => {
       const input = await body(request);
       if (!isProvider(input.provider) || typeof input.message !== "string" ||
           input.message.trim().length < 1 || input.message.length > 4000)
-        return json(response, 400, { error: "Choose one AI and enter a message (up to 4000 characters)." });
+        return json(response, 400, { error: "AI를 고르고 4000자 이내로 질문을 입력해 주세요." });
       if (await getProviderState(input.provider) !== "ready")
-        return json(response, 403, { error: "The selected AI is not installed or its account was not verified." });
+        return json(response, 403, { error: "선택한 AI가 설치되어 있지 않거나 로그인이 확인되지 않았습니다." });
 
       const conversation = isConversationId(input.conversation) ? input.conversation : undefined;
       if (url.pathname === "/api/chat") return json(response, 200, await answerChat(input.provider, input.message, undefined, conversation));
@@ -118,7 +119,7 @@ const httpServer = createServer(async (request, response) => {
         const result = await answerChat(input.provider, input.message, event => send(event), conversation);
         send({ type: "done", ...result });
       } catch (error) {
-        send({ type: "error", error: error instanceof Error ? error.message : String(error) });
+        send({ type: "error", error: paletteMessage(error instanceof Error ? error.message : String(error)) });
       }
       return response.end();
     }
@@ -133,7 +134,7 @@ const httpServer = createServer(async (request, response) => {
     }
     json(response, 404, { error: "Not found." });
   } catch (error) {
-    json(response, 503, { error: error instanceof Error ? error.message : String(error) });
+    json(response, 503, { error: paletteMessage(error instanceof Error ? error.message : String(error)) });
   }
 });
 
