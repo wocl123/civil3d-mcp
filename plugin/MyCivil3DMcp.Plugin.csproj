@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AcadDir Condition="'$(AcadDir)' == ''">C:\Program Files\Autodesk\AutoCAD 2025</AcadDir>
+    <CivilDir Condition="'$(CivilDir)' == ''">$(AcadDir)\C3D</CivilDir>
+    <AecDir Condition="'$(AecDir)' == ''">$(AcadDir)\ACA</AecDir>
+  </PropertyGroup>
+
+  <Target Name="ValidateAutodeskReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(AcadDir)\accoremgd.dll') Or !Exists('$(AcadDir)\AcDbMgd.dll') Or !Exists('$(AcadDir)\acmgd.dll') Or !Exists('$(CivilDir)\AeccDbMgd.dll') Or !Exists('$(AecDir)\AecBaseMgd.dll')"
+           Text="Civil 3D 2025 managed DLLs were not found. Set AcadDir, CivilDir, and AecDir to the installed Autodesk directories." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="accoremgd" HintPath="$(AcadDir)\accoremgd.dll" Private="false" />
+    <Reference Include="AcDbMgd" HintPath="$(AcadDir)\AcDbMgd.dll" Private="false" />
+    <Reference Include="acmgd" HintPath="$(AcadDir)\acmgd.dll" Private="false" />
+    <Reference Include="AeccDbMgd" HintPath="$(CivilDir)\AeccDbMgd.dll" Private="false" />
+    <Reference Include="AecBaseMgd" HintPath="$(AecDir)\AecBaseMgd.dll" Private="false" />
+  </ItemGroup>
+</Project>

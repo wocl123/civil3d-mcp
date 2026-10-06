@@ -1,0 +1,51 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { checkAlignmentCriteria } from "../../criteria/alignmentCriteria.js";
+import { checkProfileCriteria } from "../../criteria/profileCriteria.js";
+import { registerFixes } from "../../changes/changeStore.js";
+import { toolResult } from "../toolResult.js";
+import { CRITERIA_SETS } from "../../criteria/criteriaStore.js";
+import { REGIONS, ROAD_CLASSES, SUPERELEVATION_AREAS } from "../../design/alignmentRecord.js";
+
+const key = z.string().min(1).max(255);
+const criteria = z.enum(CRITERIA_SETS).optional()
+  .describe("Criteria set. Default: the one recorded in the alignment's description, else 도로구조규칙 (국토교통부 law). LH_설계지침_토목 is the LH manual over the law.");
+const designSpeed = z.number().int().min(10).max(150).optional()
+  .describe("Design speed in km/h. Leave out to use the alignment's design speeds by station.");
+
+// Checks compare drawing values with criteria tables in code; the AI only explains
+// the result. Each result lists conditions still needed under "missing".
+export function registerCriteriaTools(server: McpServer): void {
+  server.registerTool("check_alignment_criteria", {
+    title: "Check alignment against design criteria",
+    description: "Compare one alignment with design criteria: design speed for the road class and area, minimum curve radius, minimum curve length, spiral presence and length, and maximum superelevation. Returns each comparison with actual value, limit, article, and pass, fail, or n/a, plus conditions still needed. Failed items include computed fixes (larger radius, longer curve, added spirals) with an id, the values to change, whether they fit between neighbouring elements, and whether they can be applied automatically (applicable).",
+    inputSchema: {
+      alignment: key, criteria, designSpeed,
+      maxSuperelevation: z.union([z.literal(6), z.literal(7), z.literal(8)]).optional()
+        .describe("Maximum superelevation (%) the design applies. Leave out to use the area's maximum."),
+      area: z.enum(SUPERELEVATION_AREAS).optional(),
+      roadClass: z.enum(ROAD_CLASSES).optional().describe("Road class, to check the design speed (제8조). Leave out to use the one recorded on the alignment."),
+      region: z.enum(REGIONS).optional()
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false }
+  }, async args => {
+    const report = await checkAlignmentCriteria(args);
+    await registerFixes(report.items, { check: "alignment", input: args });
+    return toolResult(report);
+  });
+
+  server.registerTool("check_profile_criteria", {
+    title: "Check profile against design criteria",
+    description: "Compare design profiles with design criteria: minimum vertical curve K, required vertical curve length, and maximum grade. Give a profile, or only an alignment to check all of its design profiles. Surface (EG) profiles are skipped. Failed items include computed fixes (longer vertical curve at the same PVI, PVI elevation change, lower grade) with an id, the values to change, their effect on neighbouring curves, and whether they can be applied automatically (applicable).",
+    inputSchema: {
+      profile: key.optional(), alignment: key.optional(), criteria, designSpeed,
+      roadFunction: z.enum(["고속국도", "주간선·보조간선(그 밖의 도로)", "집산도로·연결로", "국지도로"]).optional(),
+      terrain: z.enum(["평지", "산지등"]).optional()
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false }
+  }, async args => {
+    const reports = await checkProfileCriteria(args);
+    await registerFixes(reports.flatMap(report => report.items), { check: "profile", input: args });
+    return toolResult(reports);
+  });
+}

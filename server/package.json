@@ -1,0 +1,28 @@
+{
+  "name": "my-civil3d-mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "smoke:service": "npm run build && node scripts/service-smoke.mjs",
+    "smoke:usage": "npm run build && node scripts/usage-smoke.mjs",
+    "smoke:memory": "npm run build && node scripts/memory-smoke.mjs",
+    "smoke:knowledge": "npm run build && node scripts/knowledge-smoke.mjs",
+    "service": "node build/localService.js",
+    "law:fetch": "npm run build && node scripts/law-fetch.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.10",
+    "typescript": "5.8.2"
+  }
+}
