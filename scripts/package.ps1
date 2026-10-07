@@ -79,14 +79,6 @@ try {
 "@ | Set-Content -LiteralPath (Join-Path $bundle 'PackageContents.xml') -Encoding UTF8
   foreach ($name in @('install.ps1','installer-ui.ps1','uninstall.ps1','package-common.ps1','release-public-key.xml','설치.bat','삭제.bat','먼저읽어주세요.txt')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $release }
   Copy-Item -LiteralPath (Join-Path $repo 'docs/배포_설치.md') -Destination (Join-Path $release 'README-install.md')
-  # 중앙 서버 연결 정보(GitHub Secret CENTRAL_SERVER_JSON, 중앙 서버 PC에서 npm run release -- github-secret).
-  # 있으면 릴리스 zip이 곧 설치 묶음이다: 받아서 설치하면 그 서버에서 최신 버전을 확인하고 자동 등록된다.
-  if ($env:MY_CIVIL3D_SERVER_JSON) {
-    $serverFile = Join-Path $release 'server.json'
-    [IO.File]::WriteAllText($serverFile, $env:MY_CIVIL3D_SERVER_JSON, (New-Object Text.UTF8Encoding $false))
-    [void](Read-ServerSettings $serverFile)   # 형식 확인(HTTPS면 인증서 지문 필수)
-    Write-Host '중앙 서버 연결 정보(server.json)를 넣었습니다.'
-  } else { Write-Host '알림: 중앙 서버 연결 정보(CENTRAL_SERVER_JSON)가 없어 server.json 없이 만듭니다(설치 후 /중앙 연결 필요).' }
   # 자동 업데이트 도우미: 설치된 번들이 다음 버전을 설치할 때 쓰는 스크립트와 공개 키(서명 대상에 포함된다).
   $installer = Join-Path $contents 'installer'
   New-Item -ItemType Directory -Path $installer -Force | Out-Null
