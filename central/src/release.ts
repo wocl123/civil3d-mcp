@@ -5,6 +5,9 @@
 //   npm run release -- publish <버전> [--min <버전>]   이 버전을 배포한다(설치 프로그램·팔레트가 받아 감)
 //   npm run release -- remove <버전>              받아 둔 설치본 지우기(배포 중이면 배포도 멈춤)
 //   npm run release -- kit <폴더> [--url <주소>]  사용자에게 줄 설치 묶음: 배포 zip + server.json(서버 주소, 가입키, 인증서 지문)
+//   npm run release -- github-secret [--url <주소>]   같은 server.json을 GitHub Secret(CENTRAL_SERVER_JSON)에 넣는다.
+//                                                 그다음 빌드부터 GitHub 릴리스 zip에 server.json이 들어간다(받아서 설치하면 자동 등록).
+//                                                 가입키 교체(admin rotate enroll), 인증서·주소가 바뀌면 다시 실행한다.
 // GitHub 저장소와 토큰은 <dataDir>/config.json 의 githubRepo, githubToken(읽기 전용) 또는 환경 변수 GITHUB_TOKEN.
 
 import { execFileSync } from "node:child_process";
@@ -26,6 +29,17 @@ function serverUrl(): string {
   if (host !== "0.0.0.0") return `${scheme}://${host}:${port}`;
   const address = Object.values(networkInterfaces()).flat().find(item => item && item.family === "IPv4" && !item.internal);
   return `${scheme}://${address?.address ?? "127.0.0.1"}:${port}`;
+}
+
+// 설치 묶음의 server.json 내용. HTTPS면 인증서 지문을 함께 넣는다(설치 프로그램과 서비스는 이 지문의 인증서만 믿는다).
+// 다른 PC용은 HTTPS여야 한다(HTTP는 이 PC 안의 시험용 주소만).
+function serverJson(url: string): { url: string; enrollKey: string; certSha256?: string } {
+  const tls = loadTls();
+  const secure = url.startsWith("https:");
+  if (secure && !tls) throw new ReleaseError("HTTPS 주소인데 인증서(<dataDir>/tls)가 없습니다. start-central.ps1로 서버를 시작해 만드세요.");
+  if (!secure && !loopbackHost(new URL(url).hostname))
+    throw new ReleaseError("다른 PC용 설치 묶음은 HTTPS 주소여야 합니다. start-central.ps1로 서버를 시작해 인증서를 만드세요.");
+  return { url, enrollKey: config.enrollKey, ...(secure ? { certSha256: tls!.fingerprint } : {}) };
 }
 
 async function main(): Promise<void> {
@@ -85,23 +99,33 @@ async function main(): Promise<void> {
     // 사용자 PC는 zip을 풀고 설치.bat을 누르면 된다. server.json이 있으면 설치할 때마다 서버에서 최신 버전을 확인한다.
     const kit = join(out, `MyCivil3DMcp-설치-${live.release.version}.zip`);
     copyFileSync(releaseFile(live.release), kit);
-    const serverJson = join(out, "server.json");
-    // HTTPS면 인증서 지문을 함께 넣는다. 설치 프로그램과 서비스는 이 지문의 인증서만 믿는다.
-    // 다른 PC용 묶음은 HTTPS여야 한다(HTTP는 이 PC 안의 시험용 주소만).
-    const tls = loadTls();
-    const secure = url.startsWith("https:");
-    if (secure && !tls) throw new ReleaseError("HTTPS 주소인데 인증서(<dataDir>/tls)가 없습니다. start-central.ps1로 서버를 시작해 만드세요.");
-    if (!secure && !loopbackHost(new URL(url).hostname))
-      throw new ReleaseError("다른 PC용 설치 묶음은 HTTPS 주소여야 합니다. start-central.ps1로 서버를 시작해 인증서를 만드세요.");
-    writeFileSync(serverJson, JSON.stringify({ url, enrollKey: config.enrollKey, ...(secure ? { certSha256: tls!.fingerprint } : {}) }, null, 1) + "\n", "utf8");
+    const serverFile = join(out, "server.json");
+    writeFileSync(serverFile, JSON.stringify(serverJson(url), null, 1) + "\n", "utf8");
     execFileSync("powershell.exe", ["-NoProfile", "-Command",
-      `Compress-Archive -LiteralPath '${serverJson.replace(/'/g, "''")}' -DestinationPath '${kit.replace(/'/g, "''")}' -Update`], { stdio: "inherit" });
+      `Compress-Archive -LiteralPath '${serverFile.replace(/'/g, "''")}' -DestinationPath '${kit.replace(/'/g, "''")}' -Update`], { stdio: "inherit" });
     say(`만들었습니다: ${kit}`);
     say(`  서버 ${url}, 버전 ${live.release.version}. 가입키가 들어 있으니 팀 안에서만 전달하세요.`);
     return;
   }
 
-  throw new ReleaseError("알 수 없는 명령입니다. list, fetch, add, publish, remove, kit 중 하나를 쓰세요.");
+  if (command === "github-secret") {
+    const repo = option("--repo") ?? config.githubRepo;
+    if (!repo) throw new ReleaseError(`config.json에 githubRepo(예: "owner/repo")를 넣거나 --repo 를 주세요.`);
+    const url = option("--url") ?? serverUrl();
+    if (!url.startsWith("https:")) throw new ReleaseError("GitHub 릴리스에 넣는 주소는 HTTPS여야 합니다. start-central.ps1 -AllowNetwork 로 서버를 시작해 인증서를 만드세요.");
+    const content = JSON.stringify(serverJson(url));
+    // 값은 화면·명령줄에 나오지 않게 표준 입력으로 넘긴다. gh(GitHub CLI) 로그인이 필요하다(gh auth login).
+    try {
+      execFileSync("gh", ["secret", "set", "CENTRAL_SERVER_JSON", "--repo", repo], { input: content, stdio: ["pipe", "inherit", "inherit"] });
+    } catch {
+      throw new ReleaseError("GitHub Secret을 넣지 못했습니다. GitHub CLI(gh)를 설치하고 gh auth login 으로 로그인했는지 확인하세요.");
+    }
+    say(`GitHub ${repo}의 CENTRAL_SERVER_JSON에 넣었습니다: 서버 ${url} (가입키·인증서 지문 포함)`);
+    say("다음 새 버전(새버전내기.bat)부터 GitHub 릴리스 zip에 server.json이 들어갑니다. 받아서 설치하면 이 서버에 자동 등록됩니다.");
+    return;
+  }
+
+  throw new ReleaseError("알 수 없는 명령입니다. list, fetch, add, publish, remove, kit, github-secret 중 하나를 쓰세요.");
 }
 
 main().catch(error => {

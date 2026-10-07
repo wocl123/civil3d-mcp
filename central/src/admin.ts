@@ -53,6 +53,7 @@ if (command === "installs" || !command) {
     writeJson(file, config);
     say(`새 가입키: ${config.enrollKey}`);
     say("이미 등록된 PC는 그대로 씁니다. 새로 설치할 사람에게는 npm run release -- kit <폴더> 로 새 설치 묶음을 만들어 주세요.");
+    say("GitHub 릴리스 zip으로 설치하게 한다면: npm run release -- github-secret 후 새 버전을 내세요(예전 릴리스 zip에는 옛 가입키가 들어 있습니다).");
   } else {
     config.reviewerKey = randomBytes(24).toString("hex");
     writeJson(file, config);

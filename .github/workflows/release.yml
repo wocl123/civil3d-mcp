@@ -42,10 +42,12 @@ jobs:
           if ("v$version" -ne '${{ github.ref_name }}') { throw "태그 ${{ github.ref_name }} 와 server/package.json 버전 $version 이 다릅니다." }
 
       # 서명 비밀 키는 저장소 Secret RELEASE_SIGNING_KEY 에만 있다. 태그 빌드는 서명이 없으면 실패한다.
+      # CENTRAL_SERVER_JSON(중앙 서버 주소·가입키·인증서 지문)이 있으면 zip에 server.json을 넣는다(설치하면 자동 등록).
       - name: Build package (tests included)
         shell: pwsh
         env:
           MY_CIVIL3D_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          MY_CIVIL3D_SERVER_JSON: ${{ secrets.CENTRAL_SERVER_JSON }}
         run: |
           $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/package.ps1', '-NuGetAutodesk')
           if ('${{ github.ref }}'.StartsWith('refs/tags/v')) { $arguments += '-RequireSignature' }
