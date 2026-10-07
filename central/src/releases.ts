@@ -156,3 +156,13 @@ export async function fetchFromGitHub(repo: string, token: string | undefined, t
 }
 
 export const releaseFile = (release: Release) => join(folder(release.version), release.file);
+
+// 받아 둔 설치본을 지운다. 지금 배포 중인 버전이면 배포도 멈춘다(설치 프로그램은 "배포 중인 버전 없음"으로 본다).
+export function removeRelease(version: string): { stoppedPublishing: boolean } {
+  if (!VERSION.test(version) || !existsSync(folder(version))) throw new ReleaseError(`받아 둔 ${version} 설치본이 없습니다.`);
+  const live = readJson<Current>(join(root(), "current.json"));
+  const stoppedPublishing = live?.version === version;
+  if (stoppedPublishing) rmSync(join(root(), "current.json"), { force: true });
+  rmSync(folder(version), { recursive: true, force: true });
+  return { stoppedPublishing };
+}

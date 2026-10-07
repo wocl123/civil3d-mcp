@@ -3,7 +3,8 @@
 //   npm run release -- fetch [v0.2.0]             GitHub Release에서 받기(태그를 빼면 최신)
 //   npm run release -- add <zip> [버전] [--unsigned]   인터넷이 없을 때: zip을 직접 넣기(옆의 .sig 필수, .sha256 있으면 검사)
 //   npm run release -- publish <버전> [--min <버전>]   이 버전을 배포한다(설치 프로그램·팔레트가 받아 감)
-//   npm run release -- kit <폴더> [--url <주소>]  사용자에게 줄 설치 묶음: 배포 zip + server.json(서버 주소, 가입키)
+//   npm run release -- remove <버전>              받아 둔 설치본 지우기(배포 중이면 배포도 멈춤)
+//   npm run release -- kit <폴더> [--url <주소>]  사용자에게 줄 설치 묶음: 배포 zip + server.json(서버 주소, 가입키, 인증서 지문)
 // GitHub 저장소와 토큰은 <dataDir>/config.json 의 githubRepo, githubToken(읽기 전용) 또는 환경 변수 GITHUB_TOKEN.
 
 import { execFileSync } from "node:child_process";
@@ -12,7 +13,7 @@ import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
 import { host, loadConfig, port } from "./config.js";
 import { loadTls, loopbackHost } from "./tls.js";
-import { addRelease, current, fetchFromGitHub, listReleases, publish, releaseFile, ReleaseError, VERSION } from "./releases.js";
+import { addRelease, current, fetchFromGitHub, listReleases, publish, releaseFile, ReleaseError, removeRelease, VERSION } from "./releases.js";
 
 const config = loadConfig();
 const [command, ...args] = process.argv.slice(2);
@@ -67,6 +68,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "remove") {
+    if (!args[0]) throw new ReleaseError("형식: remove <버전>");
+    const { stoppedPublishing } = removeRelease(args[0]);
+    say(`지웠습니다: ${args[0]}${stoppedPublishing ? " (배포 중이던 버전이라 배포도 멈췄습니다. 다른 버전을 publish 하세요)" : ""}`);
+    return;
+  }
+
   if (command === "kit") {
     const live = current();
     if (!live) throw new ReleaseError("배포 중인 버전이 없습니다. 먼저 publish 하세요.");
@@ -93,7 +101,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  throw new ReleaseError("알 수 없는 명령입니다. list, fetch, add, publish, kit 중 하나를 쓰세요.");
+  throw new ReleaseError("알 수 없는 명령입니다. list, fetch, add, publish, remove, kit 중 하나를 쓰세요.");
 }
 
 main().catch(error => {

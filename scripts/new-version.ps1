@@ -35,16 +35,20 @@ $ahead = [int](& git rev-list --count 'origin/main..HEAD')
 $package = Join-Path $repo 'server\package.json'
 $current = (Get-Content -LiteralPath $package -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $parts = $current.Split('.')
-$suggested = "$($parts[0]).$($parts[1]).$([int]$parts[2] + 1)"
+# 지금 버전이 아직 릴리스되지 않았으면(태그 없음) 그 버전을 그대로 낸다. 처음 내는 버전(예: 0.1.0)이 이 경우다.
+$currentReleased = [bool](& git tag --list "v$current") -or [bool](& git ls-remote --tags origin "refs/tags/v$current")
+$suggested = if ($currentReleased) { "$($parts[0]).$($parts[1]).$([int]$parts[2] + 1)" } else { $current }
 Write-Host ''
-Write-Host "지금 버전: $current"
+Write-Host "지금 버전: $current$(if (-not $currentReleased) { ' (아직 릴리스하지 않음)' })"
 if (-not $Version) {
   $answer = Read-Host "새 버전을 입력하세요 (그냥 Enter = $suggested)"
   $Version = if ($answer.Trim()) { $answer.Trim().TrimStart('v') } else { $suggested }
 }
 $Version = $Version.TrimStart('v')
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { Stop-WithMessage "버전은 숫자.숫자.숫자 형식이어야 합니다(예: 0.3.0). 입력: $Version" }
-if (([version]$Version).CompareTo([version]$current) -le 0) { Stop-WithMessage "새 버전($Version)은 지금 버전($current)보다 커야 합니다." }
+$order = ([version]$Version).CompareTo([version]$current)
+if ($order -lt 0 -or ($order -eq 0 -and $currentReleased)) { Stop-WithMessage "새 버전($Version)은 지금 버전($current)보다 커야 합니다." }
+$bump = $order -gt 0   # 같으면(아직 릴리스 안 한 지금 버전) 버전 변경·커밋 없이 태그만
 $tag = "v$Version"
 if (& git tag --list $tag) { Stop-WithMessage "태그 $tag 가 이미 있습니다. 다른 번호를 쓰세요(게시된 태그는 다시 쓰지 않습니다)." }
 if (& git ls-remote --tags origin "refs/tags/$tag") { Stop-WithMessage "원격에 태그 $tag 가 이미 있습니다. 다른 번호를 쓰세요." }
@@ -52,17 +56,23 @@ if (& git ls-remote --tags origin "refs/tags/$tag") { Stop-WithMessage "원격�
 # ── 3) 확인 후 진행
 Write-Host ''
 Write-Host '다음을 진행합니다:' -ForegroundColor Cyan
-Write-Host "  - server/package.json 버전 $current → $Version"
-Write-Host "  - 커밋 'Version $Version' + 태그 $tag"
+if ($bump) {
+  Write-Host "  - server/package.json 버전 $current → $Version"
+  Write-Host "  - 커밋 'Version $Version' + 태그 $tag"
+} else {
+  Write-Host "  - 지금 버전 $Version 그대로, 현재 커밋에 태그 $tag"
+}
 Write-Host "  - GitHub에 push (main$(if ($ahead) { ", 아직 안 올린 커밋 $ahead 개 포함" }), $tag)"
 Write-Host '  - GitHub Actions가 빌드·테스트·서명 후 Release를 게시합니다(약 15분).'
 $ok = Read-Host '진행할까요? (Y/N)'
 if ($ok -notmatch '^[Yy]') { Write-Host '취소했습니다. 아무것도 바뀌지 않았습니다.'; exit 0 }
 
-Push-Location (Join-Path $repo 'server')
-try { Invoke-Tool npm @('version', $Version, '--no-git-tag-version') } finally { Pop-Location }
-Invoke-Tool git @('add', 'server/package.json', 'server/package-lock.json')
-Invoke-Tool git @('commit', '-q', '-m', "Version $Version")
+if ($bump) {
+  Push-Location (Join-Path $repo 'server')
+  try { Invoke-Tool npm @('version', $Version, '--no-git-tag-version') } finally { Pop-Location }
+  Invoke-Tool git @('add', 'server/package.json', 'server/package-lock.json')
+  Invoke-Tool git @('commit', '-q', '-m', "Version $Version")
+}
 Invoke-Tool git @('tag', '-a', $tag, '-m', $tag)
 Write-Host 'GitHub에 올리고 있습니다...'
 Invoke-Tool git @('push', '-q', 'origin', 'main')
