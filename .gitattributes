@@ -1,0 +1,2 @@
+# 기준표·규칙 파일은 내용 해시(기준 버전, 수정안 id)에 들어간다. 체크아웃 환경과 상관없이 LF로 둔다.
+server/knowledge-defaults/** text eol=lf
