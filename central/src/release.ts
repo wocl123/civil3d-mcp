@@ -1,7 +1,7 @@
 // 배포 관리 명령. 중앙 서버 PC에서 실행한다(서버를 켠 채로 써도 된다).
 //   npm run release -- list                       받아 둔 버전과 지금 배포 중인 버전
 //   npm run release -- fetch [v0.2.0]             GitHub Release에서 받기(태그를 빼면 최신)
-//   npm run release -- add <zip> [버전]           인터넷이 없을 때: zip을 직접 넣기(.sha256이 옆에 있으면 검사)
+//   npm run release -- add <zip> [버전] [--unsigned]   인터넷이 없을 때: zip을 직접 넣기(옆의 .sig 필수, .sha256 있으면 검사)
 //   npm run release -- publish <버전> [--min <버전>]   이 버전을 배포한다(설치 프로그램·팔레트가 받아 감)
 //   npm run release -- kit <폴더> [--url <주소>]  사용자에게 줄 설치 묶음: 배포 zip + server.json(서버 주소, 가입키)
 // GitHub 저장소와 토큰은 <dataDir>/config.json 의 githubRepo, githubToken(읽기 전용) 또는 환경 변수 GITHUB_TOKEN.
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     const releases = listReleases();
     say(live ? `배포 중: ${live.release.version}${live.minVersion ? ` (최소 지원 ${live.minVersion})` : ""}, 지정 ${live.publishedAt}` : "배포 중인 버전 없음");
     for (const item of releases)
-      say(`- ${item.version}  ${(item.size / 1048576).toFixed(1)} MB  ${item.source}${item.tag ? ` ${item.tag}` : ""}  sha256 ${item.sha256.slice(0, 12)}…  받음 ${item.addedAt}`);
+      say(`- ${item.version}  ${(item.size / 1048576).toFixed(1)} MB  ${item.source}${item.tag ? ` ${item.tag}` : ""}  ${item.signed ? "서명됨" : "서명 없음"}  sha256 ${item.sha256.slice(0, 12)}…  받음 ${item.addedAt}`);
     if (!releases.length) say("받아 둔 설치본이 없습니다. fetch 또는 add로 받으세요.");
     return;
   }
@@ -50,8 +50,10 @@ async function main(): Promise<void> {
     if (!zip || !existsSync(zip)) throw new ReleaseError("형식: add <zip 경로> [버전]");
     const shaFile = zip + ".sha256";
     const expected = existsSync(shaFile) ? /^[a-f\d]{64}/i.exec(readFileSync(shaFile, "utf8").trim())?.[0] : undefined;
-    const release = await addRelease(zip, { version: args[1] && VERSION.test(args[1]) ? args[1] : undefined, expectedSha256: expected, source: "file" });
-    say(`넣었습니다: ${release.version}${expected ? " (.sha256 일치)" : " (.sha256 없음: 검사 안 함)"}`);
+    const signature = existsSync(zip + ".sig") ? readFileSync(zip + ".sig", "ascii") : undefined;
+    const release = await addRelease(zip, { version: args[1] && VERSION.test(args[1]) ? args[1] : undefined, expectedSha256: expected,
+      signature, allowUnsigned: args.includes("--unsigned"), source: "file" });
+    say(`넣었습니다: ${release.version}${expected ? " (.sha256 일치)" : " (.sha256 없음: 검사 안 함)"}${release.signed ? ", 서명 확인" : ", 서명 없음(시험용)"}`);
     say(`배포하려면: npm run release -- publish ${release.version}`);
     return;
   }

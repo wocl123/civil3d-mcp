@@ -34,7 +34,7 @@ function Get-BundleFiles([string]$Bundle) {
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "번들에 연결된 파일이 있습니다: $($item.FullName)" }
     if (-not $item.PSIsContainer) {
       $relative = $item.FullName.Substring($base.Length + 1).Replace('\', '/')
-      if ($relative -ne 'Contents/manifest.json') { $relative }
+      if ($relative -ne 'Contents/manifest.json' -and $relative -ne 'Contents/manifest.sig') { $relative }   # 목록과 그 서명은 목록에 넣지 않는다
     }
   }
 }
@@ -52,7 +52,7 @@ function Test-Bundle([string]$Bundle) {
   if ($manifest.schemaVersion -ne 1) { throw '지원하지 않는 manifest입니다.' }
   $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   foreach ($entry in $manifest.files) {
-    if ([string]::IsNullOrWhiteSpace($entry.path) -or $entry.path -match '(^|[\\/])\.\.([\\/]|$)|:|^[/\\]' -or $entry.path -eq 'Contents/manifest.json') { throw '잘못된 manifest 경로입니다.' }
+    if ([string]::IsNullOrWhiteSpace($entry.path) -or $entry.path -match '(^|[\\/])\.\.([\\/]|$)|:|^[/\\]' -or $entry.path -eq 'Contents/manifest.json' -or $entry.path -eq 'Contents/manifest.sig') { throw '잘못된 manifest 경로입니다.' }
     if (-not $seen.Add($entry.path.Replace('\','/'))) { throw '중복 manifest 경로입니다.' }
     $file = Assert-Within (Join-Path $Bundle $entry.path) $Bundle
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "배포 파일이 없습니다: $($entry.path)" }
@@ -188,4 +188,21 @@ function Remove-OldBackups([string]$DestinationRoot, [string]$Keep) {
   Get-ChildItem -LiteralPath $DestinationRoot -Directory -Force -Filter 'MyCivil3DMcp.bundle.backup-*' |
     Where-Object { -not [string]::Equals($_.FullName, $keepFull, [StringComparison]::OrdinalIgnoreCase) } |
     ForEach-Object { try { Remove-OwnedDirectory $_.FullName $DestinationRoot } catch { Write-Host "이전 백업을 지우지 못했습니다: $($_.Exception.Message)" } }
+}
+
+# ── 서명: 릴리스는 Contents/manifest.json(모든 파일의 SHA-256 목록)에 서명한다. 서명이 맞고 Test-Bundle이
+# 통과하면 번들의 모든 파일이 서명한 그대로다. 공개 키는 설치 파일 옆의 release-public-key.xml(이 스크립트와 함께 배포).
+function Get-TrustedKeyFile { return (Join-Path $PSScriptRoot 'release-public-key.xml') }
+function Assert-BundleSignature([string]$Bundle, [string]$KeyFile = (Get-TrustedKeyFile)) {
+  $manifest = Join-Path $Bundle 'Contents/manifest.json'
+  $signature = Join-Path $Bundle 'Contents/manifest.sig'
+  if (-not (Test-Path -LiteralPath $signature)) { throw '서명이 없는 설치 파일입니다. 공식 배포본만 설치할 수 있습니다.' }
+  if (-not (Test-Path -LiteralPath $KeyFile)) { throw "서명 확인용 공개 키가 없습니다: $KeyFile" }
+  $rsa = [Security.Cryptography.RSACryptoServiceProvider]::new()
+  try {
+    $rsa.FromXmlString((Get-Content -LiteralPath $KeyFile -Raw).Trim())
+    $bytes = [IO.File]::ReadAllBytes($manifest)
+    $sig = [Convert]::FromBase64String((Get-Content -LiteralPath $signature -Raw).Trim())
+    if (-not $rsa.VerifyData($bytes, 'SHA256', $sig)) { throw '설치 파일의 서명이 맞지 않습니다(변조되었거나 공식 배포본이 아님). 설치하지 않습니다.' }
+  } finally { $rsa.Dispose() }
 }

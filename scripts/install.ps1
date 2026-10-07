@@ -7,9 +7,14 @@
   [string]$DataDir = (Join-Path $env:LOCALAPPDATA 'MyCivil3DMcp\data'),
   # 같은 버전이어도 다시 설치한다(설치 창의 [다시 설치]). 더 오래된 버전으로 내리는 것도 이때만 한다.
   [switch]$Reinstall,
-  [switch]$SkipRunningCheck   # 테스트용: 실행 중인 Civil 3D 확인을 건너뛴다(설치 대상이 임시 폴더일 때만)
+  [switch]$SkipRunningCheck,  # 테스트용: 실행 중인 Civil 3D 확인을 건너뛴다(설치 대상이 임시 폴더일 때만)
+  # 서명 확인용 공개 키(기본: 이 폴더의 release-public-key.xml). 테스트는 임시 키를 쓴다.
+  [string]$TrustedKeyFile,
+  # 개발용 빌드(서명 없음)를 설치할 때만. 설치 창은 이 옵션을 쓰지 않는다.
+  [switch]$AllowUnsigned
 )
 . (Join-Path $PSScriptRoot 'package-common.ps1')
+if (-not $TrustedKeyFile) { $TrustedKeyFile = Get-TrustedKeyFile }
 $target = Join-Path $DestinationRoot 'MyCivil3DMcp.bundle'
 Write-Host '실행 중인 프로그램을 확인하고 있습니다...'
 if (-not $SkipRunningCheck) { Assert-BundleStopped $target }
@@ -56,6 +61,10 @@ try {
     Expand-SafeArchive $Archive $unpack
     $BundlePath = Join-Path $unpack 'MyCivil3DMcp.bundle'
   }
+  # 어디서 온 번들이든 서명을 확인한다. 서명이 맞아야 manifest의 SHA-256 목록을 믿을 수 있다.
+  if ($AllowUnsigned) { Write-Host '서명 확인을 건너뜁니다(개발용 빌드).' } else { Assert-BundleSignature $BundlePath $TrustedKeyFile }
+  # 서버에서 받은 것은 서버가 알려 준 그 버전이어야 한다(서명된 옛 버전으로 되돌리는 공격을 막는다).
+  if ($download -and (Get-InstalledVersion $BundlePath) -ne $release.version) { throw '받은 설치 파일의 버전이 서버 정보와 다릅니다. 설치하지 않습니다.' }
   # 폴더나 zip의 번들도 설치된 버전과 비교한다(서버에서 받은 것은 위에서 이미 비교했다).
   if (-not $download -and -not (Test-NeedsInstall (Get-InstalledVersion $BundlePath))) { return }
   $result = Invoke-BundleInstall $BundlePath $DestinationRoot

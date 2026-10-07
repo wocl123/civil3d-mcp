@@ -1,5 +1,5 @@
 ﻿# -NuGetAutodesk: Civil 3D가 없는 PC·CI에서 Autodesk 공식 참조 패키지(NuGet)로 플러그인을 빌드한다.
-param([string]$AcadDir = 'C:\Program Files\Autodesk\AutoCAD 2025', [string]$NodeArchive, [switch]$NuGetAutodesk)
+param([string]$AcadDir = 'C:\Program Files\Autodesk\AutoCAD 2025', [string]$NodeArchive, [switch]$NuGetAutodesk, [switch]$RequireSignature)
 . (Join-Path $PSScriptRoot 'package-common.ps1')
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $config = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'node-runtime.json') -Raw | ConvertFrom-Json
@@ -77,9 +77,16 @@ try {
   </Components>
 </ApplicationPackage>
 "@ | Set-Content -LiteralPath (Join-Path $bundle 'PackageContents.xml') -Encoding UTF8
-  foreach ($name in @('install.ps1','installer-ui.ps1','uninstall.ps1','package-common.ps1','설치.bat','삭제.bat','먼저읽어주세요.txt')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $release }
+  foreach ($name in @('install.ps1','installer-ui.ps1','uninstall.ps1','package-common.ps1','release-public-key.xml','설치.bat','삭제.bat','먼저읽어주세요.txt')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $release }
   Copy-Item -LiteralPath (Join-Path $repo 'docs/배포_설치.md') -Destination (Join-Path $release 'README-install.md')
   Write-BundleManifest $bundle
+  # 서명: 비밀 키(MY_CIVIL3D_SIGNING_KEY 또는 _FILE)가 있으면 manifest에 서명한다. 없으면 개발용(설치 프로그램이 거절).
+  $signing = [bool]($env:MY_CIVIL3D_SIGNING_KEY -or $env:MY_CIVIL3D_SIGNING_KEY_FILE)
+  if ($RequireSignature -and -not $signing) { throw '서명 키가 없습니다. 릴리스 빌드는 서명해야 합니다(RELEASE_SIGNING_KEY).' }
+  if ($signing) {
+    Run $node @((Join-Path $PSScriptRoot 'release-signing.mjs'),'sign-manifest',$bundle)
+    Assert-BundleSignature $bundle (Join-Path $PSScriptRoot 'release-public-key.xml')
+  } else { Write-Host '경고: 서명하지 않은 개발용 빌드입니다. 설치 프로그램은 -AllowUnsigned 없이는 설치하지 않습니다.' }
   [void](Test-Bundle $bundle)
   Run $node @((Join-Path $repo 'server/scripts/package-smoke.mjs'),$bundle)
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'package-regression.ps1') -Bundle $bundle
@@ -101,5 +108,7 @@ try {
   $finalZip = Join-Path $dist ([IO.Path]::GetFileName($zip))
   Copy-Item -LiteralPath $zip -Destination $finalZip -Force
   ((Get-FileHash -LiteralPath $finalZip -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($finalZip)) | Set-Content -LiteralPath ($finalZip + '.sha256') -Encoding ASCII
+  # zip 전체 서명(.sig): 중앙 서버가 받을 때 확인한다.
+  if ($signing) { Run $node @((Join-Path $PSScriptRoot 'release-signing.mjs'),'sign-file',$finalZip) }
   Write-Host "패키지 생성 완료: $finalZip ($([Math]::Round((Get-Item -LiteralPath $finalZip).Length / 1MB,1)) MB)"
 } finally { Remove-OwnedDirectory $work $workRoot }

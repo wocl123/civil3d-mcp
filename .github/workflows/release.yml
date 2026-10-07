@@ -1,5 +1,5 @@
 # 배포 파이프라인: 패키지를 만들고(전체 테스트 포함), 태그면 GitHub Release에 올린다.
-#   - 태그 v<버전> (예: v0.2.0): 빌드 → 태그와 server/package.json 버전 확인 → Release에 zip과 .sha256 게시
+#   - 태그 v<버전> (예: v0.2.0): 빌드·서명 → 태그와 server/package.json 버전 확인 → Release에 zip, .sha256, .sig 게시
 #   - ci/** 브랜치 push, 수동 실행: 빌드와 검사만 하고, 결과는 Actions 산출물로 남긴다(게시 안 함)
 # Civil 3D가 없는 GitHub 러너에서는 Autodesk 공식 참조 패키지(NuGet)로 플러그인을 빌드한다(-NuGetAutodesk).
 name: release
@@ -41,9 +41,16 @@ jobs:
           $version = (Get-Content server/package.json -Raw | ConvertFrom-Json).version
           if ("v$version" -ne '${{ github.ref_name }}') { throw "태그 ${{ github.ref_name }} 와 server/package.json 버전 $version 이 다릅니다." }
 
+      # 서명 비밀 키는 저장소 Secret RELEASE_SIGNING_KEY 에만 있다. 태그 빌드는 서명이 없으면 실패한다.
       - name: Build package (tests included)
         shell: pwsh
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1 -NuGetAutodesk
+        env:
+          MY_CIVIL3D_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/package.ps1', '-NuGetAutodesk')
+          if ('${{ github.ref }}'.StartsWith('refs/tags/v')) { $arguments += '-RequireSignature' }
+          & powershell @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -51,6 +58,7 @@ jobs:
           path: |
             dist/*.zip
             dist/*.sha256
+            dist/*.sig
           retention-days: 14
 
       - name: Publish release
@@ -58,4 +66,4 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create '${{ github.ref_name }}' (Get-ChildItem dist -Include *.zip,*.sha256 -File -Recurse).FullName --title '${{ github.ref_name }}' --generate-notes
+        run: gh release create '${{ github.ref_name }}' (Get-ChildItem dist -Include *.zip,*.sha256,*.sig -File -Recurse).FullName --title '${{ github.ref_name }}' --generate-notes
