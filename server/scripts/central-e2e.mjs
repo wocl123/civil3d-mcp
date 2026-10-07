@@ -26,7 +26,7 @@ assert.ok(leak('{"x":"FAKE-SITE 도면"}', ['FAKE-SITE']), 'a drawing name is ca
 assert.equal(blank('부산신항에서는 D:\\설계\\a.dwg 기준', ['부산신항']), '<이름>에서는 <경로> 기준', 'Korean terms and paths are blanked');
 
 const central = spawn(process.execPath, [join(here, '..', '..', 'central', 'build', 'server.js')],
-  { env: { ...process.env, CENTRAL_DATA_DIR: dirs.central, CENTRAL_PORT: String(port) }, stdio: ['ignore', 'ignore', 'pipe'] });
+  { env: { ...process.env, CENTRAL_DATA_DIR: dirs.central, CENTRAL_PORT: String(port), CENTRAL_HOST: '127.0.0.1' }, stdio: ['ignore', 'ignore', 'pipe'] });
 await new Promise((resolve, reject) => {
   central.stderr.on('data', chunk => { if (String(chunk).includes('central server:')) resolve(); });
   central.on('exit', code => reject(new Error(`central exited ${code}`)));

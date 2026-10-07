@@ -7,11 +7,11 @@ import { join } from "node:path";
 import { install } from "../data/install.js";
 import { centralUrl, loadSettings, saveSettings } from "../data/settings.js";
 import { dataDir } from "../paths.js";
-import { CentralError, enroll } from "./centralClient.js";
+import { CentralError, enroll, normalizeFingerprint } from "./centralClient.js";
 
 export async function joinFromInstaller(): Promise<boolean> {
   const file = join(dataDir(), "central-join.json");
-  let request: { url?: unknown; enrollKey?: unknown };
+  let request: { url?: unknown; enrollKey?: unknown; certSha256?: unknown };
   try {
     request = JSON.parse((await readFile(file, "utf8")).replace(/^﻿/, "")) as typeof request;
   } catch {
@@ -24,8 +24,9 @@ export async function joinFromInstaller(): Promise<boolean> {
     return false;
   }
   try {
-    const { token } = await enroll(url, (await install()).installId, request.enrollKey);
-    settings.central = { url, token, enabled: true, enrolledAt: new Date().toISOString() };
+    const pin = typeof request.certSha256 === "string" ? normalizeFingerprint(request.certSha256) : undefined;
+    const { token } = await enroll(url, (await install()).installId, request.enrollKey, pin);
+    settings.central = { url, token, ...(pin ? { certSha256: pin } : {}), enabled: true, enrolledAt: new Date().toISOString() };
     await saveSettings(settings);
     await rm(file, { force: true });
     return true;

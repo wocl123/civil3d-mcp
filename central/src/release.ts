@@ -11,6 +11,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
 import { host, loadConfig, port } from "./config.js";
+import { loadTls, loopbackHost } from "./tls.js";
 import { addRelease, current, fetchFromGitHub, listReleases, publish, releaseFile, ReleaseError, VERSION } from "./releases.js";
 
 const config = loadConfig();
@@ -20,9 +21,10 @@ const say = (text: string) => process.stdout.write(text + "\n");
 
 // 다른 PC가 쓸 서버 주소(server.ts 시작 안내와 같은 규칙).
 function serverUrl(): string {
-  if (host !== "0.0.0.0") return `http://${host}:${port}`;
+  const scheme = loadTls() ? "https" : "http";
+  if (host !== "0.0.0.0") return `${scheme}://${host}:${port}`;
   const address = Object.values(networkInterfaces()).flat().find(item => item && item.family === "IPv4" && !item.internal);
-  return `http://${address?.address ?? "127.0.0.1"}:${port}`;
+  return `${scheme}://${address?.address ?? "127.0.0.1"}:${port}`;
 }
 
 async function main(): Promise<void> {
@@ -76,7 +78,14 @@ async function main(): Promise<void> {
     const kit = join(out, `MyCivil3DMcp-설치-${live.release.version}.zip`);
     copyFileSync(releaseFile(live.release), kit);
     const serverJson = join(out, "server.json");
-    writeFileSync(serverJson, JSON.stringify({ url, enrollKey: config.enrollKey }, null, 1) + "\n", "utf8");
+    // HTTPS면 인증서 지문을 함께 넣는다. 설치 프로그램과 서비스는 이 지문의 인증서만 믿는다.
+    // 다른 PC용 묶음은 HTTPS여야 한다(HTTP는 이 PC 안의 시험용 주소만).
+    const tls = loadTls();
+    const secure = url.startsWith("https:");
+    if (secure && !tls) throw new ReleaseError("HTTPS 주소인데 인증서(<dataDir>/tls)가 없습니다. start-central.ps1로 서버를 시작해 만드세요.");
+    if (!secure && !loopbackHost(new URL(url).hostname))
+      throw new ReleaseError("다른 PC용 설치 묶음은 HTTPS 주소여야 합니다. start-central.ps1로 서버를 시작해 인증서를 만드세요.");
+    writeFileSync(serverJson, JSON.stringify({ url, enrollKey: config.enrollKey, ...(secure ? { certSha256: tls!.fingerprint } : {}) }, null, 1) + "\n", "utf8");
     execFileSync("powershell.exe", ["-NoProfile", "-Command",
       `Compress-Archive -LiteralPath '${serverJson.replace(/'/g, "''")}' -DestinationPath '${kit.replace(/'/g, "''")}' -Update`], { stdio: "inherit" });
     say(`만들었습니다: ${kit}`);

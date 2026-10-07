@@ -1,6 +1,12 @@
 // 중앙 서버(central/src/server.ts) 호출.
 // 모든 호출에 제한 시간이 있다. 서버가 꺼져 있어도 다음 동기화가 늦어질 뿐, 답변을 붙잡지 않는다.
+// HTTPS: 서버는 사내용 자체 인증서를 쓰므로 공용 인증기관 대신 인증서 지문(SHA-256, settings의 certSha256)을 고정해 믿는다.
+//   TLS 연결을 먼저 맺고 지문을 확인한 뒤에만 요청(토큰·키)을 보낸다. 지문이 다르면 아무것도 보내지 않는다.
+// HTTP는 이 PC 안(127.0.0.1, localhost)만 허용한다.
 
+import { request as httpsRequest } from "node:https";
+import { connect, type TLSSocket } from "node:tls";
+import { isIP } from "node:net";
 import type { CentralSettings } from "../data/settings.js";
 
 const TIMEOUT_MS = 15000;
@@ -12,27 +18,66 @@ export class CentralError extends Error {
   }
 }
 
-// 요청 하나. token: 설치 인증, reviewerKey: 검토자 인증.
+export const normalizeFingerprint = (text: string) => text.replace(/[:\s]/g, "").toLowerCase();
+const loopback = (host: string) => host === "127.0.0.1" || host === "localhost" || host === "[::1]" || host === "::1";
+
+// 지문을 확인한 TLS 연결. 맞지 않으면 아무것도 보내기 전에 끊는다.
+function pinnedSocket(url: URL, pin: string): Promise<TLSSocket> {
+  return new Promise((resolve, reject) => {
+    const host = url.hostname.replace(/^\[|\]$/g, "");
+    const socket = connect({ host, port: Number(url.port || 443), servername: isIP(host) ? undefined : host, rejectUnauthorized: false });
+    const fail = (error: Error) => { socket.destroy(); reject(error); };
+    socket.setTimeout(TIMEOUT_MS, () => fail(new CentralError("중앙 서버 연결 시간이 지났습니다.", 0)));
+    socket.once("error", error => fail(new CentralError(`중앙 서버에 연결하지 못했습니다(${error.message}).`, 0)));
+    socket.once("secureConnect", () => {
+      const actual = normalizeFingerprint(socket.getPeerCertificate().fingerprint256 ?? "");
+      if (actual !== pin) fail(new CentralError("중앙 서버의 인증서가 등록된 것과 다릅니다. 다른 서버이거나 통신이 가로채졌을 수 있어 연결하지 않았습니다. 관리자에게 확인하세요.", 0));
+      else { socket.setTimeout(0); resolve(socket); }
+    });
+  });
+}
+
+type Reply = { ok: boolean; status: number; text: string };
+
+async function send(url: URL, method: string, headers: Record<string, string>, body: string | undefined, pin?: string): Promise<Reply> {
+  if (url.protocol === "http:") {
+    if (!loopback(url.hostname)) throw new CentralError("다른 PC의 중앙 서버는 HTTPS로만 연결합니다. 주소를 https:// 로 바꾸세요.", 0);
+    let response: Response;
+    try {
+      response = await fetch(url, { method, headers, body, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    } catch (error) {
+      throw new CentralError(`중앙 서버에 연결하지 못했습니다(${error instanceof Error ? error.message : String(error)}).`, 0);
+    }
+    return { ok: response.ok, status: response.status, text: await response.text() };
+  }
+  if (url.protocol !== "https:") throw new CentralError("중앙 서버 주소는 https:// 여야 합니다.", 0);
+  if (!pin || !/^[a-f\d]{64}$/.test(pin)) throw new CentralError("중앙 서버 인증서 지문이 없습니다. /중앙 연결 <주소> <가입키> <인증서지문> 으로 다시 연결하세요.", 0);
+  const socket = await pinnedSocket(url, pin);
+  return await new Promise<Reply>((resolve, reject) => {
+    const req = httpsRequest(url, { method, headers: { ...headers, ...(body ? { "Content-Length": String(Buffer.byteLength(body)) } : {}) },
+      createConnection: () => socket }, response => {   // agent를 주지 않아야 이 연결(지문 확인됨)을 쓴다
+      const chunks: Buffer[] = [];
+      response.on("data", chunk => chunks.push(chunk as Buffer));
+      response.on("end", () => resolve({ ok: (response.statusCode ?? 0) < 400, status: response.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8") }));
+      response.on("error", error => reject(new CentralError(`중앙 서버 응답을 받지 못했습니다(${error.message}).`, 0)));
+    });
+    req.setTimeout(TIMEOUT_MS, () => req.destroy(new Error("timeout")));
+    req.on("error", error => reject(new CentralError(`중앙 서버에 연결하지 못했습니다(${error.message}).`, 0)));
+    req.end(body);
+  });
+}
+
+// 요청 하나. token: 설치 인증, reviewerKey: 검토자 인증, pin: HTTPS 인증서 지문.
 async function call<T>(url: string, path: string,
-  init: { method?: string; token?: string; reviewerKey?: string; body?: unknown } = {}): Promise<T> {
+  init: { method?: string; token?: string; reviewerKey?: string; body?: unknown; pin?: string } = {}): Promise<T> {
   const headers: Record<string, string> = { "Accept": "application/json" };
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (init.token) headers["Authorization"] = `Bearer ${init.token}`;
   if (init.reviewerKey) headers["X-Reviewer-Key"] = init.reviewerKey;
 
-  let response: Response;
-  try {
-    response = await fetch(url + path, {
-      method: init.method ?? (init.body === undefined ? "GET" : "POST"),
-      headers,
-      body: init.body === undefined ? undefined : JSON.stringify(init.body),
-      signal: AbortSignal.timeout(TIMEOUT_MS)
-    });
-  } catch (error) {
-    throw new CentralError(`중앙 서버에 연결하지 못했습니다(${error instanceof Error ? error.message : String(error)}).`, 0);
-  }
-
-  const text = await response.text();
+  const response = await send(new URL(url + path), init.method ?? (init.body === undefined ? "GET" : "POST"), headers,
+    init.body === undefined ? undefined : JSON.stringify(init.body), init.pin && normalizeFingerprint(init.pin));
+  const text = response.text;
   let parsed: unknown;
   try {
     parsed = text ? JSON.parse(text) : {};
@@ -62,33 +107,33 @@ export type ReviewItem = {
 };
 
 // 가입키로 등록하고 토큰을 받는다.
-export const enroll = (url: string, installId: string, enrollKey: string) =>
-  call<{ token: string }>(url, "/v1/enroll", { body: { installId, enrollKey } });
+export const enroll = (url: string, installId: string, enrollKey: string, pin?: string) =>
+  call<{ token: string }>(url, "/v1/enroll", { body: { installId, enrollKey }, pin });
 
 // 비식별 묶음 보내기 (같은 id는 서버가 한 번만 받는다).
 export const sendPackage = (central: CentralSettings, body: unknown) =>
-  call<{ accepted: boolean; duplicate?: boolean }>(central.url, "/v1/packages", { token: central.token, body });
+  call<{ accepted: boolean; duplicate?: boolean }>(central.url, "/v1/packages", { token: central.token, body, pin: central.certSha256 });
 
 // 지식 후보 보내기.
 export const sendCandidates = (central: CentralSettings, candidates: unknown[]) =>
-  call<{ accepted: number }>(central.url, "/v1/candidates", { token: central.token, body: { candidates } });
+  call<{ accepted: number }>(central.url, "/v1/candidates", { token: central.token, body: { candidates }, pin: central.certSha256 });
 
 // 중앙 지식 받기. since 버전과 같으면 { unchanged: true }만 온다.
 export const getOfficial = (central: CentralSettings, since: number) =>
   call<{ unchanged: true; version: number } | ({ unchanged?: false } & Official)>(
-    central.url, `/v1/official?since=${since}`, { token: central.token });
+    central.url, `/v1/official?since=${since}`, { token: central.token, pin: central.certSha256 });
 
 // 검토자: 검토 목록.
 export const getReview = (central: CentralSettings) =>
   call<{ items: ReviewItem[]; official: { version: number; items: Official["items"] } }>(
-    central.url, "/v1/review", { token: central.token, reviewerKey: central.reviewerKey });
+    central.url, "/v1/review", { token: central.token, reviewerKey: central.reviewerKey, pin: central.certSha256 });
 
 // 검토자: 승인 / 반려 / 철회.
 export const decide = (central: CentralSettings,
   body: { id: string; decision: "approve" | "reject" | "retract"; reason?: string; content?: string }) =>
   call<{ version: number; decided: string }>(
-    central.url, "/v1/review/decide", { token: central.token, reviewerKey: central.reviewerKey, body });
+    central.url, "/v1/review/decide", { token: central.token, reviewerKey: central.reviewerKey, body, pin: central.certSha256 });
 
 // 검토자: 보고 (실패·도구 통계, 수정 추적 결과).
 export const getReport = (central: CentralSettings) =>
-  call<Record<string, unknown>>(central.url, "/v1/report", { token: central.token, reviewerKey: central.reviewerKey });
+  call<Record<string, unknown>>(central.url, "/v1/report", { token: central.token, reviewerKey: central.reviewerKey, pin: central.certSha256 });

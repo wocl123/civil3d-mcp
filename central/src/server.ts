@@ -1,7 +1,8 @@
 // my-civil3d-mcp 설치들을 위한 중앙 서버 (docs/데이터관리_설계.md §6).
 // 비식별 기록과 지식 후보를 받고, 여러 설치가 같은 것을 가리키면 검토자에게 보여 주고,
 // 검토자가 승인한 지식을 내려 준다.
-// HTTP로만 뜬다. 사설망 안에서 쓰거나, 인터넷에 열 때는 HTTPS 프록시를 앞에 둔다.
+// 다른 PC가 접속하는 설정(host가 127.0.0.1이 아님)이면 HTTPS로만 뜬다(<dataDir>/tls 인증서, new-cert.ps1).
+// 클라이언트는 인증서 지문을 고정해 믿는다. 이 PC 안(127.0.0.1)에서만 HTTP를 허용한다(테스트).
 //
 // API
 //   GET  /v1/health                상태 (인증 없음)
@@ -17,17 +18,28 @@
 //   배포 버전은 release.ts 명령으로 받아 두고 지정한다(releases.ts).
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { dataDir, host, loadConfig, port, settingsFile } from "./config.js";
 import { decide, groupKey, report, ReviewError, reviewItems } from "./review.js";
 import { current, releaseFile } from "./releases.js";
 import { Store } from "./store.js";
+import { loadTls, loopbackHost } from "./tls.js";
 import { Invalid, validCandidates, validPackage } from "./validate.js";
 
-const config = loadConfig();
+// 키는 관리 명령(admin.ts rotate)으로 바뀔 수 있다. 파일이 바뀌면 요청 처리 전에 다시 읽는다.
+let config = loadConfig();
+const configFile = join(dataDir, "config.json");
+const configStamp = () => { try { return statSync(configFile).mtimeMs; } catch { return 0; } };
+let loadedStamp = configStamp();
+function refresh(): void {
+  const now = configStamp();
+  if (now !== loadedStamp) { config = loadConfig(); loadedStamp = now; }
+  store.refreshInstalls();
+}
 const store = new Store();
 const MAX_BODY = 1024 * 1024;     // 요청 본문 1 MB까지
 const RATE_PER_MINUTE = 60;       // 설치(또는 등록 IP)당 분당 요청 수
@@ -86,8 +98,17 @@ const isReviewer = (request: IncomingMessage) => {
   return typeof key === "string" && same(sha(key), sha(config.reviewerKey));
 };
 
-const server = createServer(async (request, response) => {
+const tls = loadTls();
+if (!tls && !loopbackHost(host)) {
+  process.stderr.write(`다른 PC가 접속하는 설정(host ${host})은 HTTPS 인증서가 있어야 합니다. start-central.ps1로 시작하면 만들어집니다.
+`);
+  process.exit(1);
+}
+const scheme = tls ? "https" : "http";
+
+const handler = async (request: IncomingMessage, response: ServerResponse) => {
   try {
+    refresh();
     const url = new URL(request.url ?? "/", "http://central");
     const route = `${request.method} ${url.pathname}`;
 
@@ -214,7 +235,8 @@ const server = createServer(async (request, response) => {
     process.stderr.write(`central error: ${String(error)}\n`);
     json(response, 500, { error: "서버 오류" });
   }
-});
+};
+const server = tls ? createHttpsServer({ pfx: tls.pfx, passphrase: tls.passphrase }, handler) : createServer(handler);
 
 // 다른 PC가 쓸 주소: 네트워크에 열었으면(0.0.0.0) 이 PC의 IPv4 주소들.
 function addresses(): string[] {
@@ -235,12 +257,14 @@ server.on("error", error => {
 
 // 시작하면 주소, 설정 파일 위치, 각 PC에 입력할 명령을 보여 준다.
 server.listen(port, host, () => {
-  const urls = addresses().map(address => `http://${address}:${port}`);
+  const urls = addresses().map(address => `${scheme}://${address}:${port}`);
   process.stderr.write([
     `my-civil3d-mcp central server: ${urls.join(", ")}`,
     `  설정 파일: ${settingsFile}`,
     `  데이터: ${dataDir}`,
-    `  각 PC의 팔레트에서: /중앙 연결 ${urls[0]} ${config.enrollKey}`,
+    ...(tls ? [`  인증서 지문: ${tls.fingerprint}`] : []),
+    `  각 PC의 팔레트에서: /중앙 연결 ${urls[0]} ${config.enrollKey}${tls ? ` ${tls.fingerprint}` : ""}`,
+    `  설치 묶음: npm run release -- kit <폴더>   (서버 주소, 가입키${tls ? ", 인증서 지문" : ""}이 들어감)`,
     `  검토자 키: ${join(dataDir, "config.json")}의 reviewerKey`,
     ...(host === "127.0.0.1" ? ["  지금은 이 PC에서만 접속됩니다. 다른 PC도 쓰려면 설정 파일의 host를 0.0.0.0으로 바꾸세요."] : []),
     ""

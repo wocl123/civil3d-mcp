@@ -133,7 +133,38 @@ function Invoke-BundleInstall([string]$Source, [string]$DestinationRoot) {
 function Read-ServerSettings([string]$File) {
   $settings = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
   if (-not ($settings.url -match '^https?://[^/\s?#@]+(/[^\s?#]*)?$') -or -not $settings.enrollKey) { throw 'server.json의 url 또는 enrollKey가 올바르지 않습니다.' }
-  return [pscustomobject]@{ url = ([string]$settings.url).TrimEnd('/'); enrollKey = [string]$settings.enrollKey }
+  $url = ([string]$settings.url).TrimEnd('/')
+  $uri = [Uri]$url
+  $pin = if ($settings.PSObject.Properties['certSha256']) { ([string]$settings.certSha256).Replace(':', '').ToLowerInvariant() } else { '' }
+  # 다른 PC의 서버는 HTTPS + 인증서 지문으로만 연결한다. HTTP는 이 PC 안(127.0.0.1, localhost)만.
+  if ($uri.Scheme -eq 'https' -and $pin -notmatch '^[a-f0-9]{64}$') { throw 'server.json에 서버 인증서 지문(certSha256)이 없습니다. 관리자에게 새 설치 묶음을 받으세요.' }
+  if ($uri.Scheme -eq 'http' -and -not $uri.IsLoopback) { throw '다른 PC의 중앙 서버는 HTTPS로만 연결합니다. 관리자에게 새 설치 묶음을 받으세요.' }
+  return [pscustomobject]@{ url = $url; enrollKey = [string]$settings.enrollKey; certSha256 = $pin }
+}
+# HTTPS 서버 인증서를 지문으로 고정한다(공용 인증기관 대신). 이 설치 과정의 모든 요청에 적용된다.
+function Enable-CertificatePin([string]$Pin) {
+  if (-not $Pin) { return }
+  if (-not ('MyCivil3DCertificatePin' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Net;
+using System.Net.Security;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+public static class MyCivil3DCertificatePin {
+  static string expected;
+  public static void Install(string pin) { expected = pin; ServicePointManager.ServerCertificateValidationCallback = Check; }
+  static bool Check(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors errors) {
+    if (certificate == null || expected == null) return false;
+    using (SHA256 sha = SHA256.Create()) {
+      string actual = BitConverter.ToString(sha.ComputeHash(certificate.GetRawCertData())).Replace("-", "").ToLowerInvariant();
+      return actual == expected;
+    }
+  }
+}
+'@
+  }
+  [MyCivil3DCertificatePin]::Install($Pin)
 }
 function Get-InstalledVersion([string]$Bundle) {
   $file = Join-Path $Bundle 'Contents/version.json'
@@ -143,6 +174,7 @@ function Get-InstalledVersion([string]$Bundle) {
 function Compare-ProductVersion([string]$A, [string]$B) { return ([version]$A).CompareTo([version]$B) }
 function Get-ServerRelease($Server) {
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+  Enable-CertificatePin $Server.certSha256
   $release = Invoke-RestMethod -Uri "$($Server.url)/v1/release" -Headers @{ 'x-enroll-key' = $Server.enrollKey } -TimeoutSec 20 -UseBasicParsing
   if ($release.PSObject.Properties['none']) { return $null }   # StrictMode: 없는 속성을 읽으면 오류
   if (-not ($release.version -match '^\d+\.\d+\.\d+$') -or -not ($release.sha256 -match '^[a-f\d]{64}$')) { throw '서버의 배포 정보가 올바르지 않습니다.' }
@@ -168,7 +200,9 @@ function Save-CentralJoin($Server, [string]$DataDir) {
     try { if ((Get-Content -LiteralPath $settingsFile -Raw -Encoding UTF8 | ConvertFrom-Json).central) { return $false } } catch { }
   }
   New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
-  $json = [pscustomobject]@{ url = $Server.url; enrollKey = $Server.enrollKey } | ConvertTo-Json
+  $join = [ordered]@{ url = $Server.url; enrollKey = $Server.enrollKey }
+  if ($Server.certSha256) { $join.certSha256 = $Server.certSha256 }
+  $json = [pscustomobject]$join | ConvertTo-Json
   [IO.File]::WriteAllText((Join-Path $DataDir 'central-join.json'), $json, [Text.UTF8Encoding]::new($false))
   return $true
 }

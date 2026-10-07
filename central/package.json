@@ -10,7 +10,8 @@
     "build": "tsc",
     "start": "node build/server.js",
     "release": "node build/release.js",
-    "smoke": "npm run build && npm --prefix ../server run test:central"
+    "smoke": "npm run build && npm --prefix ../server run test:central",
+    "admin": "node build/admin.js"
   },
   "devDependencies": {
     "@types/node": "22.13.10",

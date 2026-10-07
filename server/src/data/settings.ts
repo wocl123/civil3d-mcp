@@ -11,6 +11,7 @@ import { dataDir } from "../paths.js";
 export type CentralSettings = {
   url: string;
   token: string;
+  certSha256?: string;   // HTTPS 서버 인증서 지문(이것만 믿는다). http(이 PC 안)이면 없다
   enabled: boolean;      // false면 보내기를 멈춤(기록은 계속 쌓인다)
   reviewerKey?: string;
   enrolledAt: string;

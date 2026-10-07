@@ -8,7 +8,7 @@
 //   history/v<n>.json        발행한 모든 버전
 //   decisions.jsonl          모든 검토 결정
 
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { dataDir } from "./config.js";
 
@@ -46,6 +46,7 @@ export type Official = { version: number; publishedAt?: string; items: OfficialI
 export type Decision = { at: string; id: string; decision: string; reason?: string; content?: string; version: number };
 
 const path = (...parts: string[]) => join(dataDir, ...parts);
+const stamp = (file: string) => { try { return statSync(path(file)).mtimeMs; } catch { return 0; } };
 
 function readJson<T>(file: string, fallback: T): T {
   try {
@@ -101,6 +102,16 @@ export class Store {
 
   saveInstalls(): void {
     writeJson("installs.json", this.installs);
+    this.installsStamp = stamp("installs.json");
+  }
+
+  // 관리 명령(admin.ts revoke)이 installs.json을 바꾸면 다시 읽는다(서버를 다시 켜지 않아도 차단이 바로 적용된다).
+  private installsStamp = stamp("installs.json");
+  refreshInstalls(): void {
+    const now = stamp("installs.json");
+    if (now === this.installsStamp) return;
+    this.installs = readJson("installs.json", {});
+    this.installsStamp = now;
   }
 
   // 묶음 하나를 받는다: 기록은 달별 파일에 붙이고, 묶음 id를 남긴다.

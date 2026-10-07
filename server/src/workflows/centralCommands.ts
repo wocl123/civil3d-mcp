@@ -1,7 +1,7 @@
 // 중앙 서버 팔레트 명령. AI 없이 서비스가 바로 답한다 (docs/데이터관리_설계.md §9).
 //   /중앙                         상태
-//   /중앙 연결 <주소> <가입키>     이 PC 등록
-//   /중앙 주소 <주소>             서버가 옮겨 감: 주소만 바꾸고 등록은 그대로
+//   /중앙 연결 <주소> <가입키> <인증서지문>   이 PC 등록 (https 주소면 지문 필수. 중앙 서버 시작 화면에 나온다)
+//   /중앙 주소 <주소> [인증서지문]           서버가 옮겨 감: 주소만 바꾸고 등록은 그대로
 //   /중앙 끊기, /중앙 켜기         보내기 멈춤 / 다시 시작 (기록은 계속 쌓인다)
 //   /중앙 검토자 <키>             이 PC를 검토자로
 //   /중앙 동기화                  지금 바로 동기화
@@ -11,7 +11,7 @@
 import { install } from "../data/install.js";
 import { centralUrl, insecureUrl, loadSettings, saveSettings } from "../data/settings.js";
 import { PARAMETERS, isParameterKey, parameterSummary } from "../knowledge/parameters.js";
-import { CentralError, decide, enroll, getOfficial, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
+import { CentralError, decide, enroll, getOfficial, normalizeFingerprint, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
 import { runSync, syncStatus } from "../sync/syncLoop.js";
 import { lastShown, parseDecision, pick, setShown } from "./shownLists.js";
 
@@ -44,13 +44,15 @@ async function central(rest: string): Promise<string> {
   // ── 연결: 가입키로 등록하고 토큰을 저장한다(가입키는 저장하지 않는다).
   if (command === "연결") {
     const url = centralUrl(args[0] ?? "");
-    if (!url || !args[1]) return "형식: /중앙 연결 <주소> <가입키>\n예: /중앙 연결 http://192.168.0.10:48950 가입키";
+    const pin = args[2] ? normalizeFingerprint(args[2]) : undefined;
+    if (!url || !args[1] || (url.startsWith("https:") && !pin))
+      return "형식: /중앙 연결 <주소> <가입키> <인증서지문>\n예: /중앙 연결 https://192.168.0.10:48950 가입키 3fa1…(64자)\n주소·가입키·지문은 중앙 서버 시작 화면에 나옵니다.";
     try {
-      const { token } = await enroll(url, (await install()).installId, args[1]);
+      const { token } = await enroll(url, (await install()).installId, args[1], pin);
       // 같은 서버에 다시 연결하면 검토자 키는 유지한다.
       const keepReviewer = settings.central?.url === url && settings.central.reviewerKey
         ? { reviewerKey: settings.central.reviewerKey } : {};
-      settings.central = { url, token, enabled: true, enrolledAt: new Date().toISOString(), ...keepReviewer };
+      settings.central = { url, token, ...(pin ? { certSha256: pin } : {}), enabled: true, enrolledAt: new Date().toISOString(), ...keepReviewer };
       await saveSettings(settings);
       void runSync();
       return [
@@ -68,8 +70,8 @@ async function central(rest: string): Promise<string> {
   //    새 주소에서 이 PC의 등록이 확인될 때만 바꾼다.
   if (command === "주소") {
     const url = centralUrl(args[0] ?? "");
-    if (!url) return "형식: /중앙 주소 <새 주소>\n예: /중앙 주소 http://192.168.0.25:48950";
-    const moved = { ...settings.central, url };
+    if (!url) return "형식: /중앙 주소 <새 주소> [인증서지문]\n예: /중앙 주소 https://192.168.0.25:48950 (서버 인증서가 바뀌었으면 지문도)";
+    const moved = { ...settings.central, url, ...(args[1] ? { certSha256: normalizeFingerprint(args[1]) } : {}) };
     try {
       await getOfficial(moved, -1);
     } catch (error) {
