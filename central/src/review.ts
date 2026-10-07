@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import type { Config } from "./config.js";
 import { PARAMETERS, validParameter } from "./parameters.js";
-import type { CandidateRow, Official, Store } from "./store.js";
+import type { CandidateRow, CaseCategory, CaseTriage, Official, Store } from "./store.js";
 
 export type ReviewItem = {
   id: string;
@@ -225,19 +225,20 @@ export function report(store: Store, config: Config) {
 //   신호: 사용자가 👎를 누름(feedback), 적용한 변경을 되돌림(change undone), 변경 실패, 질문 실패(errorKind).
 //   같은 질문의 도구 호출·변경·평가를 turnId로 묶는다. 질문·답은 설치 쪽에서 가림 처리된 것이다.
 export type ProblemCase = {
-  id: string; at: string; appVersion?: string; provider?: string; model?: string; errorKind?: string;
+  key: string; id: string; at: string; triage?: CaseTriage; appVersion?: string; provider?: string; model?: string; errorKind?: string;
   question?: string; answer?: string; signals: string[]; feedback: string[];
   changes: { state: string; title?: string; labels?: string }[]; tools: string[];
 };
 
-export function problemCases(store: Store, days = 14, limit = 50): ProblemCase[] {
-  const since = new Date(Date.now() - days * 24 * 3600000).toISOString();
-  const rows = store.records.filter(row => row.receivedAt >= since);
+// status: new(아직 분류 안 함, 기본) / todo / done / discarded / all. 기간 제한 없음(검토자가 처리하거나 버린다).
+export type CaseStatus = "new" | "todo" | "done" | "discarded" | "all";
+export function problemCases(store: Store, status: CaseStatus = "new", limit = 100): ProblemCase[] {
+  const rows = store.records;
   const cases = new Map<string, ProblemCase>();
   const caseOf = (installId: string, id: string, at: string) => {
     const key = `${installId}:${id}`;
     let found = cases.get(key);
-    if (!found) cases.set(key, found = { id, at, signals: [], feedback: [], changes: [], tools: [] });
+    if (!found) cases.set(key, found = { key, id, at, signals: [], feedback: [], changes: [], tools: [] });
     return found;
   };
   for (const { installId, record } of rows) {
@@ -262,7 +263,37 @@ export function problemCases(store: Store, days = 14, limit = 50): ProblemCase[]
   }
   return [...cases.values()]
     .filter(item => item.signals.some(signal => signal !== "👍"))
-    .map(item => ({ ...item, signals: [...new Set(item.signals)] }))
+    .map(item => ({ ...item, signals: [...new Set(item.signals)], ...(store.cases[item.key] ? { triage: store.cases[item.key] } : {}) }))
+    .filter(item => status === "all" || (status === "new" ? !item.triage : item.triage?.status === status))
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, limit);
+}
+
+// 사례 분류: todo(처리하기로 함, 분류 필수) / done(처리 끝, 고친 버전) / discard(버림: 내용 삭제) / reopen(분류 취소)
+export function decideCase(store: Store, input: { key: string; action: string; category?: string; note?: string; version?: string }): CaseTriage | undefined {
+  const match = /^([a-f\d]{16}):([\w-]{8,64})$/.exec(input.key);
+  if (!match) throw new ReviewError("사례 키가 맞지 않습니다.");
+  const current = store.cases[input.key];
+  const now = new Date().toISOString();
+  const note = input.note?.trim().slice(0, 500) || undefined;
+  if (input.action === "todo") {
+    const categories: CaseCategory[] = ["knowledge", "code", "ai", "other"];
+    if (!categories.includes(input.category as CaseCategory)) throw new ReviewError("분류는 지식·코드·AI·기타 중 하나여야 합니다.");
+    if (current?.status === "discarded") throw new ReviewError("버린 사례입니다(내용이 지워짐).");
+    store.cases[input.key] = { status: "todo", category: input.category as CaseCategory, note: note ?? current?.note, decidedAt: now };
+  } else if (input.action === "done") {
+    if (current?.status === "discarded") throw new ReviewError("버린 사례입니다.");
+    const version = input.version && /^\d+\.\d+\.\d+$/.test(input.version) ? input.version : undefined;
+    store.cases[input.key] = { ...(current ?? {}), status: "done", ...(version ? { version } : {}), ...(note ? { note } : {}), decidedAt: now };
+  } else if (input.action === "discard") {
+    store.scrubCase(match[1], match[2]);
+    store.cases[input.key] = { status: "discarded", ...(note ? { note } : {}), decidedAt: now };
+  } else if (input.action === "reopen") {
+    if (current?.status === "discarded") throw new ReviewError("버린 사례는 되돌릴 수 없습니다(내용이 지워짐).");
+    delete store.cases[input.key];
+  } else {
+    throw new ReviewError("action은 todo, done, discard, reopen 중 하나여야 합니다.");
+  }
+  store.saveCases();
+  return store.cases[input.key];
 }

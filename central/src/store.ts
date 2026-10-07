@@ -43,6 +43,14 @@ export type OfficialItem = {
 
 export type Official = { version: number; publishedAt?: string; items: OfficialItem[]; parameters: Record<string, number> };
 
+// 문제 사례 분류(검토자). 키: "<설치ID>:<질문 id>".
+//   todo: 처리하기로 함(분류·메모) / done: 처리 끝(고친 버전) / discarded: 버림(내용은 기록에서 지움)
+export type CaseCategory = "knowledge" | "code" | "ai" | "other";
+export type CaseTriage = { status: "todo" | "done" | "discarded"; category?: CaseCategory; note?: string; version?: string; decidedAt: string };
+
+// 버릴 때 기록에서 지우는 내용 항목(숫자 통계는 남긴다).
+const CONTENT_FIELDS = ["question", "answer", "input", "title", "labels", "reason"];
+
 export type Decision = { at: string; id: string; decision: string; reason?: string; content?: string; version: number };
 
 const path = (...parts: string[]) => join(dataDir, ...parts);
@@ -82,6 +90,7 @@ export class Store {
   candidates: CandidateRow[];
   official: Official;
   decisions: Decision[];
+  cases: Record<string, CaseTriage>;
 
   // 시작할 때 모두 읽는다.
   constructor() {
@@ -98,6 +107,7 @@ export class Store {
     this.candidates = readJson("candidates.json", []);
     this.official = readJson("official.json", { version: 0, items: [], parameters: {} });
     this.decisions = readLines("decisions.jsonl");
+    this.cases = readJson("cases.json", {});
   }
 
   saveInstalls(): void {
@@ -142,6 +152,38 @@ export class Store {
   }
 
   // 검토 결정 하나를 기록한다.
+  saveCases(): void {
+    writeJson("cases.json", this.cases);
+  }
+
+  // 한 질문(turnId)에 딸린 기록들에서 내용 항목을 지운다(달별 파일을 다시 쓴다). 지운 기록 수를 돌려준다.
+  scrubCase(installId: string, turnId: string): number {
+    const belongs = (row: StoredRecord) => row.installId === installId &&
+      ((row.record as Record<string, unknown>).id === turnId || (row.record as Record<string, unknown>).turnId === turnId);
+    let scrubbed = 0;
+    for (const row of this.records) {
+      if (!belongs(row)) continue;
+      for (const field of CONTENT_FIELDS) delete (row.record as Record<string, unknown>)[field];
+      scrubbed++;
+    }
+    if (!scrubbed) return 0;
+    for (const name of readdirSync(path("records")).filter(file => file.endsWith(".jsonl"))) {
+      const lines = readLines<StoredRecord>(join("records", name));
+      let changed = false;
+      for (const row of lines) {
+        if (!belongs(row)) continue;
+        for (const field of CONTENT_FIELDS) delete (row.record as Record<string, unknown>)[field];
+        changed = true;
+      }
+      if (changed) {
+        const target = path("records", name);
+        writeFileSync(target + ".tmp", lines.map(row => JSON.stringify(row)).join("\n") + "\n", "utf8");
+        renameSync(target + ".tmp", target);
+      }
+    }
+    return scrubbed;
+  }
+
   decide(decision: Omit<Decision, "at" | "version">): void {
     const row: Decision = { at: new Date().toISOString(), ...decision, version: this.official.version };
     appendFileSync(path("decisions.jsonl"), JSON.stringify(row) + "\n", "utf8");

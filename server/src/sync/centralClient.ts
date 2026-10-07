@@ -152,10 +152,15 @@ export async function downloadRelease(central: CentralSettings, version: string)
 }
 
 // 검토자: 문제 사례(👎·되돌림·실패가 있었던 질문, 내용 포함).
+export type CaseTriage = { status: "todo" | "done" | "discarded"; category?: string; note?: string; version?: string; decidedAt: string };
 export type ProblemCase = {
-  id: string; at: string; appVersion?: string; provider?: string; model?: string; errorKind?: string;
+  key: string; id: string; at: string; triage?: CaseTriage; appVersion?: string; provider?: string; model?: string; errorKind?: string;
   question?: string; answer?: string; signals: string[]; feedback: string[];
   changes: { state: string; title?: string; labels?: string }[]; tools: string[];
 };
-export const getCases = (central: CentralSettings) =>
-  call<{ cases: ProblemCase[] }>(central.url, "/v1/review/cases", { token: central.token, reviewerKey: central.reviewerKey, pin: central.certSha256 });
+export const getCases = (central: CentralSettings, status = "new") =>
+  call<{ cases: ProblemCase[] }>(central.url, `/v1/review/cases?status=${status}`, { token: central.token, reviewerKey: central.reviewerKey, pin: central.certSha256 });
+
+// 검토자: 사례 분류. action: todo(처리, category 필수) / done(처리 끝) / discard(버림: 내용 삭제) / reopen
+export const decideCase = (central: CentralSettings, body: { key: string; action: string; category?: string; note?: string; version?: string }) =>
+  call<{ triage: CaseTriage | null }>(central.url, "/v1/review/cases/decide", { token: central.token, reviewerKey: central.reviewerKey, body, pin: central.certSha256 });

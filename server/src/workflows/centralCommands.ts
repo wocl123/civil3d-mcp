@@ -6,13 +6,17 @@
 //   /중앙 검토자 <키>             이 PC를 검토자로
 //   /중앙 동기화                  지금 바로 동기화
 //   /검토, 이어서 "1 승인" / "2 반려 사유", /검토 보고    검토자 전용
-//   /검토 사례, /검토 사례 <번호>    검토자 전용: 👎·되돌림·실패가 있었던 질문과 답(내용 포함)
+//   /검토 사례 [할일|완료]             검토자 전용: 👎·되돌림·실패가 있었던 질문(기본: 아직 분류 안 한 것)
+//   /검토 사례 <번호>                  질문·답·의견·변경·도구
+//   /검토 사례 <번호> 처리 <지식|코드|AI|기타> [메모]   처리할 것으로 분류(할 일 목록으로)
+//   /검토 사례 <번호> 버림 [메모]       버림: 중앙에서 내용(질문·답·의견) 삭제
+//   /검토 사례 <번호> 완료 [버전] [메모] 처리 끝   ·   /검토 사례 <번호> 취소   분류 취소
 //   /설정값                       지금 적용되는 설정값과 출처
 
 import { install } from "../data/install.js";
 import { centralUrl, insecureUrl, loadSettings, saveSettings } from "../data/settings.js";
 import { PARAMETERS, isParameterKey, parameterSummary } from "../knowledge/parameters.js";
-import { CentralError, decide, enroll, getCases, getOfficial, normalizeFingerprint, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
+import { CentralError, decide, decideCase, enroll, getCases, getOfficial, normalizeFingerprint, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
 import { runSync, syncStatus } from "../sync/syncLoop.js";
 import { lastShown, parseDecision, pick, setShown } from "./shownLists.js";
 
@@ -25,8 +29,7 @@ export async function centralCommand(question: string, conversation?: string): P
   if (/^\/중앙(\s|$)/.test(text)) return central(text.replace(/^\/중앙\s*/, ""));
   if (text === "/검토") return reviewList(conversation);
   if (text === "/검토 보고") return report();
-  const caseMatch = /^\/검토 사례(?:\s+(\d+))?$/.exec(text);
-  if (caseMatch) return problemCases(caseMatch[1] ? Number(caseMatch[1]) : undefined);
+  if (/^\/검토 사례(\s|$)/.test(text)) return problemCases(text.replace(/^\/검토 사례\s*/, ""), conversation);
 
   // "1 승인" 같은 답은 마지막 목록이 검토 목록일 때만 받는다.
   const listed = lastShown(conversation, "review");
@@ -263,37 +266,79 @@ async function report(): Promise<string> {
   }
 }
 
-// /검토 사례 : 결과가 이상했을 수 있는 질문(👎, 적용 후 되돌림, 변경 실패, 질문 실패). 번호를 주면 내용까지.
-async function problemCases(number?: number): Promise<string> {
+// /검토 사례 : 결과가 이상했을 수 있는 질문(👎, 적용 후 되돌림, 변경 실패, 질문 실패). 검토자가 처리하거나 버린다.
+const CATEGORY: Record<string, string> = { 지식: "knowledge", 코드: "code", ai: "ai", AI: "ai", 기타: "other" };
+const CATEGORY_NAME: Record<string, string> = { knowledge: "지식", code: "코드", ai: "AI", other: "기타" };
+const STATUS_NAME: Record<string, string> = { new: "분류 전", todo: "할 일", done: "완료" };
+
+async function problemCases(rest: string, conversation?: string): Promise<string> {
   const central = await reviewer();
   if (!central) return "검토자 PC가 아닙니다.";
+  const short = (value: string | undefined, max: number) => (value ?? "").replace(/\s+/g, " ").slice(0, max);
   try {
-    const { cases } = await getCases(central);
-    if (!cases.length) return "최근 14일 동안 문제 사례가 없습니다.";
-    const short = (value: string | undefined, max: number) => (value ?? "").replace(/\s+/g, " ").slice(0, max);
-    if (number === undefined) {
+    // 목록: /검토 사례, /검토 사례 할일, /검토 사례 완료
+    const listOf = rest === "" ? "new" : rest === "할일" ? "todo" : rest === "완료" ? "done" : undefined;
+    if (listOf) {
+      const { cases } = await getCases(central, listOf);
+      setShown(conversation, "cases", cases.map(item => item.key));
+      if (!cases.length) return `${STATUS_NAME[listOf]} 사례가 없습니다.`;
       return [
-        `### 문제 사례 ${cases.length}건 (최근 14일)`,
-        ...cases.map((item, index) =>
-          `${index + 1}. [${item.signals.join(", ")}] ${item.appVersion ?? "?"} · ${item.provider ?? "?"} · ${short(item.question, 60) || "(질문 내용 없음)"}`),
+        `### 문제 사례 · ${STATUS_NAME[listOf]} ${cases.length}건`,
+        ...cases.map((item, index) => {
+          const triage = item.triage ? ` (${CATEGORY_NAME[item.triage.category ?? ""] ?? ""}${item.triage.version ? ` ${item.triage.version}` : ""}${item.triage.note ? `: ${short(item.triage.note, 40)}` : ""})` : "";
+          return `${index + 1}. [${item.signals.join(", ")}] ${item.appVersion ?? "?"} · ${item.provider ?? "?"} · ${short(item.question, 60) || "(내용 없음)"}${triage}`;
+        }),
         "",
-        "자세히: /검토 사례 <번호>"
+        "자세히: /검토 사례 <번호> · 분류: /검토 사례 <번호> 처리 <지식|코드|AI|기타> [메모] · /검토 사례 <번호> 버림 [메모]"
       ].join("\n");
     }
-    const item = cases[number - 1];
-    if (!item) return `사례 ${number}번이 없습니다. /검토 사례 로 목록을 보세요.`;
-    return [
-      `### 사례 ${number} · ${item.signals.join(", ")}`,
-      `${item.at} · 버전 ${item.appVersion ?? "?"} · ${item.provider ?? "?"} ${item.model ?? ""}${item.errorKind ? ` · 실패 ${item.errorKind}` : ""}`,
-      "",
-      "**질문**", item.question ?? "(내용 없음)",
-      "",
-      "**답**", item.answer ? item.answer.slice(0, 2000) : "(내용 없음)",
-      ...(item.feedback.length ? ["", "**사용자 의견**", ...item.feedback.map(text => `- ${text}`)] : []),
-      ...(item.changes.length ? ["", "**도면 변경**", ...item.changes.map(change => `- ${change.state}: ${change.title ?? ""} ${change.labels ?? ""}`)] : []),
-      ...(item.tools.length ? ["", `**도구**: ${[...new Set(item.tools)].join(", ")}`] : [])
-    ].join("\n");
+
+    // 번호: 바로 앞에 보여 준 사례 목록의 번호
+    const match = /^(\d+)(?:\s+(처리|버림|완료|취소)(?:\s+(.*))?)?$/.exec(rest);
+    if (!match) return "형식: /검토 사례 [할일|완료] · /검토 사례 <번호> [처리 <지식|코드|AI|기타> 메모 | 버림 메모 | 완료 버전 메모 | 취소]";
+    const keys = lastShown(conversation, "cases");
+    if (!keys) return "먼저 /검토 사례 로 목록을 보세요.";
+    const key = keys[Number(match[1]) - 1];
+    if (!key) return `${match[1]}번이 목록에 없습니다.`;
+
+    if (!match[2]) {
+      const item = (await getCases(central, "all")).cases.find(entry => entry.key === key);
+      if (!item) return "사례를 찾지 못했습니다(이미 버렸을 수 있습니다).";
+      return [
+        `### 사례 ${match[1]} · ${item.signals.join(", ")}${item.triage ? ` · ${STATUS_NAME[item.triage.status] ?? item.triage.status} ${CATEGORY_NAME[item.triage.category ?? ""] ?? ""}` : ""}`,
+        `${item.at} · 버전 ${item.appVersion ?? "?"} · ${item.provider ?? "?"} ${item.model ?? ""}${item.errorKind ? ` · 실패 ${item.errorKind}` : ""}`,
+        "",
+        "**질문**", item.question ?? "(내용 없음)",
+        "",
+        "**답**", item.answer ? item.answer.slice(0, 2000) : "(내용 없음)",
+        ...(item.feedback.length ? ["", "**사용자 의견**", ...item.feedback.map(text => `- ${text}`)] : []),
+        ...(item.changes.length ? ["", "**도면 변경**", ...item.changes.map(change => `- ${change.state}: ${change.title ?? ""} ${change.labels ?? ""}`)] : []),
+        ...(item.tools.length ? ["", `**도구**: ${[...new Set(item.tools)].join(", ")}`] : []),
+        ...(item.triage?.note ? ["", `**메모**: ${item.triage.note}`] : [])
+      ].join("\n");
+    }
+
+    const words = (match[3] ?? "").trim();
+    if (match[2] === "처리") {
+      const [first, ...note] = words.split(/\s+/);
+      const category = CATEGORY[first ?? ""];
+      if (!category) return "분류를 붙여 주세요: /검토 사례 <번호> 처리 <지식|코드|AI|기타> [메모]";
+      await decideCase(central, { key, action: "todo", category, note: note.join(" ") });
+      return `${match[1]}번을 할 일(${CATEGORY_NAME[category]})로 분류했습니다. /검토 사례 할일 로 모아 볼 수 있습니다.`;
+    }
+    if (match[2] === "버림") {
+      await decideCase(central, { key, action: "discard", note: words });
+      return `${match[1]}번을 버렸습니다. 중앙 서버에서 그 질문·답·의견 내용을 지웠습니다(통계 숫자만 남음).`;
+    }
+    if (match[2] === "완료") {
+      const [first, ...note] = words.split(/\s+/);
+      const version = /^\d+\.\d+\.\d+$/.test(first ?? "") ? first : undefined;
+      await decideCase(central, { key, action: "done", version, note: (version ? note : [first, ...note]).filter(Boolean).join(" ") });
+      return `${match[1]}번을 완료로 표시했습니다${version ? `(${version}에서 고침)` : ""}.`;
+    }
+    await decideCase(central, { key, action: "reopen" });
+    return `${match[1]}번의 분류를 취소했습니다(다시 분류 전).`;
   } catch (error) {
-    return `문제 사례를 받지 못했습니다. ${failure(error)}`;
+    return `문제 사례를 처리하지 못했습니다. ${failure(error)}`;
   }
 }

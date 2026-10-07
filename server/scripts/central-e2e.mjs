@@ -144,6 +144,30 @@ try {
   const [rejectedOk] = await run(dirs.a, [{ op: 'command', text: '/검토' }, { op: 'command', text: '1 반려 회사마다 다름' }]).then(results => results.slice(1));
   assert.match(rejectedOk, /반려했습니다/);
 
+  // 문제 사례 분류: 목록 → 자세히 → 처리(코드) → 할 일 목록 → 완료 → 버림(중앙에서 내용 삭제)
+  const [caseList, caseDetail, caseTodo, todoList, caseDone, doneList, caseDiscard, afterDiscard] = await run(dirs.a, [
+    { op: 'command', text: '/검토 사례' },
+    { op: 'command', text: '/검토 사례 1' },
+    { op: 'command', text: '/검토 사례 1 처리 코드 반지름 기준 확인 필요' },
+    { op: 'command', text: '/검토 사례 할일' },
+    { op: 'command', text: '/검토 사례 1 완료 0.1.1 기준표 수정' },
+    { op: 'command', text: '/검토 사례 완료' },
+    { op: 'command', text: '/검토 사례 1 버림 확인 끝' },
+    { op: 'command', text: '/검토 사례' }
+  ]);
+  assert.match(caseList, /1\. \[👎\].*<이름> 도로 반지름 알려줘/, caseList);
+  assert.match(caseDetail, /\*\*질문\*\*\n<이름> 도로 반지름 알려줘/, caseDetail);
+  assert.match(caseDetail, /<이름> 반지름이 기준과 다름/);
+  assert.match(caseTodo, /할 일\(코드\)로 분류/);
+  assert.match(todoList, /\(코드: 반지름 기준 확인 필요\)/, todoList);
+  assert.match(caseDone, /0\.1\.1에서 고침/);
+  assert.match(doneList, /코드 0\.1\.1/, doneList);
+  assert.match(caseDiscard, /내용을 지웠습니다/);
+  assert.match(afterDiscard, /분류 전 사례가 없습니다/);
+  const afterScrub = (await Promise.all((await readdir(join(dirs.central, 'records'))).map(name => readFile(join(dirs.central, 'records', name), 'utf8')))).join('');
+  assert.ok(!afterScrub.includes('도로 반지름 알려줘') && !afterScrub.includes('반지름이 기준과 다름'), 'a discarded case loses its content on the server');
+  assert.match(afterScrub, /"type":"turn"/, 'the numbers stay');
+
   // B receives the approved knowledge and designs with the approved step.
   await mkdir(join(dirs.b, 'logs', '2020-01-01'), { recursive: true });
   const [, rule, parameters, plan, cleaned] = await run(dirs.b, [

@@ -5,12 +5,17 @@
 //                                             새 설치 묶음을 만들어(release kit) 새로 설치할 사람에게 준다.
 //   npm run admin -- rotate reviewer          검토자 키를 새로 만든다(검토자 PC에서 /중앙 검토자 <새 키>)
 //   npm run admin -- fingerprint              HTTPS 인증서 지문(각 PC의 /중앙 연결, 설치 묶음에 쓰인다)
+//   npm run admin -- cases [--status todo] [--out 파일.json]
+//                                             문제 사례 내보내기(기본: 처리하기로 한 것). 개발자에게 넘겨 고칠 때 쓴다.
+//                                             status: new(분류 전) · todo · done · discarded · all
 
 import { randomBytes } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { dataDir, loadConfig } from "./config.js";
 import { loadTls } from "./tls.js";
+import { type CaseStatus, problemCases } from "./review.js";
+import { Store } from "./store.js";
 
 const [command, ...args] = process.argv.slice(2);
 const say = (text: string) => process.stdout.write(text + "\n");
@@ -57,6 +62,19 @@ if (command === "installs" || !command) {
 } else if (command === "fingerprint") {
   const tls = loadTls();
   say(tls ? `HTTPS 인증서 지문: ${tls.fingerprint}` : "HTTPS 인증서가 없습니다(이 PC 안에서만 쓰는 설정). start-central.ps1 -AllowNetwork 로 만드세요.");
+} else if (command === "cases") {
+  const at = (name: string) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; };
+  const status = (at("--status") ?? "todo") as CaseStatus;
+  if (!["new", "todo", "done", "discarded", "all"].includes(status)) fail("status는 new, todo, done, discarded, all 중 하나입니다.");
+  const cases = problemCases(new Store(), status, 10000);
+  const out = at("--out");
+  if (out) {
+    writeFileSync(out, JSON.stringify({ exportedAt: new Date().toISOString(), status, cases }, null, 1), "utf8");
+    say(`${status} 사례 ${cases.length}건을 ${out}에 썼습니다. (질문·답이 들어 있으니 팀 안에서만 다루세요)`);
+  } else {
+    for (const item of cases) say(`- ${item.at} [${item.signals.join(", ")}] ${item.triage?.category ?? ""} ${item.triage?.note ?? ""} · ${(item.question ?? "").slice(0, 60)}`);
+    say(`${status} 사례 ${cases.length}건`);
+  }
 } else {
-  fail("명령: installs | revoke <설치 ID> | rotate enroll | rotate reviewer | fingerprint");
+  fail("명령: installs | revoke <설치 ID> | rotate enroll | rotate reviewer | fingerprint | cases");
 }
