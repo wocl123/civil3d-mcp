@@ -174,6 +174,32 @@ try {
   assert.equal(JSON.parse(await readFile(join(kitOut, 'server.json'), 'utf8')).certSha256, pin, 'the kit carries the certificate fingerprint');
   assert.match(cliFails('kit', join(temporary, 'kit-http'), '--url', 'http://10.0.0.1:1'), /HTTPS 주소여야 합니다/, 'no HTTP kits for other PCs');
 
+  // 7-1) 자동 업데이트: 옛 버전(0.0.1)으로 도는 서비스가 새 버전을 받아 두고, Civil 3D가 꺼지면 도우미가 설치한다
+  const helperSource = join(temporary, 'installer');
+  await mkdir(helperSource);
+  await placeScripts(helperSource);
+  await copyFile(join(repo, 'scripts', 'update.ps1'), join(helperSource, 'update.ps1'));
+  const autoRoot = join(temporary, 'plugins-auto');
+  const fakeCivil = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
+  const updateEnv = { ...process.env, MY_CIVIL3D_DATA_DIR: data, MY_CIVIL3D_PRODUCT_VERSION: '0.0.1', MY_CIVIL3D_INSTALLER_DIR: helperSource,
+    MY_CIVIL3D_INSTALL_ROOT: autoRoot, MY_CIVIL3D_PARENT_PID: String(fakeCivil.pid) };
+  const updateModule = pathToFileURL(join(repo, 'server', 'build', 'update', 'autoUpdate.js')).href;
+  const checked = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
+    `const { checkForUpdate } = await import(${JSON.stringify(updateModule)}); console.log(JSON.stringify(await checkForUpdate()));`],
+    { env: updateEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  assert.deepEqual([checked.state, checked.current, checked.latest], ['scheduled', '0.0.1', version], JSON.stringify(checked));
+  assert.ok(existsSync(join(data, 'updates', basename(zip))), 'the new version is downloaded and kept');
+  await new Promise(done => setTimeout(done, 3000));
+  assert.ok(!existsSync(join(autoRoot, 'MyCivil3DMcp.bundle')), 'nothing is installed while Civil 3D is running');
+  fakeCivil.kill();   // Civil 3D 종료
+  const installedAuto = join(autoRoot, 'MyCivil3DMcp.bundle', 'Contents', 'version.json');
+  for (let i = 0; i < 90 && !existsSync(installedAuto); i++) await new Promise(done => setTimeout(done, 1000));
+  const updateLog = await readFile(join(data, 'logs', new Date().toLocaleString('sv-SE').slice(0, 10), 'update.log'), 'utf8').catch(() => '(no update.log)');
+  assert.ok(existsSync(installedAuto), `the helper installs after Civil 3D exits\n${updateLog}`);
+  for (let i = 0; i < 20 && !/완료/.test(await readFile(join(data, 'logs', new Date().toLocaleString('sv-SE').slice(0, 10), 'update.log'), 'utf8').catch(() => '')); i++)
+    await new Promise(done => setTimeout(done, 500));
+  assert.match(await readFile(join(data, 'logs', new Date().toLocaleString('sv-SE').slice(0, 10), 'update.log'), 'utf8'), new RegExp(`업데이트 ${version.replace(/\./g, '\\.')} 완료`));
+
   // 8) 관리: 설치 목록 → 차단하면 그 PC의 토큰은 바로 거절, 가입키를 바꾸면 예전 키는 바로 거절(서버를 다시 켜지 않음)
   const installId = JSON.parse(await readFile(join(data, 'install.json'), 'utf8')).installId;
   assert.match(admin('installs'), new RegExp(installId));
@@ -229,7 +255,7 @@ try {
   assert.match(offline.out, /서버에서 설치 파일을 받지 못했습니다/);
   assert.equal(await installedVersion(), version, 'nothing changes when the server is down');
 
-  console.log(`Online install passed: publish ${version}; HTTPS with a pinned certificate (missing/wrong fingerprint and remote HTTP refused, a failed join keeps the request); central refuses unsigned and wrongly signed zips; install from server.json only, already up to date, hash mismatch refused, bundle signed with another key refused; service joins central and drops the key; kit carries the fingerprint, no HTTP kits; admin revoke and key rotation apply at once; local folder install checks signature and version (unsigned refused, same/newer skipped, reinstall); stale work and old backups removed; offline without files explained.`);
+  console.log(`Online install passed: publish ${version}; automatic update (download, wait for Civil 3D to exit, signed install); HTTPS with a pinned certificate (missing/wrong fingerprint and remote HTTP refused, a failed join keeps the request); central refuses unsigned and wrongly signed zips; install from server.json only, already up to date, hash mismatch refused, bundle signed with another key refused; service joins central and drops the key; kit carries the fingerprint, no HTTP kits; admin revoke and key rotation apply at once; local folder install checks signature and version (unsigned refused, same/newer skipped, reinstall); stale work and old backups removed; offline without files explained.`);
 } finally {
   central?.kill();
   await rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

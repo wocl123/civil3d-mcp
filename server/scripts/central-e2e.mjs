@@ -112,6 +112,9 @@ try {
   const lone = review.findIndex(item => item.content.includes('LH 사업'));
   assert.ok(proposal >= 0 && shared >= 0 && lone >= 0, JSON.stringify(review, null, 1));
   assert.ok(review[proposal].support.installs === 2 && review[proposal].support.cases >= 6);
+  // 기록마다 프로그램 버전이 붙어 와서 보고서에 버전별로 나온다(개발 폴더에서 돌면 "dev").
+  const report = (await api('/v1/report', { headers: { 'X-Reviewer-Key': config.reviewerKey, Authorization: `Bearer ${settingsA.central.token}` } })).body;
+  assert.ok(report.byVersion?.some(item => item.version === 'dev' && item.turns > 0 && item.installs === 2), JSON.stringify(report.byVersion));
 
   const [reviewer, list, approved, rejected, after] = await run(dirs.a, [
     { op: 'command', text: `/중앙 검토자 ${config.reviewerKey}` },

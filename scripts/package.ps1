@@ -79,6 +79,10 @@ try {
 "@ | Set-Content -LiteralPath (Join-Path $bundle 'PackageContents.xml') -Encoding UTF8
   foreach ($name in @('install.ps1','installer-ui.ps1','uninstall.ps1','package-common.ps1','release-public-key.xml','설치.bat','삭제.bat','먼저읽어주세요.txt')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $release }
   Copy-Item -LiteralPath (Join-Path $repo 'docs/배포_설치.md') -Destination (Join-Path $release 'README-install.md')
+  # 자동 업데이트 도우미: 설치된 번들이 다음 버전을 설치할 때 쓰는 스크립트와 공개 키(서명 대상에 포함된다).
+  $installer = Join-Path $contents 'installer'
+  New-Item -ItemType Directory -Path $installer -Force | Out-Null
+  foreach ($name in @('install.ps1','package-common.ps1','release-public-key.xml','update.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $installer }
   Write-BundleManifest $bundle
   # 서명: 비밀 키(MY_CIVIL3D_SIGNING_KEY 또는 _FILE)가 있으면 manifest에 서명한다. 없으면 개발용(설치 프로그램이 거절).
   $signing = [bool]($env:MY_CIVIL3D_SIGNING_KEY -or $env:MY_CIVIL3D_SIGNING_KEY_FILE)

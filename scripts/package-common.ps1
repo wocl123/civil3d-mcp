@@ -89,7 +89,7 @@ function Test-Bundle([string]$Bundle, [string]$CopyTo) {
   $required = @('PackageContents.xml','Contents/plugin/MyCivil3DMcp.Plugin.dll','Contents/plugin/MyCivil3DMcp.Plugin.deps.json',
     'Contents/node/node.exe','Contents/node/npm.cmd','Contents/node/node_modules/npm/bin/npm-cli.js','Contents/node/LICENSE',
     'Contents/server/package.json','Contents/server/build/localService.js','Contents/server/build/index.js',
-    'Contents/server/skills/civil3d-palette/SKILL.md','Contents/server/setup/setup-ai-cli.ps1','Contents/version.json',
+    'Contents/server/skills/civil3d-palette/SKILL.md','Contents/server/setup/setup-ai-cli.ps1','Contents/version.json','Contents/installer/update.ps1',
     'Contents/server/knowledge-defaults/criteria/도로구조규칙.json')
   foreach ($file in $required) { if (-not $seen.Contains($file)) { throw "필수 배포 파일 누락: $file" } }
   [xml]$xml = Get-Content -LiteralPath (Join-Path $Bundle 'PackageContents.xml') -Raw -Encoding UTF8

@@ -141,12 +141,16 @@ function event(line: Line): OutRecord | undefined {
 }
 
 // 로그 파일 종류에 맞는 기록을 만든다.
+// 프로그램 버전(0.1.0 형식 또는 dev). 버전별 실패율을 보려고 보낸다(개인정보 아님).
+const appVersion = (value: unknown) =>
+  typeof value === "string" && /^(\d+\.\d+\.\d+|dev)$/.test(value) ? value : undefined;
+
 export function outRecord(file: LogFile, line: Line): OutRecord | undefined {
   if (typeof line.at !== "string") return undefined;
-  switch (file) {
-    case "turns.jsonl": return turn(line);
-    case "tools.jsonl": return tool(line);
-    case "changes.jsonl": return change(line);
-    case "events.jsonl": return event(line);
-  }
+  const record = file === "turns.jsonl" ? turn(line)
+    : file === "tools.jsonl" ? tool(line)
+    : file === "changes.jsonl" ? change(line)
+    : file === "events.jsonl" ? event(line)
+    : undefined;
+  return record && clean({ ...record, appVersion: appVersion(line.appVersion) });
 }

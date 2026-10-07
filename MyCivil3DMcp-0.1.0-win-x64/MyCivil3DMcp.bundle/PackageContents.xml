@@ -1,0 +1,7 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="1.0" AppVersion="0.1.0" Name="MyCivil3DMcp" Description="Civil 3D MCP palette" Author="MyCivil3DMcp" ProductCode="{6F439FAC-A7EE-4CFF-9D3E-52AD3680F9A2}" UpgradeCode="{E49DD37D-13B7-4DA8-A616-85109188D819}">
+  <Components>
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R25.0" SeriesMax="R25.0" />
+    <ComponentEntry AppName="MyCivil3DMcp" AppDescription="Civil 3D AI palette" AppType=".Net" ModuleName="./Contents/plugin/MyCivil3DMcp.Plugin.dll" LoadOnAutoCADStartup="True" />
+  </Components>
+</ApplicationPackage>

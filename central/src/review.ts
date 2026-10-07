@@ -194,9 +194,24 @@ export function report(store: Store, config: Config) {
     kept[key][String(row.record.outcome)] = (kept[key][String(row.record.outcome)] ?? 0) + 1;
   }
 
+  // 프로그램 버전별 질문 수와 실패율 (업데이트 뒤 나아졌는지)
+  const versions = new Map<string, { turns: number; failed: number; installs: Set<string> }>();
+  for (const row of turns) {
+    const version = String(row.record.appVersion ?? "?");
+    const entry = versions.get(version) ?? { turns: 0, failed: 0, installs: new Set<string>() };
+    entry.turns++;
+    if (row.record.errorKind) entry.failed++;
+    entry.installs.add(row.installId);
+    versions.set(version, entry);
+  }
+
   return {
     days: config.reportDays,
     installs: new Set(rows.map(row => row.installId)).size,
+    byVersion: [...versions.entries()]
+      .map(([version, entry]) => ({ version, installs: entry.installs.size, turns: entry.turns, failed: entry.failed,
+        failRate: Math.round((entry.failed / entry.turns) * 1000) / 10 }))
+      .sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true })),
     turns: turns.length,
     failedTurns,
     tools: [...tools.entries()]

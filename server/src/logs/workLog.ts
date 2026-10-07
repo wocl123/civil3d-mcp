@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { dataDir } from "../paths.js";
+import { productVersion } from "../version.js";
 
 // 작업 기록. 이 PC의 data/logs/<날짜>/ 아래에 남는다.
 //   turns.jsonl    팔레트 질문 1건 = 1줄 (질문, 답, 도구, 변경, 지식, 토큰, 시간)
@@ -9,6 +10,7 @@ import { dataDir } from "../paths.js";
 //   events.jsonl   AI 결과를 사람이 나중에 어떻게 했는지 (tracking/tracker.ts)
 // 프롬프트에는 넣지 않는다. 원문이 들어 있으므로 그대로 PC 밖으로 나가지 않는다.
 // 보내는 것은 sync/records.ts 가 만든 비식별 사본이다.
+// 줄마다 프로그램 버전(appVersion)을 붙인다: 업데이트 전후 기록이 한 묶음에 섞여도 구분된다.
 // 기록에 실패해도 답변은 멈추지 않는다. 30일이 지난 폴더는 지운다(sync/retention.ts).
 
 const MAX_TEXT = 8000;   // 한 칸에 남기는 글자 수 한도
@@ -27,7 +29,7 @@ async function append(name: LogFile, entry: Record<string, unknown>): Promise<vo
     const now = new Date();
     const dir = join(logsDir(), localDate(now));
     await mkdir(dir, { recursive: true });
-    await appendFile(join(dir, name), JSON.stringify({ at: now.toISOString(), ...entry }) + "\n", "utf8");
+    await appendFile(join(dir, name), JSON.stringify({ at: now.toISOString(), appVersion: productVersion, ...entry }) + "\n", "utf8");
   } catch (error) {
     process.stderr.write(`MyCivil3DMcp work log was not written: ${String(error)}\n`);
   }

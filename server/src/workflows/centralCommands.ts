@@ -237,9 +237,13 @@ async function report(): Promise<string> {
       failedTurns: Record<string, number>;
       tools: { tool: string; calls: number; failed: number; avgMs: number }[];
       kept: Record<string, Record<string, number>>;
+      byVersion?: { version: string; installs: number; turns: number; failed: number; failRate: number }[];
     };
     return [
       `### 최근 ${data.days}일 보고 (설치 ${data.installs}곳, 질문 ${data.turns}건)`,
+      "",
+      "**버전별** (설치 · 질문 · 실패율)",
+      ...(data.byVersion ?? []).map(item => `- ${item.version}: ${item.installs}곳 · ${item.turns}건 · ${item.failRate}%`),
       "",
       "**실패한 질문**",
       ...Object.entries(data.failedTurns).map(([kind, n]) => `- ${kind}: ${n}건`),

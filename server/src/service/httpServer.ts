@@ -7,6 +7,8 @@ import { randomUUID } from "node:crypto";
 //
 // API (모두 플러그인 세션 토큰이 필요하다):
 //   GET  /api/providers              AI별 상태와 남은 세션 시간
+//   GET  /api/version                프로그램 버전과 자동 업데이트 상태(팔레트 아래 줄)
+//   POST /api/update/check           지금 새 버전 확인
 //   GET  /api/usage?provider=        서비스가 켜진 뒤 토큰 합계
 //   GET  /api/quota?provider=        계정의 남은 사용 한도
 //   GET  /api/drawing                도면 상태와 객체 일부(점검용)
@@ -36,6 +38,7 @@ import { answerChat } from "../workflows/paletteChat.js";
 import { clearMemory } from "../memory/memoryStore.js";
 import { forget, isConversationId } from "../workflows/conversation.js";
 import { startSyncLoop } from "../sync/syncLoop.js";
+import { checkForUpdate, startUpdateLoop, updateState } from "../update/autoUpdate.js";
 
 const host = "127.0.0.1";
 const configuredPort = Number(process.env.MY_CIVIL3D_SERVICE_PORT ?? "48900");
@@ -105,6 +108,9 @@ export const httpServer = createServer(async (request, response) => {
     const route = `${request.method} ${url.pathname}`;
 
     // ── AI 상태
+    if (route === "GET /api/version") return json(response, 200, updateState());
+    if (route === "POST /api/update/check") return json(response, 200, await checkForUpdate());
+
     if (route === "GET /api/providers") {
       const states = await Promise.all(PROVIDERS.map(async provider => ({
         provider, state: await getProviderState(provider), session: sessionInfo(provider)
@@ -277,6 +283,7 @@ export const httpServer = createServer(async (request, response) => {
 function started(): void {
   process.stderr.write(`MyCivil3DMcp local service: ${host}:${port}\n`);
   if (process.env.MY_CIVIL3D_SYNC !== "off") startSyncLoop();
+  startUpdateLoop();
 }
 
 // 수명 ①: 자기를 띄운 Civil 3D가 살아 있는 동안만 산다.

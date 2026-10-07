@@ -26,6 +26,8 @@ internal sealed class ChatPanel : UserControl
     private readonly TextBlock _placeholder = new();
     private readonly Button _send = new() { Content = "보내기" };
     private readonly TextBlock _usage = new() { TextWrapping = TextWrapping.Wrap };
+    // 아래 줄 오른쪽의 작은 버전 표시. 업데이트가 준비되면 "v0.1.0 → 0.1.1"만 보이고 설명은 툴팁에 둔다.
+    private readonly TextBlock _version = new() { FontSize = 10.5, Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
     private readonly Dictionary<string, Button> _chips = new();
     private readonly Dictionary<string, string> _states = Providers.ToDictionary(name => name, _ => "unchecked");
     // 준비된 AI마다 세션이 끝나는 시각과 세션 길이(서비스가 알려 줌).
@@ -122,6 +124,31 @@ internal sealed class ChatPanel : UserControl
         if (NodeService.LastError is not null) AddNotice(NodeService.LastError, error: true);
         await RefreshProvidersAsync();
         if (_selected is not null) await RefreshUsageAsync(_selected, refreshQuota: false);
+        await RefreshVersionAsync();
+    }
+
+    // 프로그램 버전과 자동 업데이트 상태(서비스가 중앙 서버에 묻고, 새 버전을 받아 두면 Civil 3D를 끌 때 설치한다).
+    private async Task RefreshVersionAsync()
+    {
+        try
+        {
+            JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Get, "/api/version");
+            string current = data["current"]?.ToString() ?? "";
+            string? latest = data["latest"]?.ToString();
+            string state = data["state"]?.ToString() ?? "";
+            bool required = data["required"]?.GetValue<bool>() == true;
+            _version.Text = current == "dev" ? "개발판" : state == "scheduled" && latest is not null ? $"v{current} → {latest}" : $"v{current}";
+            _version.Foreground = state == "scheduled" ? _theme.Ready : _theme.Muted;
+            _version.ToolTip = state switch
+            {
+                "scheduled" => $"새 버전 {latest}을 받아 두었습니다. Civil 3D를 끄면 자동으로 설치됩니다." + (required ? " 이 버전은 꼭 필요한 업데이트입니다." : ""),
+                "latest" => "최신 버전입니다.",
+                "offline" => "중앙 서버에 연결되지 않아 업데이트를 확인하지 않습니다.",
+                "failed" => "업데이트 확인 실패: " + (data["message"]?.ToString() ?? ""),
+                _ => "개발 폴더에서 실행 중입니다(자동 업데이트 없음)."
+            };
+        }
+        catch (System.Exception) { _version.Text = ""; }
     }
 
     // ── 화면 구성
@@ -226,6 +253,9 @@ internal sealed class ChatPanel : UserControl
         refresh.Click += async (_, _) => { if (_selected is not null) await RefreshUsageAsync(_selected, refreshQuota: true); };
         DockPanel.SetDock(refresh, Dock.Right);
         footer.Children.Add(refresh);
+        _version.Foreground = _theme.Muted;
+        DockPanel.SetDock(_version, Dock.Right);
+        footer.Children.Add(_version);
         _usage.Foreground = _theme.Muted;
         _usage.FontSize = 11.5;
         _usage.VerticalAlignment = VerticalAlignment.Center;

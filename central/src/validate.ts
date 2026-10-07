@@ -33,8 +33,16 @@ const HOUR = /^\d{4}-\d{2}-\d{2}T\d{2}$/;                     // 시각(시간 �
 const clean = (record: Obj): Obj => Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 const oneOf = <T>(list: readonly T[], value: unknown) => list.includes(value as T) ? value as T : undefined;
 
-// 기록 하나를 종류별로 아는 항목만 골라 다시 만든다. 모르는 종류면 버린다.
+const APP_VERSION = /^(\d+\.\d+\.\d+|dev)$/;                  // 프로그램 버전
+
+// 기록 하나: 종류별 항목 + 프로그램 버전(있으면).
 function record(value: unknown): Obj | undefined {
+  const body = recordBody(value);
+  return body && clean({ ...body, appVersion: str(obj(value).appVersion, APP_VERSION) });
+}
+
+// 기록 하나를 종류별로 아는 항목만 골라 다시 만든다. 모르는 종류면 버린다.
+function recordBody(value: unknown): Obj | undefined {
   const item = obj(value);
   const at = str(item.at, HOUR);
   if (!at) return undefined;

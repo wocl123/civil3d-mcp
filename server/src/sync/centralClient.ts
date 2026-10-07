@@ -37,7 +37,7 @@ function pinnedSocket(url: URL, pin: string): Promise<TLSSocket> {
   });
 }
 
-type Reply = { ok: boolean; status: number; text: string };
+type Reply = { ok: boolean; status: number; data: Buffer };
 
 async function send(url: URL, method: string, headers: Record<string, string>, body: string | undefined, pin?: string): Promise<Reply> {
   if (url.protocol === "http:") {
@@ -48,7 +48,7 @@ async function send(url: URL, method: string, headers: Record<string, string>, b
     } catch (error) {
       throw new CentralError(`중앙 서버에 연결하지 못했습니다(${error instanceof Error ? error.message : String(error)}).`, 0);
     }
-    return { ok: response.ok, status: response.status, text: await response.text() };
+    return { ok: response.ok, status: response.status, data: Buffer.from(await response.arrayBuffer()) };
   }
   if (url.protocol !== "https:") throw new CentralError("중앙 서버 주소는 https:// 여야 합니다.", 0);
   if (!pin || !/^[a-f\d]{64}$/.test(pin)) throw new CentralError("중앙 서버 인증서 지문이 없습니다. /중앙 연결 <주소> <가입키> <인증서지문> 으로 다시 연결하세요.", 0);
@@ -58,7 +58,7 @@ async function send(url: URL, method: string, headers: Record<string, string>, b
       createConnection: () => socket }, response => {   // agent를 주지 않아야 이 연결(지문 확인됨)을 쓴다
       const chunks: Buffer[] = [];
       response.on("data", chunk => chunks.push(chunk as Buffer));
-      response.on("end", () => resolve({ ok: (response.statusCode ?? 0) < 400, status: response.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8") }));
+      response.on("end", () => resolve({ ok: (response.statusCode ?? 0) < 400, status: response.statusCode ?? 0, data: Buffer.concat(chunks) }));
       response.on("error", error => reject(new CentralError(`중앙 서버 응답을 받지 못했습니다(${error.message}).`, 0)));
     });
     req.setTimeout(TIMEOUT_MS, () => req.destroy(new Error("timeout")));
@@ -77,7 +77,7 @@ async function call<T>(url: string, path: string,
 
   const response = await send(new URL(url + path), init.method ?? (init.body === undefined ? "GET" : "POST"), headers,
     init.body === undefined ? undefined : JSON.stringify(init.body), init.pin && normalizeFingerprint(init.pin));
-  const text = response.text;
+  const text = response.data.toString("utf8");
   let parsed: unknown;
   try {
     parsed = text ? JSON.parse(text) : {};
@@ -137,3 +137,16 @@ export const decide = (central: CentralSettings,
 // 검토자: 보고 (실패·도구 통계, 수정 추적 결과).
 export const getReport = (central: CentralSettings) =>
   call<Record<string, unknown>>(central.url, "/v1/report", { token: central.token, reviewerKey: central.reviewerKey, pin: central.certSha256 });
+
+// 배포 중인 버전(중앙 서버 release 명령으로 지정한 것). 없으면 { none: true }.
+export type PublishedRelease = { none?: true; version?: string; sha256?: string; size?: number; minVersion?: string };
+export const getRelease = (central: CentralSettings) =>
+  call<PublishedRelease>(central.url, "/v1/release", { token: central.token, pin: central.certSha256 });
+
+// 배포 zip 받기(그 버전이 아직 배포 중일 때만 서버가 준다). 크기·해시는 부른 쪽이 확인한다.
+export async function downloadRelease(central: CentralSettings, version: string): Promise<Buffer> {
+  const response = await send(new URL(`${central.url}/v1/release/download?version=${encodeURIComponent(version)}`), "GET",
+    { Authorization: `Bearer ${central.token}` }, undefined, central.certSha256 && normalizeFingerprint(central.certSha256));
+  if (!response.ok) throw new CentralError(`설치 파일을 받지 못했습니다(HTTP ${response.status}).`, response.status);
+  return response.data;
+}

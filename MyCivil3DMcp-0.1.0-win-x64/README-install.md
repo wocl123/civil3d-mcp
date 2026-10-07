@@ -1,0 +1,104 @@
+﻿# 배포 패키지 생성과 설치
+
+## 빌드
+
+Civil 3D 2025 참조 DLL, .NET 8 SDK, 인터넷 연결이 있는 개발 PC에서 실행한다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package.ps1
+```
+
+Node 22.23.3 Windows x64 공식 zip의 버전과 SHA-256은 `scripts/node-runtime.json`에 고정되어 있다.
+미리 받은 파일은 `-NodeArchive <zip 절대 경로>`로 지정할 수 있으며 동일한 해시 검사를 통과해야 한다.
+Autodesk 설치 위치가 다르면 `-AcadDir`을 지정한다. Autodesk DLL은 배포하지 않는다.
+
+빌드는 서버 개발 의존성 설치 → 빌드·자동 검사 → 별도 운영 의존성 설치 → 번들 검사 순서다.
+SDK 기반 Claude 한도 도우미는 제외한다. 파일 manifest는 누락·변조를 확인하며 게시자의 신원을 보장하는 서명은 아니다.
+
+## 설치·업데이트
+
+`dist\MyCivil3DMcp-0.1.0-win-x64.zip`을 새 PC에 전달하고 압축을 푼다.
+Civil 3D와 AutoCAD를 모두 종료한 뒤 압축을 푼 폴더의 **설치.bat**를 더블클릭한다.
+설치 창에서 **설치 / 업데이트**를 누른다. 작업이 끝나면 **완료**를 눌러 닫는다.
+오류는 창에 표시되며 원인을 해결한 뒤 **다시 시도**할 수 있다.
+
+명령으로 실행하려면 다음을 사용한다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+사용자 `%APPDATA%\Autodesk\ApplicationPlugins\MyCivil3DMcp.bundle`에 설치한다.
+2025에서 자동 로드하고 첫 도면이 준비되면 팔레트를 연다. 진단 명령은 `MYC3DCONNECTION`이다.
+AI를 고르면 기존 CLI를 찾거나 설치·로그인 창을 제공한다. 인터넷과 해당 계정이 필요하며 로그인은 사용자가 직접 한다.
+Node와 npm은 동봉본을 사용한다. Codex/Gemini 신규 설치는 `%LOCALAPPDATA%\MyCivil3DMcp\cli\<provider>`에 둔다.
+시스템 PATH와 기존 전역 npm 설치 경로를 변경하지 않는다.
+
+업데이트도 **설치.bat**를 더블클릭한다. 기존 번들은 `.backup-<id>` 경로에 보관한다.
+교체 실패 시 기존 번들로 복구한다. 재시작 후 문제가 생기면 Civil 3D를 종료하고 이전 번들 경로를 지정하여 복원한다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -BundlePath '<이전 번들 백업 경로>'
+```
+
+CLI·지식·대화·작업 기록은 업데이트 시 유지한다. 이전 Civil 3D 세션의 카드로 새 세션의 변경을 되돌릴 수는 없다.
+번들의 Node 프로세스가 남아 있으면 설치를 거절한다. 다른 프로그램의 Node를 일괄 종료하지 않는다.
+
+## 버전 배포와 온라인 설치
+
+새 버전은 GitHub에서 만들고, 중앙 서버가 받아 두었다가, 검토자가 지정한 버전만 사용자 PC로 나간다.
+
+```text
+개발 PC   server/package.json 버전을 올리고 커밋 → git tag v0.2.0 → git push origin v0.2.0
+GitHub    Actions(.github/workflows/release.yml)가 빌드·전체 검사 후 Release에 zip과 .sha256 게시
+중앙 서버  npm run release -- fetch v0.2.0     (GitHub에서 받기, SHA-256 확인)
+          npm run release -- publish 0.2.0    (이 버전을 배포. --min 0.2.0 으로 최소 지원 버전 지정)
+사용자 PC  설치.bat → 서버에 버전 확인 → 더 새 버전이면 받아서 SHA-256 확인 후 설치
+```
+
+- 중앙 서버 `<dataDir>/config.json`에 `githubRepo`("owner/repo")와 `githubToken`(비공개 저장소: Contents 읽기 전용 토큰)을 넣는다.
+  환경 변수 `GITHUB_TOKEN`이 있으면 그것을 쓴다. 인터넷이 없으면 `npm run release -- add <zip>`으로 직접 넣는다(옆의 .sha256을 검사).
+- 받아 두기만 해서는 배포되지 않는다. `publish`한 버전만 `/v1/release`로 나간다. `npm run release -- list`로 확인한다.
+- 처음 설치할 PC에는 `npm run release -- kit <폴더>`로 만든 **설치 묶음**(배포 zip + server.json)을 준다.
+  server.json에는 서버 주소와 가입키가 들어 있으므로 팀 안에서만 전달한다.
+- 설치.bat 옆에 server.json이 있으면:
+  - 서버의 배포 버전이 설치된 버전보다 새로우면 받아서 설치하고, 같거나 오래되면 "이미 최신"으로 끝낸다(내려 설치하지 않음).
+  - 받은 파일의 크기·SHA-256이 서버 정보와 다르면 설치하지 않는다.
+  - 서버에 닿지 않으면 같은 폴더의 번들로 설치하고, 번들도 없으면 이유를 알려 준다.
+  - 중앙 서버에 연결하지 않은 PC면 `data\central-join.json`을 남기고, 서비스가 다음 동기화 때 가입한 뒤 지운다(`/중앙 연결` 불필요).
+- 다른 PC용 중앙 서버는 HTTPS다(사내용 인증서, server.json의 `certSha256`으로 고정). 다른 PC로 가는 HTTP 주소는 설치 프로그램이 거절한다.
+- **서명**: 릴리스 빌드(태그)는 `RELEASE_SIGNING_KEY`(GitHub Secret)로 번들의 `Contents/manifest.json`과 zip에 서명한다.
+  설치 프로그램은 서버·폴더·zip 어디서 온 번들이든 `release-public-key.xml`로 서명을 확인하고, 서버에서 받은 것은 서버가 알려 준 버전인지도 확인한다.
+  중앙 서버는 `fetch`할 때 zip 서명을 확인한다(`add`는 옆의 `.sig` 필수, 시험용만 `--unsigned`).
+  비밀 키 백업: 관리자 PC `%USERPROFILE%\.mycivil3d\release-signing-key.pem`. 잃어버리면 `node scripts/release-signing.mjs keygen`으로 새 키를 만들고 Secret과 설치 묶음을 모두 바꿔야 한다.
+  개발용 빌드(키 없음)는 서명이 없어 설치 창에서 설치되지 않는다(`install.ps1 -AllowUnsigned`로만).
+- `package.ps1`은 만든 zip으로 이 흐름 전체를 임시 폴더에서 검사한다(`server/scripts/online-install.mjs`).
+
+## 제거
+
+Civil 3D와 AutoCAD를 모두 종료하고 **삭제.bat**를 더블클릭한다. 삭제 창에서 **삭제하기**를 누르고 작업이 끝나면 **완료**를 눌러 닫는다. 기본 제거는 사용자 데이터와 AI 로그인 설정을 유지한다.
+명령으로 실행하려면 다음을 사용한다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1
+```
+
+번들만 제거한다. 데이터와 앱 전용 CLI 삭제가 필요하면 `-RemoveUserData`를 지정하고 `DELETE`를 입력한다.
+기존 버전 백업은 보존된다. 계정 제공자가 관리하는 로그인 설정은 제거 대상이 아니다.
+
+## Claude 한도 표시
+
+기본 배포는 SDK 한도 도우미 없이 동작한다. 최근 15분 이내 상태줄 기록이 있으면 표시하고,
+기록이 없거나 오래되면 한도 조회 불가로 표시한다. 한도 표시 실패는 질문을 막지 않는다.
+상태줄 수집기는 `Contents\server\build\ai\claudeStatusline.js`다. 기존 Claude 설정은 자동으로 변경하지 않는다.
+
+## 검증 범위
+
+패키지 생성 시 번들 경로에서 Node·서비스·MCP·기본 지식·사용량 대체 경로를 검사하고,
+임시 설치 폴더에서 설치·업데이트·교체 실패 복구·파일 변조 거절·압축 경로 이탈 거절·제거·데이터 보존을 검사한다.
+새 Windows 계정에서 AI 실제 설치·로그인, 읽기 전용 설치 ACL, Civil 3D 자동 로드·삭제 종속 객체 복원은 별도 현장 검사다.
+2026은 지원 대상으로 등록하지 않았다.
+
+### 설치 창
+
+`설치.bat`을 더블클릭하면 전용 설치 창이 열립니다. **설치 / 업데이트**를 누르면 검증·복사·마무리 단계가 표시됩니다. 완료 화면에서 **완료**를 누르고 Civil 3D 2025를 실행합니다. 오류는 창에 표시되며 **다시 시도**할 수 있습니다. 설치 중에는 창 닫기를 막아 파일 교체가 중단되지 않도록 합니다.
