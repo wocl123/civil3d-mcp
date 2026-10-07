@@ -168,3 +168,15 @@ export const cleanupContent = (central: CentralSettings) =>
 // 검토자: 사례 분류. action: todo(처리, category 필수) / done(처리 끝) / discard(버림: 내용 삭제) / reopen
 export const decideCase = (central: CentralSettings, body: { key: string; action: string; category?: string; note?: string; version?: string }) =>
   call<{ triage: CaseTriage | null }>(central.url, "/v1/review/cases/decide", { token: central.token, reviewerKey: central.reviewerKey, body, pin: central.certSha256 });
+
+// 가입 신청(가입키 없이 설치한 PC). 승인되면 토큰이 온다. 거절이면 CentralError(403).
+export const requestJoin = (url: string, pin: string | undefined, body: { installId: string; secret: string; computer: string; user: string }) =>
+  call<{ status: "pending" } | { status: "approved"; token: string }>(url, "/v1/join", { body, pin });
+
+// 검토자: 대기 중인 가입 신청, 승인 / 거절.
+export type JoinRequest = { installId: string; computer?: string; user?: string; requestedAt: string };
+export const getJoins = (central: CentralSettings) =>
+  call<{ joins: JoinRequest[] }>(central.url, "/v1/review/joins", { token: central.token, reviewerKey: central.reviewerKey, pin: central.certSha256 });
+export const decideJoin = (central: CentralSettings, installId: string, action: "approve" | "reject") =>
+  call<{ installId: string; status: string; computer?: string; user?: string }>(central.url, "/v1/review/joins/decide",
+    { token: central.token, reviewerKey: central.reviewerKey, body: { installId, action }, pin: central.certSha256 });

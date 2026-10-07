@@ -179,6 +179,47 @@ try {
   assert.match(afterScrub, /"type":"turn"/, 'the numbers stay');
   assert.ok(!/"(question|answer)":/.test(afterScrub), 'after /검토 정리 no question or answer is left on the server');
 
+  // 가입 신청(가입키 없이, GitHub 릴리스 zip으로 설치한 PC): C·D 신청 → 대기 → 검토자 A가 C 승인, D 거절
+  //   → C는 동기화 때 연결되어 쌓인 기록을 보내고, D는 거절 상태. 서버에는 PC·사용자 이름이 남지 않는다.
+  const joinDirs = { c: join(temporary, 'install-c'), d: join(temporary, 'install-d') };
+  for (const dir of Object.values(joinDirs)) await mkdir(dir, { recursive: true });
+  const [, requested, waiting, notYet] = await run(joinDirs.c, [
+    { op: 'log', question: '가입 전에 한 질문', drawing: 'x.dwg' },
+    { op: 'command', text: `/중앙 신청 ${url}` },
+    { op: 'command', text: '/중앙' },
+    { op: 'command', text: '/중앙 동기화' }
+  ]);
+  assert.match(requested, /가입 신청을 보냈습니다/, requested);
+  assert.match(waiting, /승인 대기 중/, waiting);
+  assert.match(notYet, /연결되어 있지 않습니다/, 'nothing is sent before approval');
+  await run(joinDirs.d, [{ op: 'command', text: `/중앙 신청 ${url}` }]);
+  const cInstall = JSON.parse(await readFile(join(joinDirs.c, 'install.json'), 'utf8')).installId;
+  const stolen = await api('/v1/join', { method: 'POST', body: JSON.stringify({ installId: cInstall, secret: 'f'.repeat(64) }) });
+  assert.equal(stolen.status, 403, 'another PC cannot take an install id that asked to join');
+  assert.equal((await api('/v1/review/joins', { headers: { Authorization: `Bearer ${settingsA.central.token}` } })).status, 403, 'join requests need the reviewer key');
+  const host = (await import('node:os')).hostname();
+  const [joinList, joinApproved, joinList2, joinRejected, joinEmpty] = await run(dirs.a, [
+    { op: 'command', text: '/중앙 가입' },
+    { op: 'command', text: '/중앙 가입 1 승인' },
+    { op: 'command', text: '/중앙 가입' },
+    { op: 'command', text: '/중앙 가입 1 거절' },
+    { op: 'command', text: '/중앙 가입' }
+  ]);
+  assert.match(joinList, /가입 신청 2건/, joinList);
+  assert.ok(joinList.includes(host), 'the reviewer sees the PC name');
+  assert.match(joinApproved, /승인했습니다/);
+  assert.match(joinList2, /가입 신청 1건/);
+  assert.match(joinRejected, /거절했습니다/);
+  assert.match(joinEmpty, /대기 중인 가입 신청이 없습니다/);
+  const [cSynced, cStatus] = await run(joinDirs.c, [{ op: 'command', text: '/중앙 동기화' }, { op: 'command', text: '/중앙' }]);
+  assert.match(cSynced, /동기화했습니다\. 보낸 묶음 [1-9]/, cSynced);
+  assert.match(cStatus, /보내는 중/, cStatus);
+  assert.ok(!(await readdir(joinDirs.c)).includes('central-join.json'), 'the join request is gone once connected');
+  const [dStatus] = await run(joinDirs.d, [{ op: 'command', text: '/중앙 동기화' }, { op: 'command', text: '/중앙' }]).then(results => results.slice(1));
+  assert.match(dStatus, /거절되었습니다/, dStatus);
+  const joinsOnServer = await readFile(join(dirs.central, 'join-requests.json'), 'utf8');
+  assert.ok(!joinsOnServer.includes(host) && !joinsOnServer.includes('"user"'), 'names are removed once a request is decided');
+
   // B receives the approved knowledge and designs with the approved step.
   await mkdir(join(dirs.b, 'logs', '2020-01-01'), { recursive: true });
   const [, rule, parameters, plan, cleaned] = await run(dirs.b, [
@@ -206,7 +247,7 @@ try {
   await api('/v1/packages', { method: 'POST', headers: auth, body: JSON.stringify(again) });
   assert.equal((await api('/v1/packages', { method: 'POST', headers: auth, body: JSON.stringify(again) })).body.duplicate, true, 'a package is taken once');
 
-  console.log('central e2e ok: 2 installs, review, approval, central settings, privacy, retention');
+  console.log('central e2e ok: 2 installs, review, approval, central settings, privacy, retention, join requests (approve, reject, names removed)');
 } finally {
   central.kill();
   await rm(temporary, { recursive: true, force: true });

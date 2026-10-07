@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 //
 // API (모두 플러그인 세션 토큰이 필요하다):
 //   GET  /api/providers              AI별 상태와 남은 세션 시간
-//   GET  /api/version                프로그램 버전과 자동 업데이트 상태(팔레트 아래 줄)
+//   GET  /api/version                프로그램 버전과 자동 업데이트 상태, 검토자면 가입 신청 수(팔레트 아래 줄)
 //   POST /api/update/check           지금 새 버전 확인
 //   POST /api/feedback               답이 이상하다고 표시(팔레트 👎): { requestId, reason? }
 //   GET  /api/usage?provider=        서비스가 켜진 뒤 토큰 합계
@@ -38,7 +38,7 @@ import { getQuota } from "../ai/quota.js";
 import { answerChat } from "../workflows/paletteChat.js";
 import { clearMemory } from "../memory/memoryStore.js";
 import { forget, isConversationId } from "../workflows/conversation.js";
-import { startSyncLoop, syncSoon } from "../sync/syncLoop.js";
+import { pendingJoinRequests, startSyncLoop, syncSoon } from "../sync/syncLoop.js";
 import { logFeedback } from "../logs/workLog.js";
 import { checkForUpdate, startUpdateLoop, updateState } from "../update/autoUpdate.js";
 
@@ -110,7 +110,8 @@ export const httpServer = createServer(async (request, response) => {
     const route = `${request.method} ${url.pathname}`;
 
     // ── AI 상태
-    if (route === "GET /api/version") return json(response, 200, updateState());
+    // joins: 검토자 PC에서 대기 중인 가입 신청 수(팔레트 아래 줄에 "가입 신청 n")
+    if (route === "GET /api/version") return json(response, 200, { ...updateState(), joins: pendingJoinRequests() });
     if (route === "POST /api/update/check") return json(response, 200, await checkForUpdate());
     if (route === "POST /api/feedback") {
       const input = await body(request) as { requestId?: unknown; reason?: unknown; rating?: unknown };

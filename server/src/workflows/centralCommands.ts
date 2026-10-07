@@ -4,6 +4,8 @@
 //   /중앙 주소 <주소> [인증서지문]           서버가 옮겨 감: 주소만 바꾸고 등록은 그대로
 //   /중앙 끊기, /중앙 켜기         보내기 멈춤 / 다시 시작 (기록은 계속 쌓인다)
 //   /중앙 검토자 <키>             이 PC를 검토자로
+//   /중앙 신청 <주소> [인증서지문]  가입키 없이 가입 신청(검토자가 승인하면 1분 안에 연결된다)
+//   /중앙 가입 [<번호> 승인|거절]   검토자 전용: 가입 신청 목록, 승인 / 거절
 //   /중앙 동기화                  지금 바로 동기화
 //   /검토, 이어서 "1 승인" / "2 반려 사유", /검토 보고    검토자 전용
 //   /검토 사례 [할일|완료]             검토자 전용: 👎·되돌림·실패가 있었던 질문(기본: 아직 분류 안 한 것)
@@ -17,8 +19,9 @@
 import { install } from "../data/install.js";
 import { centralUrl, insecureUrl, loadSettings, saveSettings } from "../data/settings.js";
 import { PARAMETERS, isParameterKey, parameterSummary } from "../knowledge/parameters.js";
-import { CentralError, cleanupContent, decide, decideCase, enroll, getCases, getOfficial, normalizeFingerprint, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
-import { runSync, syncStatus } from "../sync/syncLoop.js";
+import { CentralError, cleanupContent, decide, decideCase, decideJoin, enroll, getCases, getJoins, getOfficial, normalizeFingerprint, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
+import { joinFromInstaller, joinStatus, saveJoinRequest } from "../sync/installerJoin.js";
+import { runSync, syncStatus, watchNow } from "../sync/syncLoop.js";
 import { lastShown, parseDecision, pick, setShown } from "./shownLists.js";
 
 const HTTP_WARNING = "주의: 암호화되지 않은 http 주소입니다. 인터넷을 거친다면 https 주소를 쓰세요.";
@@ -27,7 +30,7 @@ const HTTP_WARNING = "주의: 암호화되지 않은 http 주소입니다. 인�
 export async function centralCommand(question: string, conversation?: string): Promise<string | undefined> {
   const text = question.trim();
   if (text === "/설정값") return parametersText();
-  if (/^\/중앙(\s|$)/.test(text)) return central(text.replace(/^\/중앙\s*/, ""));
+  if (/^\/중앙(\s|$)/.test(text)) return central(text.replace(/^\/중앙\s*/, ""), conversation);
   if (text === "/검토") return reviewList(conversation);
   if (text === "/검토 보고") return report();
   if (/^\/검토 사례(\s|$)/.test(text)) return problemCases(text.replace(/^\/검토 사례\s*/, ""), conversation);
@@ -44,8 +47,10 @@ const failure = (error: unknown) =>
   error instanceof CentralError ? error.message : `오류: ${error instanceof Error ? error.message : String(error)}`;
 
 // /중앙 ... 처리.
-async function central(rest: string): Promise<string> {
-  const settings = await loadSettings();
+async function central(rest: string, conversation?: string): Promise<string> {
+  let settings = await loadSettings();
+  // 가입 신청 중이면 먼저 승인됐는지 확인한다(1분을 기다리지 않게).
+  if (!settings.central && (await joinStatus())?.state === "pending" && await joinFromInstaller()) settings = await loadSettings();
   const [command, ...args] = rest.split(/\s+/).filter(Boolean);
   if (!command) return statusText();
 
@@ -72,7 +77,56 @@ async function central(rest: string): Promise<string> {
     }
   }
 
-  if (!settings.central) return "중앙 서버에 연결되어 있지 않습니다. /중앙 연결 <주소> <가입키>로 연결해 주세요.";
+  // ── 신청: 가입키 없이. 검토자가 승인하면 연결된다(1분마다 확인).
+  if (command === "신청") {
+    if (settings.central) return "이미 중앙 서버에 연결되어 있습니다.";
+    const url = centralUrl(args[0] ?? "");
+    const pin = args[1] ? normalizeFingerprint(args[1]) : undefined;
+    if (!url || (url.startsWith("https:") && !(pin && /^[a-f\d]{64}$/.test(pin))))
+      return "형식: /중앙 신청 <주소> <인증서지문>\n예: /중앙 신청 https://192.168.0.10:48950 3fa1…(64자)\n주소와 지문은 관리자에게 물어보세요(비밀이 아닙니다).";
+    await saveJoinRequest(url, pin);
+    await watchNow();
+    const state = await joinStatus();
+    if (!state && (await loadSettings()).central) return `중앙 서버 ${url}에 연결했습니다.`;
+    return state?.lastError
+      ? `가입 신청을 보내지 못했습니다. ${state.lastError}\n1분마다 다시 시도합니다.`
+      : "가입 신청을 보냈습니다. 관리자가 승인하면 1분 안에 자동으로 연결됩니다(/중앙 으로 확인).";
+  }
+
+  if (!settings.central) return "중앙 서버에 연결되어 있지 않습니다. /중앙 신청 <주소> <인증서지문> 으로 가입을 신청하거나, 관리자에게 받은 설치 묶음으로 다시 설치해 주세요.";
+
+  // ── 가입: 검토자가 가입 신청을 승인 / 거절한다. 목록을 보여 준 뒤 번호로.
+  if (command === "가입") {
+    if (!settings.central.reviewerKey) return "검토자 PC가 아닙니다.";
+    const central = settings.central;
+    try {
+      if (!args.length) {
+        const { joins } = await getJoins(central);
+        setShown(conversation, "joins", joins.map(item => item.installId));
+        if (!joins.length) return "대기 중인 가입 신청이 없습니다.";
+        return [
+          `### 가입 신청 ${joins.length}건`,
+          ...joins.map((item, index) => `${index + 1}. ${item.computer ?? "?"} · ${item.user ?? "?"} · ${new Date(item.requestedAt).toLocaleString("ko-KR")}`),
+          "",
+          "승인: /중앙 가입 <번호> 승인 · 거절: /중앙 가입 <번호> 거절 (모르는 PC면 거절하세요)"
+        ].join("\n");
+      }
+      const match = /^(\d+)$/.exec(args[0]);
+      const action = args[1] === "승인" ? "approve" : args[1] === "거절" ? "reject" : undefined;
+      if (!match || !action) return "형식: /중앙 가입 <번호> 승인|거절";
+      const ids = lastShown(conversation, "joins");
+      if (!ids) return "먼저 /중앙 가입 으로 목록을 보세요.";
+      const id = ids[Number(match[1]) - 1];
+      if (!id) return `${match[1]}번이 목록에 없습니다.`;
+      const result = await decideJoin(central, id, action);
+      void watchNow();
+      return action === "approve"
+        ? `${result.computer ?? id} · ${result.user ?? "?"}: 승인했습니다. 그 PC는 1분 안에 자동으로 연결되고 쌓인 기록을 보냅니다.`
+        : `${result.computer ?? id} · ${result.user ?? "?"}: 거절했습니다.`;
+    } catch (error) {
+      return `가입 신청을 처리하지 못했습니다. ${failure(error)}`;
+    }
+  }
 
   // ── 주소: 서버가 데이터째 옮겨 갔다(다른 PC, 새 IP). 토큰은 그대로, 주소만 바꾼다.
   //    새 주소에서 이 PC의 등록이 확인될 때만 바꾼다.
@@ -127,17 +181,21 @@ async function central(rest: string): Promise<string> {
       : `동기화했습니다. 보낸 묶음 ${result.sent}개, 보낸 후보 ${result.candidates}개, 중앙 지식 v${result.official ?? "?"}.`;
   }
 
-  return "알 수 없는 명령입니다. /중앙, /중앙 연결, /중앙 주소, /중앙 끊기, /중앙 켜기, /중앙 검토자, /중앙 동기화를 쓸 수 있습니다.";
+  return "알 수 없는 명령입니다. /중앙, /중앙 연결, /중앙 신청, /중앙 주소, /중앙 끊기, /중앙 켜기, /중앙 검토자, /중앙 가입, /중앙 동기화를 쓸 수 있습니다.";
 }
 
 // /중앙 : 연결 상태, 익명 ID, 대기·막힌 묶음, 마지막 보냄·받음, 보내는 것/안 보내는 것.
 async function statusText(): Promise<string> {
-  const [settings, { installId }, { state, pending, blocked }] = await Promise.all([loadSettings(), install(), syncStatus()]);
+  const [settings, { installId }, { state, pending, blocked }, join] = await Promise.all([loadSettings(), install(), syncStatus(), joinStatus()]);
   const central = settings.central;
   const when = (iso?: string) => iso ? new Date(iso).toLocaleString("ko-KR") : "없음";
   const connection = central
     ? `${central.url} (${central.enabled ? "보내는 중" : "멈춤"}${central.reviewerKey ? ", 검토자" : ""})`
-    : "연결 안 됨";
+    : join?.state === "rejected"
+      ? `가입 신청이 거절되었습니다(${join.url}). 관리자에게 확인한 뒤 /중앙 신청 으로 다시 신청하세요.`
+      : join
+        ? `승인 대기 중(${join.url}, 신청 ${when(join.requestedAt)}). 관리자가 승인하면 1분 안에 연결됩니다.${join.lastError ? ` 마지막 문제: ${join.lastError}` : ""}`
+        : "연결 안 됨 — 관리자에게 받은 설치 파일로 다시 설치하거나 /중앙 신청 <주소> <인증서지문>";
 
   return [
     "### 중앙 서버",

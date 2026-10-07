@@ -79,6 +79,16 @@ try {
 "@ | Set-Content -LiteralPath (Join-Path $bundle 'PackageContents.xml') -Encoding UTF8
   foreach ($name in @('install.ps1','installer-ui.ps1','uninstall.ps1','package-common.ps1','release-public-key.xml','설치.bat','삭제.bat','먼저읽어주세요.txt')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $release }
   Copy-Item -LiteralPath (Join-Path $repo 'docs/배포_설치.md') -Destination (Join-Path $release 'README-install.md')
+  # 중앙 서버 주소와 인증서 지문(GitHub 저장소 Variables CENTRAL_URL, CENTRAL_CERT_SHA256 / 중앙 서버 PC에서 npm run release -- github-vars).
+  # 비밀이 아니다(가입키는 넣지 않는다). 이 zip으로 설치한 PC는 Civil 3D를 켜면 가입을 신청하고, 검토자가 승인하면 연결된다.
+  if ($env:MY_CIVIL3D_CENTRAL_URL) {
+    $serverInfo = [ordered]@{ url = $env:MY_CIVIL3D_CENTRAL_URL }
+    if ($env:MY_CIVIL3D_CENTRAL_CERT_SHA256) { $serverInfo.certSha256 = $env:MY_CIVIL3D_CENTRAL_CERT_SHA256 }
+    $serverFile = Join-Path $release 'server.json'
+    [IO.File]::WriteAllText($serverFile, ([pscustomobject]$serverInfo | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+    [void](Read-ServerSettings $serverFile)   # 형식 확인(HTTPS면 인증서 지문 필수)
+    Write-Host "중앙 서버 주소를 넣었습니다: $($env:MY_CIVIL3D_CENTRAL_URL) (가입은 관리자 승인)"
+  } else { Write-Host '알림: 중앙 서버 주소(CENTRAL_URL)가 없어 server.json 없이 만듭니다(설치 후 /중앙 신청 또는 설치 묶음 필요).' }
   # 자동 업데이트 도우미: 설치된 번들이 다음 버전을 설치할 때 쓰는 스크립트와 공개 키(서명 대상에 포함된다).
   $installer = Join-Path $contents 'installer'
   New-Item -ItemType Directory -Path $installer -Force | Out-Null

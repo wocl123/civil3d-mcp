@@ -4,6 +4,7 @@
 //   3) 중앙 서버가 연결돼 있으면: 묶음 보내기 → 후보 보내기 → 중앙 지식 받기
 //
 // 도는 때: 서비스 시작 5초 뒤, 10분마다, 질문이 끝나고 10초 뒤. 정리(보관 기한)는 시작할 때와 6시간마다.
+// 1분마다(가벼운 확인): 가입 신청 중이면 승인됐는지, 검토자 PC면 대기 중인 가입 신청 수(팔레트 아래 줄에 표시).
 
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -14,7 +15,7 @@ import { applyOfficial } from "../knowledge/centralKnowledge.js";
 import { markSubmitted, unsentCandidates } from "../knowledge/candidateStore.js";
 import { currentDrawingScope } from "../memory/drawingScope.js";
 import { checkTracked } from "../tracking/tracker.js";
-import { CentralError, getOfficial, sendCandidates, sendPackage } from "./centralClient.js";
+import { CentralError, getJoins, getOfficial, sendCandidates, sendPackage } from "./centralClient.js";
 import { exportLogs, outboxDir } from "./exporter.js";
 import { joinFromInstaller } from "./installerJoin.js";
 import { blank, leak } from "./privacy.js";
@@ -25,6 +26,7 @@ const START_DELAY_MS = 5000;
 const INTERVAL_MS = 10 * 60 * 1000;
 const AFTER_TURN_MS = 10000;
 const CLEANUP_MS = 6 * 60 * 60 * 1000;
+const WATCH_MS = 60 * 1000;
 
 export type SyncResult = {
   tracked: number;     // 기록한 수정 추적 결과 수
@@ -59,7 +61,25 @@ export function startSyncLoop(): void {
   setTimeout(() => { clean(); run(); }, START_DELAY_MS).unref();
   setInterval(run, INTERVAL_MS).unref();
   setInterval(clean, CLEANUP_MS).unref();
+  setInterval(() => void watch().catch(() => undefined), WATCH_MS).unref();
 }
+
+// 검토자 PC: 대기 중인 가입 신청 수(/api/version → 팔레트 아래 줄). 검토자가 아니거나 확인 못 했으면 0.
+let joinRequests = 0;
+export const pendingJoinRequests = () => joinRequests;
+
+// 1분마다: 가입 신청 중이면 승인 확인(승인되면 바로 동기화), 검토자 PC면 신청 수.
+async function watch(): Promise<void> {
+  if (await joinFromInstaller()) void runSync().catch(() => undefined);
+  const central = (await loadSettings()).central;
+  if (!central?.reviewerKey || !central.enabled) { joinRequests = 0; return; }
+  try {
+    joinRequests = (await getJoins(central)).joins.length;
+  } catch {
+    // 다음 확인 때 다시
+  }
+}
+export const watchNow = watch;
 
 async function syncOnce(): Promise<SyncResult> {
   const result: SyncResult = { tracked: 0, exported: 0, blocked: 0, sent: 0, candidates: 0 };

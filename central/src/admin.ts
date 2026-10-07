@@ -4,6 +4,8 @@
 //   npm run admin -- rotate enroll            가입키를 새로 만든다(설치 묶음이 새면). 이미 등록된 PC는 그대로 쓴다.
 //                                             새 설치 묶음을 만들어(release kit) 새로 설치할 사람에게 준다.
 //   npm run admin -- rotate reviewer          검토자 키를 새로 만든다(검토자 PC에서 /중앙 검토자 <새 키>)
+//   npm run admin -- joins                    가입 신청 목록(가입키 없이 설치한 PC)
+//   npm run admin -- approve <설치 ID> | reject <설치 ID>   가입 승인 / 거절 (팔레트 /중앙 가입 과 같다)
 //   npm run admin -- fingerprint              HTTPS 인증서 지문(각 PC의 /중앙 연결, 설치 묶음에 쓰인다)
 //   npm run admin -- cases [--status todo] [--out 파일.json | 파일.md]   (.md: AI에게 넘길 수정 요청서)
 //                                             문제 사례 내보내기(기본: 처리하기로 한 것). 개발자에게 넘겨 고칠 때 쓴다.
@@ -15,6 +17,7 @@ import { join } from "node:path";
 import { dataDir, loadConfig } from "./config.js";
 import { loadTls } from "./tls.js";
 import { type CaseStatus, problemCases } from "./review.js";
+import { decideJoin, JoinError, pendingJoins } from "./joins.js";
 import { Store } from "./store.js";
 
 const [command, ...args] = process.argv.slice(2);
@@ -59,6 +62,19 @@ if (command === "installs" || !command) {
     say(`새 검토자 키: ${config.reviewerKey}`);
     say("검토자 PC의 팔레트에서 /중앙 검토자 <새 키> 를 입력하세요. 예전 키는 바로 쓸 수 없습니다.");
   }
+} else if (command === "joins") {
+  const rows = pendingJoins(new Store());
+  say(rows.length ? `가입 신청 ${rows.length}건` : "대기 중인 가입 신청이 없습니다.");
+  for (const row of rows) say(`- ${row.installId}  ${row.computer ?? "?"} · ${row.user ?? "?"}  신청 ${row.requestedAt.slice(0, 16).replace("T", " ")}`);
+  if (rows.length) say("승인: approve <설치 ID>   거절: reject <설치 ID>");
+} else if (command === "approve" || command === "reject") {
+  const id = args[0] ?? fail(`형식: ${command} <설치 ID> (joins로 확인)`);
+  try {
+    const row = decideJoin(new Store(), id, command);
+    say(`${row.computer ?? id} · ${row.user ?? "?"}: ${command === "approve" ? "승인했습니다. 그 PC는 1분 안에 자동으로 연결됩니다." : "거절했습니다."}`);
+  } catch (error) {
+    fail(error instanceof JoinError ? error.message : String(error));
+  }
 } else if (command === "fingerprint") {
   const tls = loadTls();
   say(tls ? `HTTPS 인증서 지문: ${tls.fingerprint}` : "HTTPS 인증서가 없습니다(이 PC 안에서만 쓰는 설정). start-central.ps1 -AllowNetwork 로 만드세요.");
@@ -102,5 +118,5 @@ if (command === "installs" || !command) {
     say(`${status} 사례 ${cases.length}건`);
   }
 } else {
-  fail("명령: installs | revoke <설치 ID> | rotate enroll | rotate reviewer | fingerprint | cases");
+  fail("명령: installs | joins | approve <설치 ID> | reject <설치 ID> | revoke <설치 ID> | rotate enroll | rotate reviewer | fingerprint | cases");
 }

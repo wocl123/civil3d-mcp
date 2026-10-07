@@ -28,6 +28,11 @@ internal sealed class ChatPanel : UserControl
     private readonly TextBlock _usage = new() { TextWrapping = TextWrapping.Wrap };
     // 아래 줄 오른쪽의 작은 버전 표시. 업데이트가 준비되면 "v0.1.0 → 0.1.1"만 보이고 설명은 툴팁에 둔다.
     private readonly TextBlock _version = new() { FontSize = 10.5, Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
+    // 검토자 PC: 대기 중인 가입 신청이 있으면 "가입 신청 2"(누르면 /중앙 가입). 1분마다 새로 읽는다.
+    private readonly TextBlock _joins = new() { FontSize = 10.5, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+        Cursor = Cursors.Hand, Visibility = Visibility.Collapsed, ToolTip = "가입 신청한 PC가 있습니다. 눌러서 목록을 봅니다." };
+    private readonly DispatcherTimer _statusClock = new() { Interval = TimeSpan.FromMinutes(1) };
+    private int _joinCount;
     private readonly Dictionary<string, Button> _chips = new();
     private readonly Dictionary<string, string> _states = Providers.ToDictionary(name => name, _ => "unchecked");
     // 준비된 AI마다 세션이 끝나는 시각과 세션 길이(서비스가 알려 줌).
@@ -73,6 +78,8 @@ internal sealed class ChatPanel : UserControl
         UpdateControls();
         _sessionClock.Tick += (_, _) => TickSessions();
         _sessionClock.Start();
+        _statusClock.Tick += async (_, _) => await RefreshVersionAsync();
+        _statusClock.Start();
     }
 
     // 서비스가 알려 준 AI 세션의 남은 시간을 적어 둔다.
@@ -153,6 +160,11 @@ internal sealed class ChatPanel : UserControl
             string? latest = data["latest"]?.ToString();
             string state = data["state"]?.ToString() ?? "";
             bool required = data["required"]?.GetValue<bool>() == true;
+            int joins = data["joins"]?.GetValue<int>() ?? 0;
+            _joins.Text = $"가입 신청 {joins}";
+            _joins.Visibility = joins > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (joins > _joinCount) AddNotice($"가입 신청이 {joins}건 있습니다. 아래 줄의 '가입 신청'을 누르거나 /중앙 가입 을 입력하세요.");
+            _joinCount = joins;
             _version.Text = current == "dev" ? "개발판" : state == "scheduled" && latest is not null ? $"v{current} → {latest}" : $"v{current}";
             _version.Foreground = state == "scheduled" ? _theme.Ready : _theme.Muted;
             _version.ToolTip = state switch
@@ -272,6 +284,16 @@ internal sealed class ChatPanel : UserControl
         _version.Foreground = _theme.Muted;
         DockPanel.SetDock(_version, Dock.Right);
         footer.Children.Add(_version);
+        _joins.Foreground = _theme.Ready;
+        _joins.MouseLeftButtonUp += async (_, _) =>
+        {
+            if (_busy) return;
+            if (_selected is null) { AddNotice("AI를 하나 고른 뒤 /중앙 가입 을 입력하세요."); return; }
+            _input.Text = "/중앙 가입";
+            await SendAsync();
+        };
+        DockPanel.SetDock(_joins, Dock.Right);
+        footer.Children.Add(_joins);
         _usage.Foreground = _theme.Muted;
         _usage.FontSize = 11.5;
         _usage.VerticalAlignment = VerticalAlignment.Center;

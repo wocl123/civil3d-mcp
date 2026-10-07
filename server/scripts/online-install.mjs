@@ -55,8 +55,9 @@ async function placeScripts(folder, keyXml = testKeyXml) {
 
 // install.ps1을 설치 파일 폴더에서 실행한다. 한글 출력을 UTF-8로 받는다.
 function install(...extra) { return installFrom(kit, ...extra); }
-function installFrom(folder, ...extra) {
-  const args = [`-DestinationRoot ${quote(plugins)}`, `-DataDir ${quote(data)}`, '-SkipRunningCheck', ...extra].join(' ');
+function installFrom(folder, ...extra) { return installWith(folder, data, ...extra); }
+function installWith(folder, dataDir, ...extra) {
+  const args = [`-DestinationRoot ${quote(plugins)}`, `-DataDir ${quote(dataDir)}`, '-SkipRunningCheck', ...extra].join(' ');
   const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
     `[Console]::OutputEncoding=[Text.Encoding]::UTF8; try { & ${quote(join(folder, 'install.ps1'))} ${args}; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }`],
     { encoding: 'utf8' });
@@ -265,6 +266,16 @@ try {
   assert.equal(fromPayload.code, 0, fromPayload.out);
   assert.match(fromPayload.out, /설치했습니다/, 'the installer unpacks MyCivil3DMcp.bundle.zip itself');
   assert.equal(await installedVersion(), version);
+  // 9-2) GitHub 릴리스 zip: server.json에 주소·지문만(가입키 없음) → 이 폴더의 번들로 설치하고, 가입키 없는 가입 요청을 남긴다
+  const githubData = join(temporary, 'data-github');
+  await writeFile(join(unpacked, 'server.json'), JSON.stringify({ url, certSha256: pin }));
+  const fromGithub = installWith(unpacked, githubData, '-Reinstall');
+  assert.equal(fromGithub.code, 0, fromGithub.out);
+  assert.match(fromGithub.out, /가입을 신청합니다/, fromGithub.out);
+  assert.doesNotMatch(fromGithub.out, /서버에서 최신 버전을 확인/, 'without an enroll key the installer does not ask the server');
+  const githubJoin = JSON.parse(await readFile(join(githubData, 'central-join.json'), 'utf8'));
+  assert.deepEqual([githubJoin.url, githubJoin.certSha256, githubJoin.enrollKey], [url, pin, undefined], 'a join request without a key is left for the service');
+  await rm(join(unpacked, 'server.json'));
 
   // 10) 서버가 꺼졌고 이 폴더에 설치 파일도 없으면, 이유를 알려 주고 멈춘다
   central.kill(); central = undefined;
@@ -274,7 +285,7 @@ try {
   assert.match(offline.out, /서버에서 설치 파일을 받지 못했습니다/);
   assert.equal(await installedVersion(), version, 'nothing changes when the server is down');
 
-  console.log(`Online install passed: publish ${version}; automatic update (download, wait for Civil 3D to exit, signed install); HTTPS with a pinned certificate (missing/wrong fingerprint and remote HTTP refused, a failed join keeps the request); central refuses unsigned and wrongly signed zips; install from server.json only, already up to date, hash mismatch refused, bundle signed with another key refused; service joins central and drops the key; kit carries the fingerprint, no HTTP kits; admin revoke and key rotation apply at once; inner bundle zip installs without unpacking by hand; local folder install checks signature and version (unsigned refused, same/newer skipped, reinstall); stale work and old backups removed; offline without files explained.`);
+  console.log(`Online install passed: publish ${version}; automatic update (download, wait for Civil 3D to exit, signed install); HTTPS with a pinned certificate (missing/wrong fingerprint and remote HTTP refused, a failed join keeps the request); central refuses unsigned and wrongly signed zips; install from server.json only, already up to date, hash mismatch refused, bundle signed with another key refused; service joins central and drops the key; kit carries the fingerprint, no HTTP kits; admin revoke and key rotation apply at once; inner bundle zip installs without unpacking by hand; a GitHub zip (address only, no key) installs locally and leaves a join request; local folder install checks signature and version (unsigned refused, same/newer skipped, reinstall); stale work and old backups removed; offline without files explained.`);
 } finally {
   central?.kill();
   await rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

@@ -41,6 +41,13 @@ $server = $null
 try {
   if (-not $Archive -and (Test-Path -LiteralPath $ServerFile)) {
     $server = Read-ServerSettings $ServerFile
+  }
+  # 가입키가 없는 server.json(GitHub 릴리스 zip): 서버의 배포 버전은 물어볼 수 없으니 이 폴더의 번들로 설치하고,
+  # 설치 후 Civil 3D를 켜면 가입을 신청한다(검토자가 승인하면 연결되고, 그다음부터는 자동 업데이트).
+  if ($server -and -not $server.enrollKey) {
+    if (-not $hasLocalBundle) { throw '이 폴더에 설치 파일(MyCivil3DMcp.bundle.zip)이 없습니다. ZIP 전체를 새 폴더에 압축 해제해 주세요.' }
+    Write-Host '이 폴더의 설치 파일로 설치합니다. Civil 3D를 켜면 중앙 서버에 가입을 신청합니다(관리자 승인 후 연결).'
+  } elseif ($server) {
     Write-Host '[1/4] 서버에서 최신 버전을 확인하고 있습니다...'
     $release = $null; $failure = $null
     try { $release = Get-ServerRelease $server } catch { $failure = $_.Exception.Message }

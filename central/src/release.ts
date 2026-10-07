@@ -5,6 +5,9 @@
 //   npm run release -- publish <버전> [--min <버전>]   이 버전을 배포한다(설치 프로그램·팔레트가 받아 감)
 //   npm run release -- remove <버전>              받아 둔 설치본 지우기(배포 중이면 배포도 멈춤)
 //   npm run release -- kit <폴더> [--url <주소>]  사용자에게 줄 설치 묶음: 배포 zip + server.json(서버 주소, 가입키, 인증서 지문)
+//   npm run release -- github-vars [--url <주소>] GitHub 저장소 Variables에 서버 주소·인증서 지문(비밀 아님)을 넣는다.
+//                                                 그다음 빌드부터 GitHub 릴리스 zip에 server.json(가입키 없음)이 들어가고,
+//                                                 그 zip으로 설치한 PC는 가입을 신청한다(검토자가 /중앙 가입 으로 승인).
 // GitHub 저장소와 토큰은 <dataDir>/config.json 의 githubRepo, githubToken(읽기 전용) 또는 환경 변수 GITHUB_TOKEN.
 
 import { execFileSync } from "node:child_process";
@@ -101,7 +104,26 @@ async function main(): Promise<void> {
     return;
   }
 
-  throw new ReleaseError("알 수 없는 명령입니다. list, fetch, add, publish, remove, kit 중 하나를 쓰세요.");
+  if (command === "github-vars") {
+    const repo = option("--repo") ?? config.githubRepo;
+    if (!repo) throw new ReleaseError(`config.json에 githubRepo(예: "owner/repo")를 넣거나 --repo 를 주세요.`);
+    const url = option("--url") ?? serverUrl();
+    const tls = loadTls();
+    if (!url.startsWith("https:") || !tls) throw new ReleaseError("다른 PC가 쓸 주소는 HTTPS여야 합니다. start-central.ps1 -AllowNetwork 로 서버를 시작해 인증서를 만드세요.");
+    // 주소와 인증서 지문은 비밀이 아니다(가입키는 넣지 않는다). gh(GitHub CLI) 로그인이 필요하다.
+    try {
+      for (const [name, value] of [["CENTRAL_URL", url], ["CENTRAL_CERT_SHA256", tls.fingerprint]])
+        execFileSync("gh", ["variable", "set", name, "--repo", repo, "--body", value], { stdio: ["ignore", "inherit", "inherit"] });
+    } catch {
+      throw new ReleaseError("GitHub 저장소 Variables를 넣지 못했습니다. GitHub CLI(gh)를 설치하고 gh auth login 으로 로그인했는지 확인하세요.");
+    }
+    say(`GitHub ${repo}의 Variables에 넣었습니다: CENTRAL_URL=${url}, CENTRAL_CERT_SHA256=${tls.fingerprint.slice(0, 12)}…`);
+    say("다음 새 버전부터 GitHub 릴리스 zip에 server.json(주소·지문, 가입키 없음)이 들어갑니다.");
+    say("그 zip으로 설치한 PC는 가입을 신청합니다. 팔레트 /중앙 가입 (또는 npm run admin -- joins)에서 승인하세요.");
+    return;
+  }
+
+  throw new ReleaseError("알 수 없는 명령입니다. list, fetch, add, publish, remove, kit, github-vars 중 하나를 쓰세요.");
 }
 
 main().catch(error => {

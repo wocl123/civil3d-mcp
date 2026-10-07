@@ -1,6 +1,7 @@
 // 중앙 서버가 보관하는 모든 것. 데이터 폴더의 평범한 파일이고, 시작할 때 메모리로 읽는다.
 // 작은 팀은 한 달에 기록 수천 건을 보낸다. 커지면 이 파일만 DB로 바꾸면 된다.
 //   installs.json            등록된 설치 (토큰은 해시만)
+//   join-requests.json       가입 신청(가입키 없이 설치한 PC, 검토자가 승인) joins.ts
 //   packages.txt             이미 받은 묶음 id, 한 줄에 하나
 //   records/<YYYY-MM>.jsonl  모든 기록 (설치·묶음과 함께)
 //   candidates.json          지식 후보와 검토 상태
@@ -13,6 +14,9 @@ import { join } from "node:path";
 import { dataDir } from "./config.js";
 
 export type InstallRow = { installId: string; tokenHash: string; enrolledAt: string; lastSeen: string };
+// 가입 신청. computer·user는 대기 중일 때만 있다(승인·거절하면 지운다).
+export type JoinRow = { installId: string; secretHash: string; computer?: string; user?: string; requestedAt: string;
+  status: "pending" | "approved" | "rejected"; decidedAt?: string };
 
 export type StoredRecord = { installId: string; packageId: string; receivedAt: string; record: Record<string, unknown> };
 
@@ -85,6 +89,7 @@ function readLines<T>(file: string): T[] {
 
 export class Store {
   installs: Record<string, InstallRow>;
+  joins: Record<string, JoinRow>;
   packages: Set<string>;
   records: StoredRecord[];
   candidates: CandidateRow[];
@@ -97,6 +102,7 @@ export class Store {
     mkdirSync(path("records"), { recursive: true });
     mkdirSync(path("history"), { recursive: true });
     this.installs = readJson("installs.json", {});
+    this.joins = readJson("join-requests.json", {});
     this.packages = new Set(existsSync(path("packages.txt"))
       ? readFileSync(path("packages.txt"), "utf8").split("\n").filter(Boolean)
       : []);
@@ -119,9 +125,22 @@ export class Store {
   private installsStamp = stamp("installs.json");
   refreshInstalls(): void {
     const now = stamp("installs.json");
-    if (now === this.installsStamp) return;
-    this.installs = readJson("installs.json", {});
-    this.installsStamp = now;
+    if (now !== this.installsStamp) {
+      this.installs = readJson("installs.json", {});
+      this.installsStamp = now;
+    }
+    const joins = stamp("join-requests.json");
+    if (joins !== this.joinsStamp) {
+      this.joins = readJson("join-requests.json", {});
+      this.joinsStamp = joins;
+    }
+  }
+
+  // 가입 신청(관리 명령 admin.ts approve/reject도 이 파일을 쓴다. 서버는 refreshInstalls에서 다시 읽는다).
+  private joinsStamp = stamp("join-requests.json");
+  saveJoins(): void {
+    writeJson("join-requests.json", this.joins);
+    this.joinsStamp = stamp("join-requests.json");
   }
 
   // 묶음 하나를 받는다: 기록은 달별 파일에 붙이고, 묶음 id를 남긴다.

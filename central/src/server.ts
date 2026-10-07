@@ -7,6 +7,7 @@
 // API
 //   GET  /v1/health                상태 (인증 없음)
 //   POST /v1/enroll                가입키로 등록 → 토큰 (인증 없음, IP당 분당 60회)
+//   POST /v1/join                  가입키 없이 가입 신청 → 202 대기 / 200 승인(토큰) / 403 거절 (인증 없음, IP당 분당 60회) joins.ts
 //   POST /v1/packages              비식별 묶음                   (설치 토큰)
 //   POST /v1/candidates            지식 후보                     (설치 토큰)
 //   GET  /v1/official?since=n      승인 지식과 설정값            (설치 토큰)
@@ -15,6 +16,8 @@
 //   GET  /v1/report                보고                          (설치 토큰 + 검토자 키)
 //   GET  /v1/review/cases?status=  문제 사례(👎·되돌림·실패, 내용 포함). new(기본)·todo·done·discarded·all (설치 토큰 + 검토자 키)
 //   POST /v1/review/cases/decide   사례 분류: todo(처리·분류) / done(처리 끝: 내용 삭제) / discard(버림: 내용 삭제) / reopen (설치 토큰 + 검토자 키)
+//   GET  /v1/review/joins          대기 중인 가입 신청(PC·사용자 이름)   (설치 토큰 + 검토자 키)
+//   POST /v1/review/joins/decide   가입 승인 / 거절 { installId, action: approve|reject }   (설치 토큰 + 검토자 키)
 //   POST /v1/review/cleanup        한 바퀴 정리: 분류 전·할 일 사례만 남기고 나머지 질문의 내용 삭제 (설치 토큰 + 검토자 키)
 //   GET  /v1/release               배포 중인 버전·SHA-256·크기   (가입키 또는 설치 토큰)
 //   GET  /v1/release/download      배포 zip                       (가입키 또는 설치 토큰)
@@ -29,6 +32,7 @@ import { join } from "node:path";
 import { dataDir, host, loadConfig, port, settingsFile } from "./config.js";
 import { type CaseStatus, cleanupContent, decide, decideCase, groupKey, problemCases, report, ReviewError, reviewItems } from "./review.js";
 import { current, releaseFile } from "./releases.js";
+import { decideJoin, JoinError, pendingJoins, requestJoin } from "./joins.js";
 import { Store } from "./store.js";
 import { loadTls, loopbackHost } from "./tls.js";
 import { Invalid, validCandidates, validPackage } from "./validate.js";
@@ -139,6 +143,12 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
       return json(response, 200, { token });
     }
 
+    if (route === "POST /v1/join") {
+      if (limited(`join:${request.socket.remoteAddress}`)) return json(response, 429, { error: "잠시 뒤 다시 시도해 주세요." });
+      const result = requestJoin(store, (await body(request)) as Record<string, unknown>);
+      return json(response, result.status === "approved" ? 200 : 202, result);
+    }
+
     // ── 배포본: 설치 프로그램은 가입키(아직 설치 토큰이 없다), 팔레트는 설치 토큰으로 묻는다
     if (route === "GET /v1/release" || route === "GET /v1/release/download") {
       const key = request.headers["x-enroll-key"];
@@ -235,6 +245,13 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
       if (!["new", "todo", "done", "discarded", "all"].includes(status)) return json(response, 400, { error: "status가 맞지 않습니다." });
       return json(response, 200, { cases: problemCases(store, status as CaseStatus) });
     }
+    if (route === "GET /v1/review/joins")
+      return json(response, 200, { joins: pendingJoins(store).map(({ installId, computer, user, requestedAt }) => ({ installId, computer, user, requestedAt })) });
+    if (route === "POST /v1/review/joins/decide") {
+      const input = (await body(request)) as { installId?: unknown; action?: unknown };
+      const row = decideJoin(store, String(input.installId ?? ""), String(input.action ?? ""));
+      return json(response, 200, { installId: row.installId, status: row.status, computer: row.computer, user: row.user });
+    }
     if (route === "POST /v1/review/cleanup") return json(response, 200, cleanupContent(store));
     if (route === "POST /v1/review/cases/decide") {
       const input = (await body(request)) as { key?: unknown; action?: unknown; category?: unknown; note?: unknown; version?: unknown };
@@ -248,6 +265,7 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
   } catch (error) {
     if (error instanceof Invalid) return json(response, 422, { error: error.message });
     if (error instanceof ReviewError) return json(response, 409, { error: error.message });
+    if (error instanceof JoinError) return json(response, error.status, { error: error.message });
     process.stderr.write(`central error: ${String(error)}\n`);
     json(response, 500, { error: "서버 오류" });
   }

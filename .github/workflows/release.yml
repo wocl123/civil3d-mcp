@@ -46,6 +46,9 @@ jobs:
         shell: pwsh
         env:
           MY_CIVIL3D_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          # 중앙 서버 주소·인증서 지문(비밀 아님, 저장소 Variables). 있으면 zip에 server.json(가입키 없음)을 넣는다.
+          MY_CIVIL3D_CENTRAL_URL: ${{ vars.CENTRAL_URL }}
+          MY_CIVIL3D_CENTRAL_CERT_SHA256: ${{ vars.CENTRAL_CERT_SHA256 }}
         run: |
           $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/package.ps1', '-NuGetAutodesk')
           if ('${{ github.ref }}'.StartsWith('refs/tags/v')) { $arguments += '-RequireSignature' }

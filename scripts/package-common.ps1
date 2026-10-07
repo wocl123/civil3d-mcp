@@ -164,16 +164,19 @@ function Invoke-BundleInstall([string]$Source, [string]$DestinationRoot) {
 }
 
 # ── 온라인 설치: 설치.bat 옆에 server.json(중앙 서버 주소, 가입키)이 있으면 서버의 배포 버전을 확인해 받는다.
+# enrollKey(가입키)는 관리자가 만든 설치 묶음(kit)에만 있다. GitHub 릴리스 zip의 server.json에는 주소와 지문만 있고,
+# 그 PC는 설치 후 가입을 신청해 검토자의 승인을 받는다.
 function Read-ServerSettings([string]$File) {
   $settings = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
-  if (-not ($settings.url -match '^https?://[^/\s?#@]+(/[^\s?#]*)?$') -or -not $settings.enrollKey) { throw 'server.json의 url 또는 enrollKey가 올바르지 않습니다.' }
+  if (-not ($settings.url -match '^https?://[^/\s?#@]+(/[^\s?#]*)?$')) { throw 'server.json의 url이 올바르지 않습니다.' }
   $url = ([string]$settings.url).TrimEnd('/')
   $uri = [Uri]$url
   $pin = if ($settings.PSObject.Properties['certSha256']) { ([string]$settings.certSha256).Replace(':', '').ToLowerInvariant() } else { '' }
   # 다른 PC의 서버는 HTTPS + 인증서 지문으로만 연결한다. HTTP는 이 PC 안(127.0.0.1, localhost)만.
   if ($uri.Scheme -eq 'https' -and $pin -notmatch '^[a-f0-9]{64}$') { throw 'server.json에 서버 인증서 지문(certSha256)이 없습니다. 관리자에게 새 설치 묶음을 받으세요.' }
   if ($uri.Scheme -eq 'http' -and -not $uri.IsLoopback) { throw '다른 PC의 중앙 서버는 HTTPS로만 연결합니다. 관리자에게 새 설치 묶음을 받으세요.' }
-  return [pscustomobject]@{ url = $url; enrollKey = [string]$settings.enrollKey; certSha256 = $pin }
+  $key = if ($settings.PSObject.Properties['enrollKey']) { [string]$settings.enrollKey } else { '' }
+  return [pscustomobject]@{ url = $url; enrollKey = $key; certSha256 = $pin }
 }
 # HTTPS 서버 인증서를 지문으로 고정한다(공용 인증기관 대신). 이 설치 과정의 모든 요청에 적용된다.
 function Enable-CertificatePin([string]$Pin) {
@@ -234,7 +237,8 @@ function Save-CentralJoin($Server, [string]$DataDir) {
     try { if ((Get-Content -LiteralPath $settingsFile -Raw -Encoding UTF8 | ConvertFrom-Json).central) { return $false } } catch { }
   }
   New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
-  $join = [ordered]@{ url = $Server.url; enrollKey = $Server.enrollKey }
+  $join = [ordered]@{ url = $Server.url }
+  if ($Server.enrollKey) { $join.enrollKey = $Server.enrollKey }
   if ($Server.certSha256) { $join.certSha256 = $Server.certSha256 }
   $json = [pscustomobject]$join | ConvertTo-Json
   [IO.File]::WriteAllText((Join-Path $DataDir 'central-join.json'), $json, [Text.UTF8Encoding]::new($false))
