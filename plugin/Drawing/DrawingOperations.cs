@@ -141,7 +141,7 @@ internal static class DrawingOperations
         return View(id, receipt);
     }
 
-    // 확정: 사용자가 결과를 받아들였다(팔레트의 [적용]). 되돌리기에만 쓰는 기록(작업 기록, 작업 뒤 기록, 결과)을 버린다.
+    // 확정: 사용자가 결과를 받아들였다(팔레트의 [확정]). 되돌리기에만 쓰는 기록(작업 기록, 작업 뒤 기록, 결과)을 버린다.
     // 확정한 작업은 버튼으로 되돌릴 수 없다(Ctrl+Z는 AutoCAD 기능이라 그대로 된다).
     // 영수증이 없으면(Civil 3D를 다시 켠 경우 등) 버릴 기록도 없으므로 확정으로 본다.
     public static object Confirm(JsonObject? parameters)

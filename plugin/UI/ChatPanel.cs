@@ -495,7 +495,7 @@ internal sealed class ChatPanel : UserControl
         string? fixId = change["fixId"]?.ToString();
         string? operationId = change["operationId"]?.ToString();
         if (fixId is null) return;
-        // AI가 대화로 적용한 결과는 그 계획 카드를 고쳐 쓴다(같은 카드에 [되돌리기]·[적용]이 나타난다).
+        // AI가 대화로 적용한 결과는 그 계획 카드를 고쳐 쓴다(같은 카드에 [되돌리기]·[확정]이 나타난다).
         if (_cards.TryGetValue(fixId, out Action<JsonNode>? update))
         {
             if (applied) update(change);
@@ -514,9 +514,10 @@ internal sealed class ChatPanel : UserControl
             status.Text = "변경이 적용되었습니다. 재검토에 실패하여 기준 만족 여부는 확인하지 못했습니다. 취소하려면 되돌리기를 눌러 주세요.";
         body.Children.Add(status);
         // 버튼: 적용 전에는 [적용하기] (삭제 계획은 [진행]/[취소]).
-        //       작업이 끝나면 [되돌리기]/[적용].
-        //         [적용]: 결과를 확정한다. 되돌리기용 작업 기록을 정리하고, 카드는 끝난다.
-        //         [되돌리기] 뒤의 [적용]: 되돌린 작업을 다시 적용한다.
+        //       작업이 끝나면 [되돌리기]/[확정].
+        //         [확정]: 도면은 그대로 두고 되돌리기용 작업 기록을 정리한다. 카드는 끝난다.
+        //       되돌린 뒤: 값 변경은 [다시 적용]. 삭제는 버튼 없이 끝난다(다시 지우려면 새로 요청 → 새 목록 확인).
+        //       같은 이름의 버튼이 상태에 따라 "확정"과 "다시 실행"을 오가면 안 된다(되돌린 삭제가 다시 실행되던 문제).
         bool deleting = change["kind"]?.ToString() == "delete";
         if (deleting && state == "planned") status.Text = "위 객체가 함께 삭제되거나 영향을 받습니다. 진행할까요?";
         if (deleting && state == "applied") status.Text = "삭제했습니다. 복원하려면 되돌리기를 눌러 주세요.";
@@ -530,10 +531,13 @@ internal sealed class ChatPanel : UserControl
         void Refresh()
         {
             bool done = operationId is not null && state is "applied" or "undone" or "unknown";
-            apply.Content = done ? "적용" : deleting ? "진행" : "적용하기";
-            apply.ToolTip = state == "applied" ? "이 결과로 확정합니다. 되돌리기 기록을 정리하며, 이후에는 버튼으로 되돌릴 수 없습니다."
-                : done ? "되돌린 작업을 다시 적용" : deleting ? "위 목록대로 삭제 (Undo 한 번으로 되돌릴 수 있음)" : "이 수정안을 현재 도면에 적용";
+            apply.Content = state == "applied" ? "확정" : state == "undone" ? "다시 적용" : deleting ? "진행" : "적용하기";
+            apply.ToolTip = state == "applied" ? "도면은 그대로 두고 이 결과로 확정합니다. 이후에는 버튼으로 되돌릴 수 없습니다."
+                : state == "undone" ? "되돌린 변경을 같은 값으로 다시 적용합니다"
+                : deleting ? "위 목록대로 삭제 (Undo 한 번으로 되돌릴 수 있음)" : "이 수정안을 현재 도면에 적용";
             apply.IsEnabled = !_busy && applicable && (state is "planned" or "undone" || (state == "applied" && operationId is not null));
+            // 되돌린 삭제는 끝난 카드다.
+            apply.Visibility = deleting && state == "undone" ? Visibility.Collapsed : Visibility.Visible;
             cancel.IsEnabled = !_busy && state == "planned";
             undo.IsEnabled = !_busy && operationId is not null && state == "applied";
             // 되돌리기는 작업이 끝난 뒤에, 취소는 삭제 계획이 아직 적용 전일 때만 보인다. 확정하면 버튼을 모두 숨긴다.
@@ -555,7 +559,7 @@ internal sealed class ChatPanel : UserControl
                     : "도면 변경이 적용되었습니다.";
             Refresh();
         };
-        // [적용] 확정: 도면은 바꾸지 않고 작업 기록만 정리한다.
+        // [확정]: 도면은 바꾸지 않고 작업 기록만 정리한다.
         async Task Confirm()
         {
             if (_busy) return;
@@ -584,6 +588,7 @@ internal sealed class ChatPanel : UserControl
                 {
                     state = result["state"]?.ToString() ?? "unknown";
                     status.Text = result["message"]?.ToString() ?? "되돌리기 결과 확인이 필요합니다.";
+                    if (deleting && state == "undone") status.Text += "\n다시 삭제하려면 새로 요청해 주세요. 그때의 목록을 다시 보여 드립니다.";
                 }
                 else
                 {

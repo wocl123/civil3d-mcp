@@ -37,6 +37,9 @@ export async function applyFix(fixId: string, offered: string[], requestId = pro
       // 되돌리기 확인 영수증이 있을 때만 재적용을 허용한다. 아무 변경 뒤에 수정안을 재활용하지 않는다.
       if (previous.state !== "undone" || previous.operationId !== reapplyOperation)
         throw new Error("Fix already applied or its outcome is unknown. Check the operation before continuing.");
+      // 되돌린 삭제는 옛 계획으로 다시 실행하지 않는다. 되돌리기는 "지우지 않겠다"는 결정이고,
+      // 다시 지우려면 새 계획(그때의 목록과 영향)을 보고 동의해야 한다.
+      if (fix.remove) throw new Error("되돌린 삭제는 다시 실행하지 않습니다. 다시 삭제하려면 새로 요청해 주세요.");
       const receipt = await callPlugin("change.result", { operationId: previous.operationId }) as Operation;
       if (receipt.state !== "undone") throw new Error("Undo result could not be verified.");
       expectedRevision = receipt.revision;
@@ -116,7 +119,7 @@ async function recheck(fix: StoredFix) {
     summary: reports.map(report => ({ target: report.target, ...report.summary })) };
 }
 
-// 확정([적용] 버튼): 사용자가 결과를 받아들였다. 플러그인은 되돌리기용 작업 기록을 버리고,
+// 확정([확정] 버튼): 사용자가 결과를 받아들였다. 플러그인은 되돌리기용 작업 기록을 버리고,
 // 이 작업은 더 이상 버튼으로 되돌리거나 다시 적용할 수 없다.
 export async function confirmOperation(operationId: string, offered: string[]) {
   const operation = await readOperation(operationId);

@@ -78,6 +78,8 @@ try {
   const { usedFix } = await import('../build/changes/operations.js');
   const reapplied = await applyFix(id, [id], 'edit-reapply', applied.data.operationId);
   assert.equal(reapplied.applied, true);
+  await assert.rejects(undoOperation(applied.data.operationId, [id]), /superseded/, 'an old card cannot undo the newer operation');
+  assert.equal((await usedFix(id)).operationId, reapplied.operationId, 'old card must not overwrite latest usage');
   const confirmed = await confirmOperation(reapplied.operationId, [id]);
   assert.equal(confirmed.state, 'confirmed');
   assert.equal(confirmed.result, undefined, 'confirm drops the undo details');
@@ -86,7 +88,7 @@ try {
   await assert.rejects(applyFix(id, [id], 'edit-again', reapplied.operationId), /already applied/);
   assert.equal((await confirmOperation(reapplied.operationId, [id])).state, 'confirmed', 'confirm is idempotent');
 
-  console.log('edit scenario passed: plan, missing layer, name clash, consent, apply, undo, reapply, confirm');
+  console.log('edit scenario passed: plan, missing layer, name clash, consent, apply, undo, reapply, old-card refusal, confirm');
 } finally {
   await new Promise(resolve => bridge.close(resolve));
 }

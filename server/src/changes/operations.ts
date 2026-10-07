@@ -9,7 +9,7 @@ import type { StoredFix } from "./types/StoredFix.js";
 
 export type Operation = {
   operationId: string; fixId: string; requestId: string; at: string;
-  state: "running" | "applied" | "rejected" | "unknown" | "undone" | "confirmed";   // confirmed: 사용자가 [적용]으로 확정함
+  state: "running" | "applied" | "rejected" | "unknown" | "undone" | "confirmed";   // confirmed: 사용자가 [확정]을 누름
   title: string; target: string; labels: string[]; kind?: "delete" | "create" | "change";
   drawingId: string; revision: string; result?: Record<string, unknown>; recheck?: unknown; warnings?: string[];
 };

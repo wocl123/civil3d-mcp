@@ -69,20 +69,17 @@ try {
   setDrawing('other-drawing');
   await assert.rejects(undoOperation(applied.data.operationId, [id]), /drawing mismatch/);
   setDrawing('fake-drawing-1');
-  const undone = await undoOperation(applied.data.operationId, [id]);
-  assert.equal(undone.state, 'undone');
-  assert.equal((await undoOperation(applied.data.operationId, [id])).state, 'undone', 'repeated undo is idempotent');
   const { usedFix, operationStatus } = await import('../build/changes/operations.js');
-  const reapplied = await applyFix(id, [id], 'delete-reapply', applied.data.operationId);
-  assert.equal(reapplied.applied, true);
-  await assert.rejects(undoOperation(applied.data.operationId, [id]), /superseded/);
-  assert.equal((await usedFix(id)).operationId, reapplied.operationId, 'old card must not overwrite latest usage');
   // 실제로 복구됐지만 응답을 잃은 경우: unknown으로 저장하고 영수증 조회로 회복한다.
   failMethod('after.undo', 'undo response lost');
-  await assert.rejects(undoOperation(reapplied.operationId, [id]), /undo response lost/);
+  await assert.rejects(undoOperation(applied.data.operationId, [id]), /undo response lost/);
   assert.equal((await usedFix(id)).state, 'unknown');
   failMethod('after.undo');
   assert.equal((await operationStatus(id, [id])).state, 'undone');
+  assert.equal((await undoOperation(applied.data.operationId, [id])).state, 'undone', 'repeated undo is idempotent');
+  // 되돌린 삭제는 옛 계획으로 다시 실행하지 않는다(다시 지우려면 새 계획).
+  await assert.rejects(applyFix(id, [id], 'delete-reapply', applied.data.operationId), /되돌린 삭제는 다시 실행하지 않습니다/);
+  assert.equal((await usedFix(id)).state, 'undone', 'a refused reapply leaves the undo in place');
   const back = await palette();
   assert.ok(JSON.stringify((await call(back, 'list_alignments', {})).data).includes('본선'), 'undo restores it');
 
@@ -128,13 +125,16 @@ try {
   const restoredPlan = await call(inspector, 'plan_delete', { alignments: ['A램프'] });
   assert.equal(restoredPlan.data.delete[0].corridors[0].name, 'A램프 코리더', 'corridor is restored with alignment');
   await inspector.close();
-  const finalApply = await applyFix(again.data.option.id, [again.data.option.id], 'delete-final', done.data.operationId);
+  // 되돌린 뒤 다시 지우려면 새 계획에 동의한다(옛 계획 재실행은 위에서 거절됨).
+  const newPlan = restoredPlan.data.option.id;
+  assert.notEqual(newPlan, again.data.option.id, 'deleting again needs a new plan');
+  const finalApply = await applyFix(newPlan, [newPlan], 'delete-final');
   assert.equal(finalApply.applied, true);
   bumpRevision();
-  await assert.rejects(undoOperation(finalApply.operationId, [again.data.option.id]), /undo conflict/);
-  assert.equal((await usedFix(again.data.option.id)).state, 'applied', 'later edit refusal must preserve applied state');
+  await assert.rejects(undoOperation(finalApply.operationId, [newPlan]), /undo conflict/);
+  assert.equal((await usedFix(newPlan)).state, 'applied', 'later edit refusal must preserve applied state');
 
-  console.log('delete scenario passed: plan, consent, delete, undo, reapply, old-card refusal, lost undo response, drawing/ownership guards, corridor restoration, later-edit refusal, cancel');
+  console.log('delete scenario passed: plan, consent, delete, lost undo response, undo, no reapply of an undone delete, drawing/ownership guards, corridor restoration, later-edit refusal, cancel');
 } finally {
   await new Promise(resolve => bridge.close(resolve));
 }
