@@ -13,12 +13,24 @@
     <AecDir Condition="'$(AecDir)' == ''">$(AcadDir)\ACA</AecDir>
   </PropertyGroup>
 
-  <Target Name="ValidateAutodeskReferences" BeforeTargets="ResolveReferences">
+  <!--
+    Autodesk API references, two ways:
+      - default: the DLLs of the installed Civil 3D 2025 (AcadDir, CivilDir, AecDir).
+      - AutodeskRefs=NuGet: Autodesk's official reference packages for the base 2025 release,
+        so a PC or CI runner without Civil 3D can build (dotnet build -p:AutodeskRefs=NuGet).
+    Either way the Autodesk DLLs are only compiled against and never copied to the output.
+  -->
+  <ItemGroup Condition="'$(AutodeskRefs)' == 'NuGet'">
+    <PackageReference Include="AutoCAD.NET" Version="25.0.1" ExcludeAssets="runtime" />   <!-- 25.0.0 on nuget.org points to a missing dependency -->
+    <PackageReference Include="Civil3D.NET" Version="13.7.145" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <Target Name="ValidateAutodeskReferences" BeforeTargets="ResolveReferences" Condition="'$(AutodeskRefs)' != 'NuGet'">
     <Error Condition="!Exists('$(AcadDir)\accoremgd.dll') Or !Exists('$(AcadDir)\AcDbMgd.dll') Or !Exists('$(AcadDir)\acmgd.dll') Or !Exists('$(CivilDir)\AeccDbMgd.dll') Or !Exists('$(AecDir)\AecBaseMgd.dll')"
            Text="Civil 3D 2025 managed DLLs were not found. Set AcadDir, CivilDir, and AecDir to the installed Autodesk directories." />
   </Target>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(AutodeskRefs)' != 'NuGet'">
     <Reference Include="accoremgd" HintPath="$(AcadDir)\accoremgd.dll" Private="false" />
     <Reference Include="AcDbMgd" HintPath="$(AcadDir)\AcDbMgd.dll" Private="false" />
     <Reference Include="acmgd" HintPath="$(AcadDir)\acmgd.dll" Private="false" />

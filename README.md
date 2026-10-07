@@ -556,5 +556,5 @@ replace manual checks of WPF controls, CAD undo grouping, and API effects in Civ
 ## 배포 패키지
 
 Civil 3D 2025용 번들 생성은 `scripts/package.ps1`을 사용합니다. Node·npm을 동봉하고,
-운영 의존성과 파일 manifest를 검사한 뒤 `dist/`에 번들과 설치 zip을 만듭니다.
+운영 의존성과 파일 manifest를 검사한 뒤 `dist/`에 설치 zip과 SHA-256 파일만 만듭니다.
 설치·업데이트·실패 복구·제거 방법과 현장 검증 범위는 [배포 설치 안내](docs/배포_설치.md)를 참고하세요.

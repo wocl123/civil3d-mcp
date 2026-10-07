@@ -1,4 +1,5 @@
-﻿param([string]$AcadDir = 'C:\Program Files\Autodesk\AutoCAD 2025', [string]$NodeArchive)
+﻿# -NuGetAutodesk: Civil 3D가 없는 PC·CI에서 Autodesk 공식 참조 패키지(NuGet)로 플러그인을 빌드한다.
+param([string]$AcadDir = 'C:\Program Files\Autodesk\AutoCAD 2025', [string]$NodeArchive, [switch]$NuGetAutodesk)
 . (Join-Path $PSScriptRoot 'package-common.ps1')
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $config = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'node-runtime.json') -Raw | ConvertFrom-Json
@@ -33,7 +34,8 @@ try {
   $npm = Join-Path $runtime 'node_modules/npm/bin/npm-cli.js'
   $env:Path = $runtime + [IO.Path]::PathSeparator + $env:Path
   if ((& $node --version).Trim() -ne "v$($config.version)") { throw 'Node 실행 버전이 다릅니다.' }
-  Run dotnet @('build',(Join-Path $repo 'plugin/MyCivil3DMcp.Plugin.csproj'),'-c','Release',"-p:AcadDir=$AcadDir",'-clp:ErrorsOnly')
+  $autodesk = if ($NuGetAutodesk) { '-p:AutodeskRefs=NuGet' } else { "-p:AcadDir=$AcadDir" }
+  Run dotnet @('build',(Join-Path $repo 'plugin/MyCivil3DMcp.Plugin.csproj'),'-c','Release',$autodesk,'-clp:ErrorsOnly')
   # tsc는 개발 의존성이다. 빌드 후 별도 준비 폴더에 운영 의존성만 설치한다.
   Push-Location (Join-Path $repo 'server')
   try {
@@ -87,10 +89,13 @@ try {
   $zip = Join-Path $work "MyCivil3DMcp-$($package.version)-win-x64.zip"
   [IO.Compression.ZipFile]::CreateFromDirectory($release,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
   # 모든 검사 후 결과를 공개한다. 이전 dist는 새 산출물 확인 전 삭제하지 않는다.
+  # dist에는 전달할 zip과 해시만 둔다. 번들과 설치 파일은 zip 안에 있다(예전 빌드가 풀어 둔 사본은 지운다).
   $destination = Join-Path $dist 'MyCivil3DMcp.bundle'
   if (Test-Path -LiteralPath $destination) { Remove-OwnedDirectory $destination $dist }
-  Copy-Item -LiteralPath $bundle -Destination $destination -Recurse
-  foreach ($name in @('install.ps1','installer-ui.ps1','uninstall.ps1','package-common.ps1','설치.bat','삭제.bat','먼저읽어주세요.txt','README-install.md')) { Copy-Item -LiteralPath (Join-Path $release $name) -Destination $dist -Force }
+  foreach ($name in @('install.ps1','installer-ui.ps1','uninstall.ps1','package-common.ps1','설치.bat','삭제.bat','먼저읽어주세요.txt','README-install.md')) {
+    $loose = Join-Path $dist $name
+    if (Test-Path -LiteralPath $loose -PathType Leaf) { Remove-Item -LiteralPath $loose -Force }
+  }
   $finalZip = Join-Path $dist ([IO.Path]::GetFileName($zip))
   Copy-Item -LiteralPath $zip -Destination $finalZip -Force
   ((Get-FileHash -LiteralPath $finalZip -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($finalZip)) | Set-Content -LiteralPath ($finalZip + '.sha256') -Encoding ASCII
