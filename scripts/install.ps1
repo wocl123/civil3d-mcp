@@ -16,6 +16,10 @@
 . (Join-Path $PSScriptRoot 'package-common.ps1')
 if (-not $TrustedKeyFile) { $TrustedKeyFile = Get-TrustedKeyFile }
 $target = Join-Path $DestinationRoot 'MyCivil3DMcp.bundle'
+# 배포 zip은 번들을 zip 하나(MyCivil3DMcp.bundle.zip)로 담는다. 파일 수천 개를 탐색기로 푸는 대신 여기서 한 번에 푼다.
+$payload = Join-Path $PSScriptRoot 'MyCivil3DMcp.bundle.zip'
+$hasBundleFolder = Test-Path -LiteralPath (Join-Path $BundlePath 'Contents/manifest.json')
+$hasLocalBundle = $hasBundleFolder -or (Test-Path -LiteralPath $payload)
 Write-Host '실행 중인 프로그램을 확인하고 있습니다...'
 if (-not $SkipRunningCheck) { Assert-BundleStopped $target }
 Write-Host '설치를 진행할 수 있습니다. 파일 검증과 복사 중에는 창을 닫지 마세요.'
@@ -47,19 +51,28 @@ try {
       $download = Join-Path ([IO.Path]::GetTempPath()) ('mycivil3d-download-' + [guid]::NewGuid().ToString('N'))
       New-Item -ItemType Directory -Path $download | Out-Null
       $Archive = Save-ServerRelease $server $release $download
-    } elseif (Test-Path -LiteralPath (Join-Path $BundlePath 'Contents/manifest.json')) {
+    } elseif ($hasLocalBundle) {
       # 서버에 연결하지 못했거나 배포 중인 버전이 없으면, 이 폴더의 설치 파일로 설치한다.
       Write-Host "서버에서 받지 못해 이 폴더의 설치 파일로 설치합니다. ($(if ($failure) { $failure } else { '배포 중인 버전 없음' }))"
     } else {
       throw "서버에서 설치 파일을 받지 못했습니다. $(if ($failure) { "($failure) " })네트워크와 server.json의 주소를 확인하세요."
     }
   }
+  if (-not $Archive -and -not $hasBundleFolder -and (Test-Path -LiteralPath $payload)) { $Archive = $payload }
   if ($Archive) {
+    Write-Host '[1/4] 설치 파일의 압축을 풀고 있습니다...'
     New-Item -ItemType Directory -Path $DestinationRoot -Force | Out-Null
     Assert-NoReparse $DestinationRoot
     $unpack = Assert-Within (Join-Path $DestinationRoot ('.mycivil3d-unpack-' + [guid]::NewGuid().ToString('N'))) $DestinationRoot
     Expand-SafeArchive $Archive $unpack
     $BundlePath = Join-Path $unpack 'MyCivil3DMcp.bundle'
+    # 배포 zip(설치 파일 + MyCivil3DMcp.bundle.zip)이면 안의 번들 zip을 한 번 더 푼다. 예전 형식(번들 폴더)도 그대로 받는다.
+    $inner = Join-Path $unpack 'MyCivil3DMcp.bundle.zip'
+    if (-not (Test-Path -LiteralPath $BundlePath) -and (Test-Path -LiteralPath $inner)) {
+      $payloadDir = Join-Path $unpack 'payload'
+      Expand-SafeArchive $inner $payloadDir
+      $BundlePath = Join-Path $payloadDir 'MyCivil3DMcp.bundle'
+    }
   }
   # 어디서 온 번들이든 서명을 확인한다. 서명이 맞아야 manifest의 SHA-256 목록을 믿을 수 있다.
   if ($AllowUnsigned) { Write-Host '서명 확인을 건너뜁니다(개발용 빌드).' } else { Assert-BundleSignature $BundlePath $TrustedKeyFile }

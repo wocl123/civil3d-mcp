@@ -67,13 +67,22 @@ const installedVersion = async () =>
 
 let central;
 try {
-  // 0) 시험용 번들: 받은 zip을 풀고 테스트 키로 서명한 뒤, 번들만 담은 zip을 다시 만든다
+  // 0) 시험용 번들: 받은 zip(설치 파일 + MyCivil3DMcp.bundle.zip)을 풀고 테스트 키로 서명한 뒤, 같은 형식의 zip을 다시 만든다
   const source = join(temporary, 'zip 그대로');
-  ps(`Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory(${quote(zip)}, ${quote(source)})`);
+  const unzip = (from, to) => ps(`Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory(${quote(from)}, ${quote(to)})`);
+  const zipDir = (from, to, withBase) => ps(`Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory(${quote(from)}, ${quote(to)}, 'Optimal', $${withBase})`);
+  unzip(zip, source);
+  assert.ok(existsSync(join(source, 'MyCivil3DMcp.bundle.zip')) && !existsSync(join(source, 'MyCivil3DMcp.bundle')),
+    'the release zip carries the bundle as one inner zip (few files to extract by hand)');
+  unzip(join(source, 'MyCivil3DMcp.bundle.zip'), source);
+  await rm(join(source, 'MyCivil3DMcp.bundle.zip'));
   await signManifest(join(source, 'MyCivil3DMcp.bundle'));
+  const publishSource = join(temporary, 'publish-source');
+  await mkdir(publishSource);
+  zipDir(join(source, 'MyCivil3DMcp.bundle'), join(publishSource, 'MyCivil3DMcp.bundle.zip'), true);
   const published = join(temporary, 'publish', basename(zip));
   await mkdir(dirname(published), { recursive: true });
-  ps(`Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory(${quote(join(source, 'MyCivil3DMcp.bundle'))}, ${quote(published)}, 'Optimal', $true)`);
+  zipDir(publishSource, published, false);
 
   // 1) 중앙 서버: 서명 없는 zip, 다른 키로 서명한 zip은 받지 않는다 → (시험이므로) --unsigned 로 넣기 → 배포 지정
   assert.match(cliFails('add', published), /서명\(\.sig\)이 없는 설치본은 받지 않습니다/, 'central refuses an unsigned zip');
@@ -247,6 +256,16 @@ try {
   assert.match(newer.out, /\[완료\] 설치된 버전\(99\.0\.0\)이 이 설치 파일/, 'a newer installed version is kept');
   await writeFile(versionFile, versionText);
 
+  // 9-1) 배포 zip을 그대로 푼 폴더(설치 파일 + MyCivil3DMcp.bundle.zip, 번들 폴더 없음)에서 설치
+  const unpacked = join(temporary, '배포 zip 푼 폴더');
+  await mkdir(unpacked);
+  await placeScripts(unpacked);
+  await copyFile(join(publishSource, 'MyCivil3DMcp.bundle.zip'), join(unpacked, 'MyCivil3DMcp.bundle.zip'));
+  const fromPayload = installFrom(unpacked, '-Reinstall');
+  assert.equal(fromPayload.code, 0, fromPayload.out);
+  assert.match(fromPayload.out, /설치했습니다/, 'the installer unpacks MyCivil3DMcp.bundle.zip itself');
+  assert.equal(await installedVersion(), version);
+
   // 10) 서버가 꺼졌고 이 폴더에 설치 파일도 없으면, 이유를 알려 주고 멈춘다
   central.kill(); central = undefined;
   await writeFile(join(kit, 'server.json'), JSON.stringify({ url, enrollKey: newKey, certSha256: pin }));
@@ -255,7 +274,7 @@ try {
   assert.match(offline.out, /서버에서 설치 파일을 받지 못했습니다/);
   assert.equal(await installedVersion(), version, 'nothing changes when the server is down');
 
-  console.log(`Online install passed: publish ${version}; automatic update (download, wait for Civil 3D to exit, signed install); HTTPS with a pinned certificate (missing/wrong fingerprint and remote HTTP refused, a failed join keeps the request); central refuses unsigned and wrongly signed zips; install from server.json only, already up to date, hash mismatch refused, bundle signed with another key refused; service joins central and drops the key; kit carries the fingerprint, no HTTP kits; admin revoke and key rotation apply at once; local folder install checks signature and version (unsigned refused, same/newer skipped, reinstall); stale work and old backups removed; offline without files explained.`);
+  console.log(`Online install passed: publish ${version}; automatic update (download, wait for Civil 3D to exit, signed install); HTTPS with a pinned certificate (missing/wrong fingerprint and remote HTTP refused, a failed join keeps the request); central refuses unsigned and wrongly signed zips; install from server.json only, already up to date, hash mismatch refused, bundle signed with another key refused; service joins central and drops the key; kit carries the fingerprint, no HTTP kits; admin revoke and key rotation apply at once; inner bundle zip installs without unpacking by hand; local folder install checks signature and version (unsigned refused, same/newer skipped, reinstall); stale work and old backups removed; offline without files explained.`);
 } finally {
   central?.kill();
   await rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

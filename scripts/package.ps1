@@ -97,8 +97,12 @@ try {
   if ($LASTEXITCODE -ne 0) { throw '설치·복구 검사 실패' }
   Add-Type -AssemblyName System.IO.Compression
   Add-Type -AssemblyName System.IO.Compression.FileSystem
+  # 번들(파일 수천 개)은 zip 하나로 묶는다. 사용자는 설치 파일 몇 개만 풀고, 번들은 설치 프로그램이 .NET으로 빠르게 푼다.
+  [IO.Compression.ZipFile]::CreateFromDirectory($bundle,(Join-Path $release 'MyCivil3DMcp.bundle.zip'),[IO.Compression.CompressionLevel]::Optimal,$true)
+  Remove-Item -LiteralPath $bundle -Recurse -Force
   $zip = Join-Path $work "MyCivil3DMcp-$($package.version)-win-x64.zip"
-  [IO.Compression.ZipFile]::CreateFromDirectory($release,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
+  # 안의 번들 zip은 이미 압축되어 있으므로 바깥은 압축하지 않는다(만들기·풀기 모두 빠르다).
+  [IO.Compression.ZipFile]::CreateFromDirectory($release,$zip,[IO.Compression.CompressionLevel]::NoCompression,$false)
   # 만든 zip으로 온라인 설치(중앙 서버 배포 → server.json만 있는 폴더에서 설치)를 끝까지 확인한다.
   Run $node @((Join-Path $repo 'server/scripts/online-install.mjs'),$zip)
   # 모든 검사 후 결과를 공개한다. 이전 dist는 새 산출물 확인 전 삭제하지 않는다.

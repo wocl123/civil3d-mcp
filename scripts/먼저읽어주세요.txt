@@ -27,6 +27,7 @@ Civil 3D 또는 AutoCAD가 실행 중이면 종료하세요.
 [알아두세요]
 ZIP 전체를 압축 풀어야 합니다. BAT 파일만 따로 옮기거나 ZIP 안에서 실행하지 마세요.
 설치.bat, 삭제.bat, installer-ui.ps1, install.ps1, uninstall.ps1,
-package-common.ps1과 MyCivil3DMcp.bundle 폴더는 같은 위치에 두세요.
+package-common.ps1과 MyCivil3DMcp.bundle.zip은 같은 위치에 두세요.
+MyCivil3DMcp.bundle.zip은 풀지 마세요. 설치 프로그램이 직접 풉니다.
 설치에 필요한 실행 도구는 포함되어 있어 별도 명령 입력이 필요하지 않습니다.
 AI 설치·로그인·질문에는 인터넷 연결과 해당 AI 계정이 필요합니다.
