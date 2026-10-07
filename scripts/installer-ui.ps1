@@ -68,7 +68,8 @@ if ($PreviewPath) {
  try { $encoder.Save($stream) } finally { $stream.Dispose() }
  return
 }
-$state = @{ worker=$null; handle=$null; running=$false; index=0 }
+# upToDate: 설치할 것이 없다는 "[완료]" 줄을 받았는지. reinstall: 다음 실행을 [다시 설치]로 하는지.
+$state = @{ worker=$null; handle=$null; running=$false; index=0; upToDate=$null; reinstall=$false }
 $timer = [Windows.Threading.DispatcherTimer]::new(); $timer.Interval = [TimeSpan]::FromMilliseconds(150)
 $c.CloseButton.Add_Click({ $window.Close() })
 # 파일 교체 중 닫기로 설치를 중단하지 않도록 완료까지 기다린다.
@@ -78,10 +79,10 @@ $c.InstallButton.Add_Click({
  $c.StatusTitle.Text=$copy.Running; $c.StatusText.Text='실행 중인 프로그램을 확인하고 있습니다...'
  $c.StepText.Text=$copy.Waiting
  $c.Progress.Value=0; $c.Progress.IsIndeterminate=$true; $c.Progress.Foreground=[Windows.Media.Brushes]::DodgerBlue
- $state.index=0; $state.running=$true
+ $state.index=0; $state.running=$true; $state.upToDate=$null
  # 기존 설치 로직을 백그라운드 runspace에서 그대로 실행한다.
  $state.worker=[PowerShell]::Create()
- [void]$state.worker.AddScript('param($installer) & $installer').AddArgument((Join-Path $PSScriptRoot $copy.Script))
+ [void]$state.worker.AddScript('param($installer,$again) if ($again) { & $installer -Reinstall } else { & $installer }').AddArgument((Join-Path $PSScriptRoot $copy.Script)).AddArgument($state.reinstall)
  $state.handle=$state.worker.BeginInvoke(); $timer.Start()
 })
 $timer.Add_Tick({
@@ -90,7 +91,7 @@ $timer.Add_Tick({
   $message=[string]$messages[$state.index].MessageData; $state.index++
   if ($message -match '^\[(\d)/(\d)\]\s*(.*)') {
    $c.Progress.Value=[int]$Matches[1]-1; $c.StepText.Text="단계 $($Matches[1]) / $($Matches[2])"; $c.StatusText.Text=$Matches[3]
-  }
+  } elseif ($message -match '^\[완료\]\s*(.*)') { $state.upToDate=$Matches[1] }
  }
  if (-not $state.handle.IsCompleted) { return }
  $timer.Stop(); $failure=$null
@@ -102,6 +103,12 @@ $timer.Add_Tick({
   $c.StatusTitle.Text=$copy.Failure; $c.StatusText.Text=$failure
   $c.StepText.Text='원인을 확인한 뒤 다시 시도하세요'; $c.InstallButton.Content='다시 시도'; $c.InstallButton.IsEnabled=$true
   $c.Hint.Text='위 안내에 따라 문제를 해결한 뒤 [다시 시도]를 눌러주세요.'
+ } elseif ($state.upToDate) {
+  # 같은 버전이거나 더 새 버전이 이미 있다: 아무것도 바꾸지 않았다.
+  $c.StatusTitle.Text='설치할 것이 없습니다'; $c.StatusText.Text=$state.upToDate
+  $c.StepText.Text='변경 없음'; $c.Progress.Value=$copy.Count; $c.Progress.Foreground=[Windows.Media.Brushes]::MediumSeaGreen
+  $c.InstallButton.Content='다시 설치'; $c.InstallButton.IsEnabled=$true; $state.reinstall=$true; $c.CloseButton.Content='닫기'
+  $c.Hint.Text='지금 설치된 것을 그대로 쓰면 됩니다. 파일이 손상된 것 같을 때만 [다시 설치]를 누르세요.'
  } else {
   $c.StatusTitle.Text=$copy.Success; $c.StatusText.Text=$copy.Complete
   $c.StepText.Text='모든 작업이 완료되었습니다'; $c.Progress.Value=$copy.Count; $c.Progress.Foreground=[Windows.Media.Brushes]::MediumSeaGreen

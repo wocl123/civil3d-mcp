@@ -6,7 +6,7 @@
 // 설치 대상과 데이터는 모두 임시 폴더다.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -32,8 +32,9 @@ const releaseCli = join(repo, 'central', 'build', 'release.js');
 const cli = (...args) => execFileSync(process.execPath, [releaseCli, ...args], { env: centralEnv, encoding: 'utf8' });
 
 // install.ps1을 설치 파일 폴더에서 실행한다. 한글 출력을 UTF-8로 받는다.
-function install(...extra) {
-  const script = join(kit, 'install.ps1').replace(/'/g, "''");
+function install(...extra) { return installFrom(kit, ...extra); }
+function installFrom(folder, ...extra) {
+  const script = join(folder, 'install.ps1').replace(/'/g, "''");
   const args = [`-DestinationRoot '${plugins.replace(/'/g, "''")}'`, `-DataDir '${data.replace(/'/g, "''")}'`, '-SkipRunningCheck', ...extra].join(' ');
   const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
     `[Console]::OutputEncoding=[Text.Encoding]::UTF8; try { & '${script}' ${args}; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }`],
@@ -72,7 +73,8 @@ ${centralOutput}`)));
   // 3) 다시 실행: 이미 최신
   const again = install();
   assert.equal(again.code, 0, again.out);
-  assert.match(again.out, /이미 최신 버전입니다/);
+  assert.match(again.out, /\[완료\] 이미 같은 버전/);
+  assert.doesNotMatch(again.out, /받고 있습니다/, 'an up-to-date PC downloads nothing');
 
   // 4) 서버가 알려 준 SHA-256과 다른 파일은 설치하지 않는다(설치된 버전은 그대로)
   const releaseJson = join(centralData, 'releases', version, 'release.json');
@@ -101,14 +103,41 @@ ${centralOutput}`)));
   const kitZip = await readFile(join(kitOut, `MyCivil3DMcp-설치-${version}.zip`));
   assert.ok(kitZip.includes(Buffer.from('server.json')), 'the kit carries server.json');
 
-  // 7) 서버가 꺼졌고 이 폴더에 설치 파일도 없으면, 이유를 알려 주고 멈춘다
+  // 7) server.json 없이 폴더의 번들로 설치(배포 zip을 그대로 푼 경우)도 버전을 비교한다
+  const local = join(temporary, 'zip 그대로');
+  execFileSync('powershell.exe', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zip.replace(/'/g, "''")}' -DestinationPath '${local.replace(/'/g, "''")}'`]);
+  for (const name of ['install.ps1', 'package-common.ps1']) await copyFile(join(repo, 'scripts', name), join(local, name));
+  await rm(join(local, 'server.json'), { force: true });
+  const backups = async () => (await readdir(plugins)).filter(name => name.startsWith('MyCivil3DMcp.bundle.backup-')).length;
+  const same = installFrom(local);
+  assert.equal(same.code, 0, same.out);
+  assert.match(same.out, /\[완료\] 이미 같은 버전/, 'the same version is not installed again');
+  assert.doesNotMatch(same.out, /설치 파일을 복사하고 있습니다/);
+  // 끊긴 설치가 남긴 오래된 작업 폴더는 다음 설치 때 지운다
+  const stale = join(plugins, '.mycivil3d-stale');
+  await mkdir(stale); const old = new Date(Date.now() - 2 * 3600 * 1000); await utimes(stale, old, old);
+  const reinstall = installFrom(local, '-Reinstall');
+  assert.equal(reinstall.code, 0, reinstall.out);
+  assert.match(reinstall.out, /설치했습니다/);
+  assert.ok(!existsSync(stale), 'a stale work folder is removed');
+  installFrom(local, '-Reinstall');
+  assert.equal(await backups(), 1, 'only the latest backup is kept');
+  // 더 새 버전이 설치되어 있으면 내려 설치하지 않는다
+  const versionFile = join(plugins, 'MyCivil3DMcp.bundle', 'Contents', 'version.json');
+  const versionText = await readFile(versionFile, 'utf8');
+  await writeFile(versionFile, versionText.replace(/"version":\s*"[^"]+"/, '"version": "99.0.0"'));
+  const newer = installFrom(local);
+  assert.match(newer.out, /\[완료\] 설치된 버전\(99\.0\.0\)이 이 설치 파일/, 'a newer installed version is kept');
+  await writeFile(versionFile, versionText);
+
+  // 8) 서버가 꺼졌고 이 폴더에 설치 파일도 없으면, 이유를 알려 주고 멈춘다
   central.kill(); central = undefined;
   const offline = install('-Reinstall');
   assert.notEqual(offline.code, 0);
   assert.match(offline.out, /서버에서 설치 파일을 받지 못했습니다/);
   assert.equal(await installedVersion(), version, 'nothing changes when the server is down');
 
-  console.log(`Online install passed: publish ${version}, install from server.json only, already up to date, hash mismatch refused, service joins central and drops the key, kit carries server.json, offline without files explained.`);
+  console.log(`Online install passed: publish ${version}, install from server.json only, already up to date, hash mismatch refused, service joins central and drops the key, kit carries server.json, local folder install compares versions (same/newer skipped, reinstall), stale work and old backups removed, offline without files explained.`);
 } finally {
   central?.kill();
   await rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

@@ -172,3 +172,20 @@ function Save-CentralJoin($Server, [string]$DataDir) {
   [IO.File]::WriteAllText((Join-Path $DataDir 'central-join.json'), $json, [Text.UTF8Encoding]::new($false))
   return $true
 }
+
+# ── 설치 폴더 정리: 끊긴 설치가 남긴 작업 폴더와 쌓인 이전 버전 백업(각 120MB 남짓)
+# 1시간 넘은 작업 폴더만 지운다(지금 다른 설치가 쓰는 폴더는 건드리지 않는다).
+function Remove-StaleInstallWork([string]$DestinationRoot) {
+  if (-not (Test-Path -LiteralPath $DestinationRoot)) { return }
+  Get-ChildItem -LiteralPath $DestinationRoot -Directory -Force -Filter '.mycivil3d-*' |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddHours(-1) } |
+    ForEach-Object { try { Remove-OwnedDirectory $_.FullName $DestinationRoot } catch { Write-Host "이전 작업 폴더를 지우지 못했습니다: $($_.Exception.Message)" } }
+}
+# 되돌릴 수 있도록 이번 설치가 만든 백업 하나만 남긴다(폴더를 옮기면 시각이 유지되므로 시각으로 고르지 않는다).
+function Remove-OldBackups([string]$DestinationRoot, [string]$Keep) {
+  if (-not (Test-Path -LiteralPath $DestinationRoot)) { return }
+  $keepFull = if ($Keep) { [IO.Path]::GetFullPath($Keep) } else { '' }
+  Get-ChildItem -LiteralPath $DestinationRoot -Directory -Force -Filter 'MyCivil3DMcp.bundle.backup-*' |
+    Where-Object { -not [string]::Equals($_.FullName, $keepFull, [StringComparison]::OrdinalIgnoreCase) } |
+    ForEach-Object { try { Remove-OwnedDirectory $_.FullName $DestinationRoot } catch { Write-Host "이전 백업을 지우지 못했습니다: $($_.Exception.Message)" } }
+}
