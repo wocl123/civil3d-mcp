@@ -5,7 +5,7 @@
 //                                             새 설치 묶음을 만들어(release kit) 새로 설치할 사람에게 준다.
 //   npm run admin -- rotate reviewer          검토자 키를 새로 만든다(검토자 PC에서 /중앙 검토자 <새 키>)
 //   npm run admin -- fingerprint              HTTPS 인증서 지문(각 PC의 /중앙 연결, 설치 묶음에 쓰인다)
-//   npm run admin -- cases [--status todo] [--out 파일.json]
+//   npm run admin -- cases [--status todo] [--out 파일.json | 파일.md]   (.md: AI에게 넘길 수정 요청서)
 //                                             문제 사례 내보내기(기본: 처리하기로 한 것). 개발자에게 넘겨 고칠 때 쓴다.
 //                                             status: new(분류 전) · todo · done · discarded · all
 
@@ -68,7 +68,33 @@ if (command === "installs" || !command) {
   if (!["new", "todo", "done", "discarded", "all"].includes(status)) fail("status는 new, todo, done, discarded, all 중 하나입니다.");
   const cases = problemCases(new Store(), status, 10000);
   const out = at("--out");
-  if (out) {
+  if (out && out.toLowerCase().endsWith(".md")) {
+    // AI(Claude Code 등)에게 바로 넘기는 수정 요청서. 저장소의 /fix-cases 명령이 이 파일을 읽는다.
+    const name: Record<string, string> = { knowledge: "지식", code: "코드", ai: "AI", other: "기타" };
+    const lines = [
+      `# 수정 요청: 문제 사례 ${cases.length}건 (${new Date().toISOString().slice(0, 10)}, 상태 ${status})`,
+      "",
+      "사용자가 👎를 누르거나, 적용한 변경을 되돌렸거나, 실패한 질문들이다. 검토자가 분류하고 메모를 남겼다.",
+      "질문·답의 <이름>, <파일>, <경로>는 가림 처리된 것이다(원래 도면 이름·경로).",
+      "",
+      "각 사례마다: 원인을 찾는다 → 코드나 지식(knowledge-defaults)을 고친다 → 같은 문제가 다시 나오지 않게 회귀 시험을 더한다",
+      "(설계 계산은 server/scripts/design-regression.mjs, 도구 동작은 해당 시나리오) → 시험을 모두 돌린다.",
+      "고칠 수 없거나 사용자 착오로 보이면 이유를 적는다. 끝나면 사례 번호별 결과를 표로 정리한다.",
+      ""
+    ];
+    cases.forEach((item, index) => {
+      lines.push(`## 사례 ${index + 1} · ${name[item.triage?.category ?? ""] ?? "분류 없음"} · ${item.signals.join(", ")}`);
+      lines.push("", `- 키: \`${item.key}\``, `- 시각: ${item.at}, 버전 ${item.appVersion ?? "?"}, ${item.provider ?? "?"} ${item.model ?? ""}${item.errorKind ? `, 실패 ${item.errorKind}` : ""}`);
+      if (item.triage?.note) lines.push(`- 검토자 메모: ${item.triage.note}`);
+      if (item.tools.length) lines.push(`- 사용한 도구: ${[...new Set(item.tools)].join(", ")}`);
+      lines.push("", "**질문**", "", "```text", item.question ?? "(내용 없음)", "```", "", "**답**", "", "```text", item.answer ?? "(내용 없음)", "```");
+      if (item.feedback.length) lines.push("", "**사용자 의견**", "", ...item.feedback.map(text => `- ${text}`));
+      if (item.changes.length) lines.push("", "**도면 변경**", "", ...item.changes.map(change => `- ${change.state}: ${change.title ?? ""} ${change.labels ?? ""}`));
+      lines.push("");
+    });
+    writeFileSync(out, lines.join("\n"), "utf8");
+    say(`${status} 사례 ${cases.length}건의 수정 요청서를 ${out}에 썼습니다. (질문·답이 들어 있으니 팀 안에서만 다루세요)`);
+  } else if (out) {
     writeFileSync(out, JSON.stringify({ exportedAt: new Date().toISOString(), status, cases }, null, 1), "utf8");
     say(`${status} 사례 ${cases.length}건을 ${out}에 썼습니다. (질문·답이 들어 있으니 팀 안에서만 다루세요)`);
   } else {

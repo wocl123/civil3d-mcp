@@ -10,13 +10,14 @@
 //   /검토 사례 <번호>                  질문·답·의견·변경·도구
 //   /검토 사례 <번호> 처리 <지식|코드|AI|기타> [메모]   처리할 것으로 분류(할 일 목록으로)
 //   /검토 사례 <번호> 버림 [메모]       버림: 중앙에서 내용(질문·답·의견) 삭제
-//   /검토 사례 <번호> 완료 [버전] [메모] 처리 끝   ·   /검토 사례 <번호> 취소   분류 취소
+//   /검토 사례 <번호> 완료 [버전] [메모] 처리 끝(내용 삭제)   ·   /검토 사례 <번호> 취소   분류 취소
+//   /검토 정리                          한 바퀴 정리: 분류 전·할 일 사례만 남기고 나머지 질문의 내용 삭제
 //   /설정값                       지금 적용되는 설정값과 출처
 
 import { install } from "../data/install.js";
 import { centralUrl, insecureUrl, loadSettings, saveSettings } from "../data/settings.js";
 import { PARAMETERS, isParameterKey, parameterSummary } from "../knowledge/parameters.js";
-import { CentralError, decide, decideCase, enroll, getCases, getOfficial, normalizeFingerprint, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
+import { CentralError, cleanupContent, decide, decideCase, enroll, getCases, getOfficial, normalizeFingerprint, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
 import { runSync, syncStatus } from "../sync/syncLoop.js";
 import { lastShown, parseDecision, pick, setShown } from "./shownLists.js";
 
@@ -30,6 +31,7 @@ export async function centralCommand(question: string, conversation?: string): P
   if (text === "/검토") return reviewList(conversation);
   if (text === "/검토 보고") return report();
   if (/^\/검토 사례(\s|$)/.test(text)) return problemCases(text.replace(/^\/검토 사례\s*/, ""), conversation);
+  if (text === "/검토 정리") return cleanup();
 
   // "1 승인" 같은 답은 마지막 목록이 검토 목록일 때만 받는다.
   const listed = lastShown(conversation, "review");
@@ -334,11 +336,23 @@ async function problemCases(rest: string, conversation?: string): Promise<string
       const [first, ...note] = words.split(/\s+/);
       const version = /^\d+\.\d+\.\d+$/.test(first ?? "") ? first : undefined;
       await decideCase(central, { key, action: "done", version, note: (version ? note : [first, ...note]).filter(Boolean).join(" ") });
-      return `${match[1]}번을 완료로 표시했습니다${version ? `(${version}에서 고침)` : ""}.`;
+      return `${match[1]}번을 완료로 표시했습니다${version ? `(${version}에서 고침)` : ""}. 중앙 서버에서 그 내용은 지웠습니다(분류·메모·버전은 남음).`;
     }
     await decideCase(central, { key, action: "reopen" });
     return `${match[1]}번의 분류를 취소했습니다(다시 분류 전).`;
   } catch (error) {
     return `문제 사례를 처리하지 못했습니다. ${failure(error)}`;
+  }
+}
+
+// /검토 정리 : 재배포까지 끝낸 뒤 한 바퀴 정리. 분류 전·할 일 사례의 내용만 남긴다.
+async function cleanup(): Promise<string> {
+  const central = await reviewer();
+  if (!central) return "검토자 PC가 아닙니다.";
+  try {
+    const result = await cleanupContent(central);
+    return `정리했습니다. 질문 ${result.scrubbed}건의 내용을 지웠습니다(숫자 통계는 남음). 분류 전·할 일 사례 ${result.kept}건은 그대로 두었습니다.`;
+  } catch (error) {
+    return `정리하지 못했습니다. ${failure(error)}`;
   }
 }

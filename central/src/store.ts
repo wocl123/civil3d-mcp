@@ -156,29 +156,32 @@ export class Store {
     writeJson("cases.json", this.cases);
   }
 
-  // 한 질문(turnId)에 딸린 기록들에서 내용 항목을 지운다(달별 파일을 다시 쓴다). 지운 기록 수를 돌려준다.
+  // 한 질문(turnId)에 딸린 기록들에서 내용 항목을 지운다. 지운 기록 수를 돌려준다.
   scrubCase(installId: string, turnId: string): number {
-    const belongs = (row: StoredRecord) => row.installId === installId &&
-      ((row.record as Record<string, unknown>).id === turnId || (row.record as Record<string, unknown>).turnId === turnId);
+    return this.scrubWhere(key => key === `${installId}:${turnId}`);
+  }
+
+  // 질문 키("<설치ID>:<질문 id>")가 조건에 맞는 기록들의 내용 항목을 지운다(달별 파일을 다시 쓴다). 숫자 통계는 남는다.
+  scrubWhere(match: (key: string) => boolean): number {
+    const keyOf = (row: StoredRecord) => {
+      const record = row.record as Record<string, unknown>;
+      const id = record.id ?? record.turnId;
+      return typeof id === "string" ? `${row.installId}:${id}` : undefined;
+    };
+    const hasContent = (row: StoredRecord) => CONTENT_FIELDS.some(field => field in (row.record as Record<string, unknown>));
+    const target = (row: StoredRecord) => { const key = keyOf(row); return !!key && hasContent(row) && match(key); };
+    const strip = (row: StoredRecord) => { for (const field of CONTENT_FIELDS) delete (row.record as Record<string, unknown>)[field]; };
     let scrubbed = 0;
-    for (const row of this.records) {
-      if (!belongs(row)) continue;
-      for (const field of CONTENT_FIELDS) delete (row.record as Record<string, unknown>)[field];
-      scrubbed++;
-    }
+    for (const row of this.records) if (target(row)) { strip(row); scrubbed++; }
     if (!scrubbed) return 0;
     for (const name of readdirSync(path("records")).filter(file => file.endsWith(".jsonl"))) {
       const lines = readLines<StoredRecord>(join("records", name));
       let changed = false;
-      for (const row of lines) {
-        if (!belongs(row)) continue;
-        for (const field of CONTENT_FIELDS) delete (row.record as Record<string, unknown>)[field];
-        changed = true;
-      }
+      for (const row of lines) if (target(row)) { strip(row); changed = true; }
       if (changed) {
-        const target = path("records", name);
-        writeFileSync(target + ".tmp", lines.map(row => JSON.stringify(row)).join("\n") + "\n", "utf8");
-        renameSync(target + ".tmp", target);
+        const file = path("records", name);
+        writeFileSync(file + ".tmp", lines.map(row => JSON.stringify(row)).join("\n") + "\n", "utf8");
+        renameSync(file + ".tmp", file);
       }
     }
     return scrubbed;

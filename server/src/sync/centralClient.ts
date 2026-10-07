@@ -161,6 +161,10 @@ export type ProblemCase = {
 export const getCases = (central: CentralSettings, status = "new") =>
   call<{ cases: ProblemCase[] }>(central.url, `/v1/review/cases?status=${status}`, { token: central.token, reviewerKey: central.reviewerKey, pin: central.certSha256 });
 
+// 검토자: 한 바퀴 정리(분류 전·할 일 사례만 남기고 나머지 내용 삭제).
+export const cleanupContent = (central: CentralSettings) =>
+  call<{ scrubbed: number; kept: number }>(central.url, "/v1/review/cleanup", { token: central.token, reviewerKey: central.reviewerKey, body: {}, pin: central.certSha256 });
+
 // 검토자: 사례 분류. action: todo(처리, category 필수) / done(처리 끝) / discard(버림: 내용 삭제) / reopen
 export const decideCase = (central: CentralSettings, body: { key: string; action: string; category?: string; note?: string; version?: string }) =>
   call<{ triage: CaseTriage | null }>(central.url, "/v1/review/cases/decide", { token: central.token, reviewerKey: central.reviewerKey, body, pin: central.certSha256 });

@@ -285,6 +285,8 @@ export function decideCase(store: Store, input: { key: string; action: string; c
     if (current?.status === "discarded") throw new ReviewError("버린 사례입니다.");
     const version = input.version && /^\d+\.\d+\.\d+$/.test(input.version) ? input.version : undefined;
     store.cases[input.key] = { ...(current ?? {}), status: "done", ...(version ? { version } : {}), ...(note ? { note } : {}), decidedAt: now };
+    // 처리가 끝났으면 내용은 지운다(분류·메모·고친 버전은 남는다). 사용자 데이터 → 검토 → 수정 → 재배포 → 삭제.
+    store.scrubCase(match[1], match[2]);
   } else if (input.action === "discard") {
     store.scrubCase(match[1], match[2]);
     store.cases[input.key] = { status: "discarded", ...(note ? { note } : {}), decidedAt: now };
@@ -296,4 +298,10 @@ export function decideCase(store: Store, input: { key: string; action: string; c
   }
   store.saveCases();
   return store.cases[input.key];
+}
+
+// 한 바퀴 정리(/검토 정리): 분류 전·할 일 사례만 남기고, 나머지 질문의 내용을 지운다. 숫자 통계는 남는다.
+export function cleanupContent(store: Store): { scrubbed: number; kept: number } {
+  const keep = new Set([...problemCases(store, "new", Number.MAX_SAFE_INTEGER), ...problemCases(store, "todo", Number.MAX_SAFE_INTEGER)].map(item => item.key));
+  return { scrubbed: store.scrubWhere(key => !keep.has(key)), kept: keep.size };
 }

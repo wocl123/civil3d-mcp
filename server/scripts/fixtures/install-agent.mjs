@@ -3,6 +3,7 @@
 //   node install-agent.mjs <dataDir> <steps.json>
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { bumpRevision, startFakeCivil } from './fake-civil.mjs';
 import { created } from './fake-polyline.mjs';
 
@@ -37,6 +38,10 @@ const ops = {
     await logTool({ requestId: 'turn-0001', tool: 'get_alignment', input: `{"alignment":"${drawing} 본선"}`, ms: 40, ok: false, error: `Alignment '${drawing}' was not found.` });
     return 'logged';
   },
+  // The central server PC exports the to-do cases as a fix request for an AI (npm run admin -- cases --out x.md).
+  exportCases: async ({ file }) => (await import('node:child_process')).execFileSync(process.execPath,
+    [fileURLToPath(new URL('../../../central/build/admin.js', import.meta.url)), 'cases', '--status', 'todo', '--out', file],
+    { env: { ...process.env, CENTRAL_DATA_DIR: process.env.TEST_CENTRAL_DATA_DIR, CENTRAL_HOST: '127.0.0.1' }, encoding: 'utf8' }),
   // The person marks an answer as wrong (palette 👎) with a reason.
   feedback: async ({ requestId, reason }) => { await logFeedback({ requestId, rating: 'bad', reason }); return 'logged'; },
   // The AI creates a road alignment; a person then changes the radii; the next look records it.

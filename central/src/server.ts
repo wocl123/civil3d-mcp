@@ -14,7 +14,8 @@
 //   POST /v1/review/decide         승인 / 반려 / 철회            (설치 토큰 + 검토자 키)
 //   GET  /v1/report                보고                          (설치 토큰 + 검토자 키)
 //   GET  /v1/review/cases?status=  문제 사례(👎·되돌림·실패, 내용 포함). new(기본)·todo·done·discarded·all (설치 토큰 + 검토자 키)
-//   POST /v1/review/cases/decide   사례 분류: todo(처리·분류) / done(처리 끝) / discard(버림: 내용 삭제) / reopen (설치 토큰 + 검토자 키)
+//   POST /v1/review/cases/decide   사례 분류: todo(처리·분류) / done(처리 끝: 내용 삭제) / discard(버림: 내용 삭제) / reopen (설치 토큰 + 검토자 키)
+//   POST /v1/review/cleanup        한 바퀴 정리: 분류 전·할 일 사례만 남기고 나머지 질문의 내용 삭제 (설치 토큰 + 검토자 키)
 //   GET  /v1/release               배포 중인 버전·SHA-256·크기   (가입키 또는 설치 토큰)
 //   GET  /v1/release/download      배포 zip                       (가입키 또는 설치 토큰)
 //   배포 버전은 release.ts 명령으로 받아 두고 지정한다(releases.ts).
@@ -26,7 +27,7 @@ import { createServer as createHttpsServer } from "node:https";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { dataDir, host, loadConfig, port, settingsFile } from "./config.js";
-import { type CaseStatus, decide, decideCase, groupKey, problemCases, report, ReviewError, reviewItems } from "./review.js";
+import { type CaseStatus, cleanupContent, decide, decideCase, groupKey, problemCases, report, ReviewError, reviewItems } from "./review.js";
 import { current, releaseFile } from "./releases.js";
 import { Store } from "./store.js";
 import { loadTls, loopbackHost } from "./tls.js";
@@ -234,6 +235,7 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
       if (!["new", "todo", "done", "discarded", "all"].includes(status)) return json(response, 400, { error: "status가 맞지 않습니다." });
       return json(response, 200, { cases: problemCases(store, status as CaseStatus) });
     }
+    if (route === "POST /v1/review/cleanup") return json(response, 200, cleanupContent(store));
     if (route === "POST /v1/review/cases/decide") {
       const input = (await body(request)) as { key?: unknown; action?: unknown; category?: unknown; note?: unknown; version?: unknown };
       if (typeof input.key !== "string" || typeof input.action !== "string") return json(response, 400, { error: "key와 action이 필요합니다." });
