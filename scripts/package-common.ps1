@@ -38,28 +38,53 @@ function Get-BundleFiles([string]$Bundle) {
     }
   }
 }
+# 파일 해시는 .NET으로 계산한다(Get-FileHash는 파일마다 부가 비용이 커서 5천여 개에서 느리다).
+function Get-Sha256Hex($Sha, $Data) { return [BitConverter]::ToString($Sha.ComputeHash($Data)).Replace('-', '').ToLowerInvariant() }
 function Write-BundleManifest([string]$Bundle) {
-  $entries = @(Get-BundleFiles $Bundle | Sort-Object | ForEach-Object {
-    $file = Join-Path $Bundle $_
-    [ordered]@{ path = $_; bytes = (Get-Item -LiteralPath $file).Length; sha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() }
-  })
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    $entries = @(Get-BundleFiles $Bundle | Sort-Object | ForEach-Object {
+      $file = [IO.Path]::Combine($Bundle, $_)
+      $stream = [IO.File]::OpenRead($file)
+      try { [ordered]@{ path = $_; bytes = $stream.Length; sha256 = (Get-Sha256Hex $sha $stream) } } finally { $stream.Dispose() }
+    })
+  } finally { $sha.Dispose() }
   @{ schemaVersion = 1; files = $entries } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $Bundle 'Contents/manifest.json') -Encoding UTF8
 }
-function Test-Bundle([string]$Bundle) {
+# 번들의 모든 파일을 manifest(크기, SHA-256)와 맞춰 본다.
+# CopyTo를 주면 검증하면서 그 폴더로 복사한다: 원본을 한 번만 읽고, 검증한 그 바이트를 그대로 쓴다.
+# (새로 쓴 파일을 다시 읽으면 백신 실시간 검사 때문에 크게 느려진다. 쓴 바이트는 이미 검증한 것이다.)
+function Test-Bundle([string]$Bundle, [string]$CopyTo) {
   # 먼저 디렉터리 트리의 연결 속성을 검사한다. 각 파일마다 같은 조상을 다시 읽지 않는다.
   $actual = @(Get-BundleFiles $Bundle)
-  $manifest = Get-Content -LiteralPath (Join-Path $Bundle 'Contents/manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $manifestFile = Join-Path $Bundle 'Contents/manifest.json'
+  $manifest = Get-Content -LiteralPath $manifestFile -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($manifest.schemaVersion -ne 1) { throw '지원하지 않는 manifest입니다.' }
   $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-  foreach ($entry in $manifest.files) {
-    if ([string]::IsNullOrWhiteSpace($entry.path) -or $entry.path -match '(^|[\\/])\.\.([\\/]|$)|:|^[/\\]' -or $entry.path -eq 'Contents/manifest.json' -or $entry.path -eq 'Contents/manifest.sig') { throw '잘못된 manifest 경로입니다.' }
-    if (-not $seen.Add($entry.path.Replace('\','/'))) { throw '중복 manifest 경로입니다.' }
-    $file = Assert-Within (Join-Path $Bundle $entry.path) $Bundle
-    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "배포 파일이 없습니다: $($entry.path)" }
-    $fileInfo = Get-Item -LiteralPath $file
-    if ($fileInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw '검사 중 연결된 파일로 바뀌었습니다.' }
-    if ($fileInfo.Length -ne $entry.bytes -or $entry.sha256 -notmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $entry.sha256) { throw "파일 검증 실패: $($entry.path)" }
-  }
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    foreach ($entry in $manifest.files) {
+      if ([string]::IsNullOrWhiteSpace($entry.path) -or $entry.path -match '(^|[\\/])\.\.([\\/]|$)|:|^[/\\]' -or $entry.path -eq 'Contents/manifest.json' -or $entry.path -eq 'Contents/manifest.sig') { throw '잘못된 manifest 경로입니다.' }
+      if (-not $seen.Add($entry.path.Replace('\','/'))) { throw '중복 manifest 경로입니다.' }
+      if ($entry.sha256 -notmatch '^[a-f0-9]{64}$') { throw "파일 검증 실패: $($entry.path)" }
+      $file = Assert-Within ([IO.Path]::Combine($Bundle, $entry.path)) $Bundle
+      $info = [IO.FileInfo]::new($file)
+      if (-not $info.Exists) { throw "배포 파일이 없습니다: $($entry.path)" }
+      if ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw '검사 중 연결된 파일로 바뀌었습니다.' }
+      if ($info.Length -ne $entry.bytes) { throw "파일 검증 실패: $($entry.path)" }
+      if ($CopyTo) {
+        $bytes = [IO.File]::ReadAllBytes($file)
+        if ($bytes.Length -ne $entry.bytes -or (Get-Sha256Hex $sha $bytes) -ne $entry.sha256) { throw "파일 검증 실패: $($entry.path)" }
+        $target = Assert-Within ([IO.Path]::Combine($CopyTo, $entry.path)) $CopyTo
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+        [IO.File]::WriteAllBytes($target, $bytes)
+      } else {
+        $stream = [IO.File]::OpenRead($file)
+        try { $hash = Get-Sha256Hex $sha $stream } finally { $stream.Dispose() }
+        if ($hash -ne $entry.sha256) { throw "파일 검증 실패: $($entry.path)" }
+      }
+    }
+  } finally { $sha.Dispose() }
   if ($actual.Count -ne $seen.Count -or @($actual | Where-Object { -not $seen.Contains($_) }).Count) { throw 'manifest에 없는 파일이 있습니다.' }
   $required = @('PackageContents.xml','Contents/plugin/MyCivil3DMcp.Plugin.dll','Contents/plugin/MyCivil3DMcp.Plugin.deps.json',
     'Contents/node/node.exe','Contents/node/npm.cmd','Contents/node/node_modules/npm/bin/npm-cli.js','Contents/node/LICENSE',
@@ -72,6 +97,12 @@ function Test-Bundle([string]$Bundle) {
   if ($runtime.SeriesMin -ne 'R25.0' -or $runtime.SeriesMax -ne 'R25.0' -or $runtime.Platform -ne 'Civil3D' -or $runtime.OS -ne 'Win64') { throw '지원 CAD 설정이 다릅니다.' }
   $version = Get-Content -LiteralPath (Join-Path $Bundle 'Contents/version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($version.version -ne $xml.ApplicationPackage.AppVersion -or $version.nodeVersion -notmatch '^22\.\d+\.\d+$') { throw '버전 정보가 올바르지 않습니다.' }
+  if ($CopyTo) {
+    # 목록과 서명도 함께 옮긴다(목록에는 들어 있지 않다).
+    Copy-Item -LiteralPath $manifestFile -Destination (Join-Path $CopyTo 'Contents/manifest.json')
+    $signature = Join-Path $Bundle 'Contents/manifest.sig'
+    if (Test-Path -LiteralPath $signature) { Copy-Item -LiteralPath $signature -Destination (Join-Path $CopyTo 'Contents/manifest.sig') }
+  }
   return $version
 }
 function Expand-SafeArchive([string]$Archive, [string]$Destination) {
@@ -97,8 +128,8 @@ function Assert-BundleStopped([string]$Bundle) {
 function Move-BundleDirectory([string]$Source, [string]$Destination) { Move-Item -LiteralPath $Source -Destination $Destination }
 function Invoke-BundleInstall([string]$Source, [string]$DestinationRoot) {
   # 긴 파일 검사 중에도 진행 상태를 표시한다. 종료 안내는 실제 프로세스를 발견했을 때만 나온다.
-  Write-Host '[1/4] 설치 파일을 검증하고 있습니다...'
-  [void](Test-Bundle $Source)
+  Write-Host '[1/4] 설치 파일을 확인하고 있습니다...'
+  if (-not (Test-Path -LiteralPath (Join-Path $Source 'Contents/manifest.json'))) { throw '설치 파일 목록(manifest)이 없습니다.' }
   New-Item -ItemType Directory -Path $DestinationRoot -Force | Out-Null
   Assert-NoReparse $DestinationRoot
   $target = Assert-Within (Join-Path $DestinationRoot 'MyCivil3DMcp.bundle') $DestinationRoot
@@ -108,23 +139,26 @@ function Invoke-BundleInstall([string]$Source, [string]$DestinationRoot) {
   $stage = Join-Path $work 'MyCivil3DMcp.bundle'
   $movedOld = $false
   try {
-    Write-Host '[2/4] 설치 파일을 복사하고 있습니다...'
-    Copy-Item -LiteralPath $Source -Destination $stage -Recurse
+    # 원본을 한 번 읽으며 모든 파일을 검증하고, 검증한 그대로 작업 폴더에 쓴다.
+    Write-Host '[2/4] 설치 파일을 검증하며 복사하고 있습니다...'
+    [void](Test-Bundle $Source $stage)
+    # 작업 폴더에 목록 밖의 파일이 생기지 않았는지만 본다(내용은 2단계에서 검증한 바이트 그대로 썼다).
     Write-Host '[3/4] 복사한 파일을 확인하고 있습니다...'
-    [void](Test-Bundle $stage)
+    $expected = @((Get-Content -LiteralPath (Join-Path $stage 'Contents/manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json).files).Count
+    if (@(Get-BundleFiles $stage).Count -ne $expected) { throw '복사한 파일 수가 목록과 다릅니다.' }
     Write-Host '[4/4] 설치를 마무리하고 있습니다...'
     if (Test-Path -LiteralPath $target) {
       Assert-NoReparse $target
       Move-BundleDirectory $target $backup
       $movedOld = $true
     }
+    # 같은 디스크 안의 이름 바꾸기라 내용은 바뀌지 않는다(다시 검사하지 않는다).
     try { Move-BundleDirectory $stage $target }
     catch {
       # 교체 실패 시 이미 옮긴 기존 버전을 복구한다. 사용자 데이터는 대상에 포함하지 않는다.
       if ($movedOld) { Move-BundleDirectory $backup $target; $movedOld = $false }
       throw
     }
-    [void](Test-Bundle $target)
     return [pscustomobject]@{ installed = $target; backup = $(if ($movedOld) { $backup } else { $null }) }
   } finally { Remove-OwnedDirectory $work $DestinationRoot }
 }

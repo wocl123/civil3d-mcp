@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { X509Certificate, generateKeyPairSync, sign } from 'node:crypto';
-import { cp, copyFile, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, utimes, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
 import { tmpdir } from 'node:os';
@@ -69,7 +69,7 @@ let central;
 try {
   // 0) 시험용 번들: 받은 zip을 풀고 테스트 키로 서명한 뒤, 번들만 담은 zip을 다시 만든다
   const source = join(temporary, 'zip 그대로');
-  ps(`Expand-Archive -LiteralPath ${quote(zip)} -DestinationPath ${quote(source)}`);
+  ps(`Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory(${quote(zip)}, ${quote(source)})`);
   await signManifest(join(source, 'MyCivil3DMcp.bundle'));
   const published = join(temporary, 'publish', basename(zip));
   await mkdir(dirname(published), { recursive: true });
@@ -197,21 +197,22 @@ try {
   assert.match(same.out, /\[완료\] 이미 같은 버전/, 'the same version is not installed again');
   assert.doesNotMatch(same.out, /설치 파일을 복사하고 있습니다/);
   // 서명 없는 번들은 설치하지 않는다
-  const unsigned = join(temporary, '서명 없음');
-  await cp(source, unsigned, { recursive: true });
-  await rm(join(unsigned, 'MyCivil3DMcp.bundle', 'Contents', 'manifest.sig'));
-  const refusedUnsigned = installFrom(unsigned, '-Reinstall');
+  const signature = join(source, 'MyCivil3DMcp.bundle', 'Contents', 'manifest.sig');
+  await rename(signature, signature + '.away');
+  const refusedUnsigned = installFrom(source, '-Reinstall');
+  await rename(signature + '.away', signature);
   assert.notEqual(refusedUnsigned.code, 0);
   assert.match(refusedUnsigned.out, /서명이 없는 설치 파일입니다/);
   // 끊긴 설치가 남긴 오래된 작업 폴더는 다음 설치 때 지운다
   const stale = join(plugins, '.mycivil3d-stale');
   await mkdir(stale); const old = new Date(Date.now() - 2 * 3600 * 1000); await utimes(stale, old, old);
+  await mkdir(join(plugins, 'MyCivil3DMcp.bundle.backup-old'));   // 예전 업데이트가 남긴 백업
   const reinstall = installFrom(source, '-Reinstall');
   assert.equal(reinstall.code, 0, reinstall.out);
   assert.match(reinstall.out, /설치했습니다/);
   assert.ok(!existsSync(stale), 'a stale work folder is removed');
-  installFrom(source, '-Reinstall');
   assert.equal(await backups(), 1, 'only the latest backup is kept');
+  assert.ok(!existsSync(join(plugins, 'MyCivil3DMcp.bundle.backup-old')), 'older backups are removed');
   // 더 새 버전이 설치되어 있으면 내려 설치하지 않는다
   const versionFile = join(plugins, 'MyCivil3DMcp.bundle', 'Contents', 'version.json');
   const versionText = await readFile(versionFile, 'utf8');
