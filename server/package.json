@@ -21,7 +21,8 @@
     "test:central": "npm run build && npm --prefix ../central run build && node scripts/central-e2e.mjs",
     "smoke:cli": "npm run build && node scripts/cli-smoke.mjs && node scripts/cli-missing-scenario.mjs",
     "test:safety": "npm run build && node scripts/safety-regression.mjs",
-    "test:delete": "npm run build && node scripts/delete-scenario.mjs"
+    "test:delete": "npm run build && node scripts/delete-scenario.mjs",
+    "test:edit": "npm run build && node scripts/edit-scenario.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

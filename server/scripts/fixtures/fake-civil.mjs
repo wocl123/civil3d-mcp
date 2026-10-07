@@ -59,25 +59,34 @@ function answer(request) {
     if (!entry || entry.drawingId !== drawingId) throw new Error('operation missing');
     return entry;
   }
+  if (request.method === 'change.confirm') {
+    const entry = operations.get(request.params.operationId);
+    if (entry) { entry.state = 'confirmed'; delete entry.previous; }
+    return { operationId: request.params.operationId, state: 'confirmed' };
+  }
   if (request.method === 'change.undo') {
     const entry = operations.get(request.params.operationId);
     if (!entry || entry.drawingId !== drawingId) throw new Error('drawing mismatch');
+    if (entry.state === 'confirmed') throw new Error('확정한 작업이라 되돌리기 기록이 없습니다.');
     if (entry.state === 'undone') return entry;
     if (entry.revision !== `sess1-${revision}`) throw new Error('undo conflict: drawing changed');
-    if (entry.deleted) entry.deleted.forEach(target => removed.delete(target.handle));
+    if (entry.previous) entry.previous.forEach(before => Object.assign(alignments.items.find(a => a.handle === before.handle), before));
+    else if (entry.deleted) entry.deleted.forEach(target => removed.delete(target.handle));
     else if (entry.name) created.delete(entry.name);
     else applyChanges({ params: { changes: entry.originalChanges.map((c, i) => ({ ...c, from: entry.changes[i].after, to: entry.changes[i].before })) } });
     revision++;
     entry.state = 'undone'; entry.revision = `sess1-${revision}`;
+    if (failures.has('after.undo')) throw new Error(failures.get('after.undo'));
     return entry;
   }
-  if (request.method === 'change.apply' || request.method === 'alignment.create' || request.method === 'drawing.delete') {
+  if (request.method === 'change.apply' || request.method === 'alignment.create' || request.method === 'drawing.delete' || request.method === 'alignment.edit') {
     const id = request.params.operationId;
     if (!request.context) throw new Error('missing drawing context');
     if (operations.get(id)?.state === "cancelled") throw new Error("operation cancelled");
     if (operations.has(id)) return operations.get(id);
     const result = request.method === 'change.apply' ? applyChanges(request)
       : request.method === 'drawing.delete' ? deleteTargets(request.params.targets)
+      : request.method === 'alignment.edit' ? editAlignments(request.params.edits)
       : handlePolyline(request);
     revision++;
     const receipt = { ...result, operationId: id, drawingId, revision: `sess1-${revision}`, state: 'applied', originalChanges: request.params.changes };
@@ -96,6 +105,7 @@ function answer(request) {
     case 'drawing.status': return { drawingName: 'FAKE-SITE.dwg', filePath: 'D:/fake/FAKE-SITE.dwg', civilDocumentAvailable: true, protocolVersion: 2, drawingId, revision: `sess1-${revision}` };
     case 'alignment.list': return handlePolyline(request) ?? { ...alignments, items: alignments.items.filter(item => !removed.has(item.handle)) };
     case 'drawing.delete_preview': return deletePreview(request.params ?? {});
+    case 'alignment.edit_preview': return editPreview(request.params ?? {});
     case 'drawing.capture': return capture(request.params ?? {}, polylines, [...created.values()]);
     case 'drawing.selection': {
       // Like the plug-in: every object counted by type and layer, the first 20 in detail.
@@ -123,7 +133,7 @@ export function startFakeCivil(connectionFile) {
       const request = JSON.parse(line.slice(0, line.indexOf('\n')));
       let reply;
       try { reply = { result: answer(request) }; }
-      catch (error) { reply = { error: { code: -32000, message: error.message, drawingChanged: failures.has("after.commit") ? "unknown" : false } }; }
+      catch (error) { reply = { error: { code: -32000, message: error.message, drawingChanged: failures.has("after.commit") || failures.has("after.undo") ? "unknown" : false } }; }
       socket.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, ...reply }) + '\n');
     });
   });
@@ -146,4 +156,47 @@ function deleteTargets(targets) {
   targets.forEach(target => removed.add(target.handle));
   const lines = targets.filter(target => target.kind === 'alignment').length;
   return { deleted: targets, profiles: lines * 2, profileViews: lines, corridors: targets.length - lines };
+}
+
+// Like AlignmentEditing.cs: name, layer and design speeds (layers C-ROAD-CL and C-PIPE exist).
+function editPreview(params) {
+  if (params.layer && !['C-ROAD-CL', 'C-PIPE'].includes(params.layer))
+    throw new Error(`레이어 '${params.layer}'이(가) 도면에 없습니다. 먼저 레이어를 만들어 주세요.`);
+  const keys = params.allAlignments ? alignments.items.map(item => item.handle) : params.alignments ?? [];
+  const items = [], notFound = [];
+  const taken = new Set(alignments.items.map(a => a.name));
+  for (const key of keys) {
+    const item = alignments.items.find(a => !removed.has(a.handle) && (a.handle === key || a.name === key));
+    if (!item) { notFound.push(`${key}: Alignment '${key}' was not found.`); continue; }
+    const changes = [];
+    let blocked;
+    const rename = params.rename;
+    const newName = rename ? rename.to ?? `${rename.prefix ?? ''}${item.name}${rename.suffix ?? ''}` : undefined;
+    if (newName && newName !== item.name) {
+      taken.delete(item.name);
+      if (taken.has(newName)) blocked = `이름 '${newName}'은(는) 이미 있거나 이번에 겹칩니다.`;
+      taken.add(newName);
+      changes.push({ property: '이름', from: item.name, to: newName });
+    }
+    if (params.layer && params.layer !== item.layer) changes.push({ property: '레이어', from: item.layer, to: params.layer });
+    if (params.designSpeeds) changes.push({ property: '설계속도', from: '(없음)', to: params.designSpeeds.map(s => `${s.station}부터 ${s.speed}`).join(', ') + ' km/h' });
+    items.push({ name: item.name, handle: item.handle, changes, ...(blocked ? { blocked } : {}) });
+  }
+  return { items, notFound };
+}
+
+function editAlignments(edits) {
+  const previous = [];
+  for (const edit of edits) {
+    const item = alignments.items.find(a => a.handle === edit.handle && !removed.has(a.handle));
+    if (!item || item.name !== edit.name) throw new Error(`${edit.name}이(가) 미리 본 뒤 바뀌어 있어 적용하지 않았습니다. 다시 확인하세요.`);
+  }
+  for (const edit of edits) {
+    const item = alignments.items.find(a => a.handle === edit.handle);
+    previous.push({ handle: item.handle, name: item.name, layer: item.layer, designSpeeds: item.designSpeeds });
+    if (edit.newName) item.name = edit.newName;
+    if (edit.layer) item.layer = edit.layer;
+    if (edit.designSpeeds) item.designSpeeds = edit.designSpeeds;
+  }
+  return { edited: edits.map(edit => edit.newName ?? edit.name), changes: edits.length, previous };
 }

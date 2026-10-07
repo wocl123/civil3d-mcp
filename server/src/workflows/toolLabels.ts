@@ -19,6 +19,7 @@ const LABELS: Record<string, string> = {
   pick_polyline: "도면에서 폴리라인을 선택하세요 (ESC 취소)",
   plan_alignment_from_polyline: "선형 배치 계산 중",
   plan_delete: "지울 객체 확인하는 중",
+  plan_alignment_edit: "선형 속성 변경 계획하는 중",
   apply_drawing_change: "도면에 적용 중",
   read_knowledge_rule: "규칙 확인 중"
 };

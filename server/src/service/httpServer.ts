@@ -1,6 +1,6 @@
 import { fixesFor } from "../changes/changeStore.js";
 import { cancelFix, fixCard, operationStatus } from "../changes/operations.js";
-import { applyFix, undoOperation } from "../changes/applyChange.js";
+import { applyFix, confirmOperation, undoOperation } from "../changes/applyChange.js";
 import { conversationProvider, offeredFixes, remember } from "../workflows/conversation.js";
 import { randomUUID } from "node:crypto";
 // 로컬 서비스 (127.0.0.1:48900). Civil 3D 플러그인이 띄우고, 팔레트가 이 HTTP API를 부른다.
@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 //   POST /api/provider/check         로그인 확인(세션 시작)
 //   POST /api/provider/setup         AI CLI 설치·로그인 창 열기
 //   POST /api/chat, /api/chat/stream 팔레트 질문 (stream은 진행 상황을 한 줄씩 보냄)
-//   POST /api/change/apply, /api/change/undo, /api/change/cancel 수정안 버튼 (AI 호출 없음)
+//   POST /api/change/apply, /api/change/undo, /api/change/cancel, /api/change/confirm 수정안 버튼 (AI 호출 없음)
 //   POST /api/chat/cancel             AI 실행 중지 및 작업 결과 확인
 //   POST /api/conversation/clear     대화 지우기
 //   POST /api/memory/clear           답변 재사용 저장소 지우기
@@ -148,7 +148,7 @@ export const httpServer = createServer(async (request, response) => {
     }
 
     // 버튼 작업은 AI를 다시 호출하지 않는다. 대화에서 제안된 수정안만 직접 적용한다.
-    if (route === "POST /api/change/apply" || route === "POST /api/change/undo" || route === "POST /api/change/status" || route === "POST /api/change/cancel") {
+    if (route === "POST /api/change/apply" || route === "POST /api/change/undo" || route === "POST /api/change/status" || route === "POST /api/change/cancel" || route === "POST /api/change/confirm") {
       const input = await body(request);
       if (!isConversationId(input.conversation)) return json(response, 400, { error: "대화 ID가 필요합니다." });
       const conversation = input.conversation;
@@ -159,6 +159,12 @@ export const httpServer = createServer(async (request, response) => {
         if (route.endsWith("/status")) {
           if (typeof input.fixId !== "string") return json(response, 400, { error: "수정안 ID가 필요합니다." });
           return json(response, 200, await operationStatus(input.fixId, offered));
+        }
+        if (route.endsWith("/confirm")) {
+          if (typeof input.operationId !== "string") return json(response, 400, { error: "작업 ID가 필요합니다." });
+          const result = await confirmOperation(input.operationId, offered);
+          remember(conversation, { provider: conversationProvider(conversation), question: "[적용 버튼]", answer: `${result.title}: 확정함. 버튼으로 되돌릴 수 없음`, fixIds: [result.fixId] });
+          return json(response, 200, result);
         }
         if (route.endsWith("/cancel")) {
           if (typeof input.fixId !== "string") return json(response, 400, { error: "수정안 ID가 필요합니다." });

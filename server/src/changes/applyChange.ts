@@ -51,9 +51,10 @@ export async function applyFix(fixId: string, offered: string[], requestId = pro
     await saveOperation(operation);
     let result: Record<string, unknown>;
     try {
-      // 만들기 / 지우기 / 값 바꾸기
+      // 만들기 / 지우기 / 속성 바꾸기 / 값 바꾸기
       const [method, params] = fix.create ? ["alignment.create" as const, fix.create]
         : fix.remove ? ["drawing.delete" as const, { targets: fix.remove.targets }]
+        : fix.edit ? ["alignment.edit" as const, { edits: fix.edit.edits }]
         : ["change.apply" as const, { changes: fix.changes.map(item => ({ kind: item.object.kind, handle: item.object.handle,
             at: item.object.at, property: item.property, from: item.from, to: item.to })) }];
       result = await inDrawingContext({ drawingId: scope.drawingId!, revision: scope.state }, () => callPlugin(
@@ -88,7 +89,8 @@ export async function applyFix(fixId: string, offered: string[], requestId = pro
     try { await saveOperation(operation); } catch (error) { warnings.push("후속 결과 저장 실패: " + messageOf(error)); }
     // 적용 성공은 재검토·추적·기록 실패와 무관하게 유지한다. 팔레트는 작업 ID로 되돌리기 버튼을 제공한다.
     return { applied: true, mutation: "applied", drawingChanged: true, operationId: operation.operationId,
-      fix: fix.title, ...(fix.create ? { created: result } : fix.remove ? { deleted: result.deleted, profiles: result.profiles, profileViews: result.profileViews, corridors: result.corridors } : { changes: result.changes }),
+      fix: fix.title, ...(fix.create ? { created: result } : fix.remove ? { deleted: result.deleted, profiles: result.profiles, profileViews: result.profileViews, corridors: result.corridors }
+        : fix.edit ? { edited: result.edited, properties: result.changes } : { changes: result.changes }),
       undo: "팔레트의 되돌리기 버튼으로 취소할 수 있음", warnings, recheck: recheckResult };
   }));
 }
@@ -104,30 +106,73 @@ async function recheck(fix: StoredFix) {
   const items = reports.flatMap(fullItems);
   await registerFixes(items, fix.source);
   const key = /^(곡선|경사) (\d+)/.exec(fix.target);
-  const sameTarget = fix.create ? items : items.filter(item => fix.targetRef
+  const sameTarget = fix.create || fix.edit ? items : items.filter(item => fix.targetRef
     ? item.targetRef?.objectHandle === fix.targetRef.objectHandle && item.targetRef.kind === fix.targetRef.kind && item.targetRef.elementKey === fix.targetRef.elementKey
     : !!key && /^(곡선|경사) (\d+)/.exec(item.target)?.[0] === key[0]);
   const assessment = reports.every(report => report.assessment === "not_applicable") ? "not_applicable"
     : assess(sameTarget, reports.some(report => report.missing.length > 0));
   return { state: "completed" as const, assessment, target: fix.target, targetPassed: assessment === "pass",
-    targetItems: sameTarget, otherFailures: fix.create ? [] : items.filter(item => item.result === "fail" && !sameTarget.includes(item)),
+    targetItems: sameTarget, otherFailures: fix.create || fix.edit ? [] : items.filter(item => item.result === "fail" && !sameTarget.includes(item)),
     summary: reports.map(report => ({ target: report.target, ...report.summary })) };
+}
+
+// 확정([적용] 버튼): 사용자가 결과를 받아들였다. 플러그인은 되돌리기용 작업 기록을 버리고,
+// 이 작업은 더 이상 버튼으로 되돌리거나 다시 적용할 수 없다.
+export async function confirmOperation(operationId: string, offered: string[]) {
+  const operation = await readOperation(operationId);
+  if (!offered.includes(operation.fixId)) throw new Error("This operation does not belong to this conversation.");
+  return withFileLock(usageFile(operation.fixId), async () => {
+    const latest = await usedFix(operation.fixId);
+    if (latest?.operationId !== operationId) throw new Error("This operation was superseded. Use the latest change card.");
+    const current = await readOperation(operationId);
+    if (current.state === "confirmed") return { ...current, message: "이미 확정한 변경입니다." };
+    if (current.state !== "applied") throw new Error("적용된 상태의 변경만 확정할 수 있습니다.");
+    await callPlugin("change.confirm", { operationId });
+    current.state = "confirmed";
+    // 되돌리기에만 쓰던 결과 상세(지운 객체 목록 등)도 정리한다.
+    delete current.result;
+    await saveOperation(current);
+    return { ...current, message: "변경을 확정했습니다. 되돌리기 기록을 정리했습니다." };
+  });
 }
 
 export async function undoOperation(operationId: string, offered: string[]) {
   const operation = await readOperation(operationId);
   if (!offered.includes(operation.fixId)) throw new Error("This operation does not belong to this conversation.");
   return withFileLock(usageFile(operation.fixId), async () => {
+    // 잠금을 기다리는 동안 재적용되었을 수 있다. 이전 카드가 최신 사용 기록을 덮어쓰지 않게 한다.
+    const latest = await usedFix(operation.fixId);
+    if (latest?.operationId !== operationId) throw new Error("This operation was superseded. Use the latest change card.");
+    const current = await readOperation(operationId);
     // C#이 도면 ID와 마지막 편집 리비전을 검사한다. 현재 활성 도면에 무조건 UNDO를 보내지 않는다.
-    const result = await callPlugin("change.undo", { operationId }) as Operation & { restored?: number; skippedSteps?: string[] };
-    operation.state = result.state;
-    operation.revision = result.revision;
-    await saveOperation(operation);
-    // 플러그인은 작업 기록(시작~끝에 바뀐 객체)으로 이 작업의 UNDO 단계를 찾는다.
-    // 그 뒤에 쌓인 객체 변경 없는 단계(화면 확대·이동 등)를 함께 되돌렸으면 알린다.
+    let result: Operation & { restored?: number; skippedSteps?: string[]; linkedObjects?: number; commandsAfter?: string[] };
+    try {
+      result = await callPlugin("change.undo", { operationId }) as typeof result;
+    } catch (error) {
+      // UNDO가 실행된 뒤 응답을 잃거나 복구 검증이 실패하면 적용 상태로 단정하지 않는다.
+      // 도면 전환·후속 편집 등 변경 전 거절(false)은 원래 상태를 유지한다.
+      if ((error as { drawingChanged?: boolean | "unknown" }).drawingChanged !== false) {
+        current.state = "unknown";
+        await saveOperation(current);
+      }
+      throw error;
+    }
+    if (result.state !== "undone") {
+      current.state = "unknown";
+      await saveOperation(current);
+      throw new Error("Undo result could not be verified.");
+    }
+    current.state = result.state;
+    current.revision = result.revision;
+    await saveOperation(current);
+    // 플러그인은 작업 기록(시작~끝)과 작업 뒤 기록(끝~되돌리기)으로 작업 시작 시점까지 거슬러 올라간다.
+    // 함께 되돌린 것(화면 확대·이동 등, Civil 3D가 함께 갱신한 연관 객체)을 알리고, 도면 확인을 부탁한다.
     const skipped = result.skippedSteps?.length ?? 0;
-    const message = `적용한 변경을 되돌렸습니다${result.restored ? ` (객체 ${result.restored}개 복원 확인)` : ""}.` +
-      (skipped ? ` 그 뒤의 객체 변경 없는 단계 ${skipped}개(화면 확대·이동 등)도 함께 되돌렸습니다.` : "");
-    return { ...operation, message };
+    const commands = [...new Set(result.commandsAfter ?? [])].slice(0, 8);
+    const message = `작업 전 상태로 되돌렸습니다${result.restored ? ` (삭제했던 객체 ${result.restored}개 복원 확인)` : ""}.` +
+      (skipped ? ` 적용 뒤의 화면 변경 등 ${skipped}단계${commands.length ? `(${commands.join(", ")})` : ""}도 함께 되돌렸습니다.` : "") +
+      (result.linkedObjects ? ` Civil 3D가 연관 객체 ${result.linkedObjects}개를 함께 갱신했습니다.` : "") +
+      " 도면이 작업 전과 같은지 확인해 주세요.";
+    return { ...current, message };
   });
 }

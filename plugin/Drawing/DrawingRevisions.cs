@@ -48,12 +48,19 @@ internal static class DrawingRevisions
 
     // 기록기: 만든 때부터 Dispose 할 때까지의 모든 객체 변경을 모은다.
     // 도면 작업이 시작~끝까지 무엇을 바꿨는지, UNDO 한 단계가 무엇을 되돌렸는지 알아내는 데 쓴다.
+    // 오래 켜 두는 기록기(작업 뒤 ~ 되돌리기)는 한도까지만 모으고, 넘치면 Overflowed로 알린다.
     public sealed class Recorder(IntPtr database) : IDisposable
     {
+        private const int Limit = 20000;
         internal readonly IntPtr Database = database;
         private readonly List<Change> _changes = new();
+        public bool Overflowed { get; private set; }
         public IReadOnlyList<Change> Changes { get { lock (Gate) return _changes.ToList(); } }
-        internal void Add(Change change) => _changes.Add(change);
+        internal void Add(Change change)
+        {
+            if (_changes.Count < Limit) _changes.Add(change);
+            else Overflowed = true;
+        }
         public void Dispose() { lock (Gate) Recorders.Remove(this); }
     }
     private static readonly List<Recorder> Recorders = new();

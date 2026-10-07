@@ -514,10 +514,12 @@ internal sealed class ChatPanel : UserControl
             status.Text = "변경이 적용되었습니다. 재검토에 실패하여 기준 만족 여부는 확인하지 못했습니다. 취소하려면 되돌리기를 눌러 주세요.";
         body.Children.Add(status);
         // 버튼: 적용 전에는 [적용하기] (삭제 계획은 [진행]/[취소]).
-        //       작업이 끝나면 [되돌리기]/[적용] — 되돌린 뒤 [적용]으로 다시 적용한다.
+        //       작업이 끝나면 [되돌리기]/[적용].
+        //         [적용]: 결과를 확정한다. 되돌리기용 작업 기록을 정리하고, 카드는 끝난다.
+        //         [되돌리기] 뒤의 [적용]: 되돌린 작업을 다시 적용한다.
         bool deleting = change["kind"]?.ToString() == "delete";
         if (deleting && state == "planned") status.Text = "위 객체가 함께 삭제되거나 영향을 받습니다. 진행할까요?";
-        if (deleting && state == "applied") status.Text = "삭제했습니다. 되돌리려면 되돌리기를 누르거나 Ctrl+Z를 눌러 주세요.";
+        if (deleting && state == "applied") status.Text = "삭제했습니다. 복원하려면 되돌리기를 눌러 주세요.";
         StackPanel buttons = new() { Orientation = Orientation.Horizontal };
         Button apply = SmallButton("", "");
         Button cancel = SmallButton("취소", "삭제하지 않습니다. 이 계획은 다시 적용되지 않습니다.");
@@ -529,13 +531,15 @@ internal sealed class ChatPanel : UserControl
         {
             bool done = operationId is not null && state is "applied" or "undone" or "unknown";
             apply.Content = done ? "적용" : deleting ? "진행" : "적용하기";
-            apply.ToolTip = done ? "되돌린 작업을 다시 적용" : deleting ? "위 목록대로 삭제 (Undo 한 번으로 되돌릴 수 있음)" : "이 수정안을 현재 도면에 적용";
-            apply.IsEnabled = !_busy && applicable && (state == "planned" || state == "undone");
+            apply.ToolTip = state == "applied" ? "이 결과로 확정합니다. 되돌리기 기록을 정리하며, 이후에는 버튼으로 되돌릴 수 없습니다."
+                : done ? "되돌린 작업을 다시 적용" : deleting ? "위 목록대로 삭제 (Undo 한 번으로 되돌릴 수 있음)" : "이 수정안을 현재 도면에 적용";
+            apply.IsEnabled = !_busy && applicable && (state is "planned" or "undone" || (state == "applied" && operationId is not null));
             cancel.IsEnabled = !_busy && state == "planned";
             undo.IsEnabled = !_busy && operationId is not null && state == "applied";
-            // 되돌리기는 작업이 끝난 뒤에, 취소는 삭제 계획이 아직 적용 전일 때만 보인다.
+            // 되돌리기는 작업이 끝난 뒤에, 취소는 삭제 계획이 아직 적용 전일 때만 보인다. 확정하면 버튼을 모두 숨긴다.
             undo.Visibility = done ? Visibility.Visible : Visibility.Collapsed;
             cancel.Visibility = deleting && state == "planned" ? Visibility.Visible : Visibility.Collapsed;
+            if (state is "confirmed" or "cancelled") apply.Visibility = undo.Visibility = cancel.Visibility = Visibility.Collapsed;
         }
         _refreshChangeButtons.Add(Refresh);
         Refresh();
@@ -545,15 +549,30 @@ internal sealed class ChatPanel : UserControl
             state = next["state"]?.ToString() ?? "applied";
             applicable = true;
             status.Text = state == "unknown" ? "변경 결과 확인이 필요합니다."
-                : deleting ? "삭제했습니다. 되돌리려면 되돌리기를 누르거나 Ctrl+Z를 눌러 주세요."
+                : deleting ? "삭제했습니다. 복원하려면 되돌리기를 눌러 주세요."
                 : next["recheck"]?["state"]?.ToString() == "failed"
                     ? "변경이 적용되었습니다. 재검토에 실패하여 기준 만족 여부는 확인하지 못했습니다. 취소하려면 되돌리기를 눌러 주세요."
                     : "도면 변경이 적용되었습니다.";
             Refresh();
         };
+        // [적용] 확정: 도면은 바꾸지 않고 작업 기록만 정리한다.
+        async Task Confirm()
+        {
+            if (_busy) return;
+            SetBusy(true);
+            try
+            {
+                JsonNode result = await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/change/confirm", new { conversation, fixId, operationId });
+                state = result["state"]?.ToString() ?? state;
+                status.Text = result["message"]?.ToString() ?? "변경을 확정했습니다.";
+            }
+            catch (System.Exception ex) { status.Text = "확정 오류: " + ex.Message; }
+            finally { SetBusy(false); Refresh(); }
+        }
         async Task Run(bool reverting)
         {
             if (_busy) return;
+            if (!reverting && state == "applied") { await Confirm(); return; }
             _changing = true; SetBusy(true); DrawingGuard.Begin();
             try
             {
@@ -577,7 +596,7 @@ internal sealed class ChatPanel : UserControl
                     string? checkState = result["recheck"]?["state"]?.ToString();
                     string? assessment = result["recheck"]?["assessment"]?.ToString();
                     status.Text = result["applied"]?.GetValue<bool>() == true
-                        ? deleting ? "삭제했습니다. 되돌리려면 되돌리기를 누르거나 Ctrl+Z를 눌러 주세요."
+                        ? deleting ? "삭제했습니다. 복원하려면 되돌리기를 눌러 주세요."
                         : checkState == "failed" ? "변경이 적용되었습니다. 재검토에 실패하여 기준 만족 여부는 확인하지 못했습니다. 취소하려면 되돌리기를 눌러 주세요."
                         : assessment == "pass" ? "변경이 적용되었습니다. 검토한 항목은 기준을 만족합니다."
                         : "변경이 적용되었습니다. 검토 결과: " + (assessment switch { "fail" => "기준 미달", "review" => "사람 검토 필요", "incomplete" => "검토 미완료", "not_applicable" => "검토 대상 아님", _ => "확인 필요" })

@@ -36,6 +36,7 @@ export function describeRemove(remove: RemoveRequest): string {
 // 수정안·계획 하나의 변경 내용 줄들(팔레트 카드, 변경 기록).
 export function fixLabels(fix: FixOption): string[] {
   if (fix.create) return [describeCreate(fix.create)];
+  if (fix.edit) return [fix.edit.summary, ...fix.edit.details];
   if (fix.remove) return fix.remove.details?.length ? [fix.remove.summary, ...fix.remove.details] : [describeRemove(fix.remove)];
   return fix.changes.map(describe);
 }

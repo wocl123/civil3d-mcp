@@ -15,9 +15,9 @@ export type BridgeMethod =
   | "drawing.status" | "drawing.objects" | "drawing.layers" | "drawing.object"
   | "alignment.list" | "alignment.get" | "alignment.section"
   | "profile.get" | "profile.section"
-  | "change.apply" | "alignment.create" | "change.undo" | "change.result" | "change.cancel"
+  | "change.apply" | "alignment.create" | "change.undo" | "change.result" | "change.cancel" | "change.confirm"
   | "drawing.polylines" | "drawing.pick_polyline" | "drawing.selection" | "drawing.capture" | "drawing.summary"
-  | "drawing.delete_preview" | "drawing.delete";
+  | "drawing.delete_preview" | "drawing.delete" | "alignment.edit_preview" | "alignment.edit";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
@@ -63,7 +63,7 @@ export async function callPlugin(method: BridgeMethod, params: Record<string, un
       if (error) {
         // 전송 뒤 응답을 못 받으면 커밋 여부를 단정하지 않는다. 명시적 플러그인 거절만 false다.
         if (!("drawingChanged" in error) || (error as { drawingChanged?: unknown }).drawingChanged === undefined)
-          Object.assign(error, { drawingChanged: requestSent && ["change.apply", "alignment.create", "drawing.delete", "change.undo"].includes(method) ? "unknown" : false });
+          Object.assign(error, { drawingChanged: requestSent && ["change.apply", "alignment.create", "drawing.delete", "alignment.edit", "change.undo"].includes(method) ? "unknown" : false });
         reject(error);
       }
       else resolve(result);

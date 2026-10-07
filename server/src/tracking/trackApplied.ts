@@ -37,6 +37,8 @@ export function trackedItems(fix: StoredFix, result: NonNullable<ChangeLogEntry[
   }
 
   // ── 수정안: 검토에 쓴 조건 중 아는 것만.
+  // 속성 변경·삭제는 설계 값이 아니라 추적하지 않는다.
+  if (fix.edit || fix.remove || !Array.isArray(result.changes)) return [];
   const input = fix.source.check === "none" ? {} : fix.source.input as Record<string, unknown>;
   const conditions: TrackConditions = Object.fromEntries(["designSpeed", "roadClass", "region", "criteria"]
     .filter(key => input[key] !== undefined)

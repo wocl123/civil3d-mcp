@@ -208,6 +208,7 @@ public static class PluginBridge
                     ReadInt(parameters?["offset"], 0),
                     ReadInt(parameters?["limit"], 50))),
                 "drawing.delete_preview" => await Read(doc => DrawingDeletion.Preview(doc, parameters)),
+                "alignment.edit_preview" => await Read(doc => AlignmentEditing.Preview(doc, parameters)),
                 "profile.get" => await Read(doc => ProfileQueries.GetProfile(
                     doc,
                     ReadString(parameters?["profile"]),
@@ -219,9 +220,12 @@ public static class PluginBridge
                     () => AlignmentCreation.Create(doc, ReadCreate(parameters)))),
                 "drawing.delete" => await InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context,
                     () => DrawingDeletion.Delete(doc, DrawingDeletion.ReadTargets(parameters?["targets"])))),
+                "alignment.edit" => await InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context,
+                    () => AlignmentEditing.Apply(doc, AlignmentEditing.ReadEdits(parameters?["edits"])))),
                 "change.undo" => await InDocumentContextAsync(doc => DrawingOperations.Undo(doc, parameters)),
                 "change.cancel" => await InDocumentContextAsync(doc => DrawingOperations.Cancel(doc, parameters)),
                 "change.result" => await InDocumentContextAsync(doc => DrawingOperations.Result(doc, parameters)),
+                "change.confirm" => await InDocumentContextAsync(_ => DrawingOperations.Confirm(parameters)),
                 // ── 사용자에게 고르게 하기, 화면 캡처, 선택·요약, 그 밖의 조회
                 "drawing.pick_polyline" => await Read(doc => DrawingPicker.PickPolyline(
                     doc, parameters?["message"]?.ToString(), Math.Clamp(ReadInt(parameters?["timeoutSeconds"], 90), 10, 110))),

@@ -5,6 +5,13 @@ import type { AlignmentCreateRequest } from "../../design/types/AlignmentLayout.
 export type RemoveTarget = { kind: "alignment" | "profile" | "corridor"; handle: string; name: string };
 // summary: 한 줄 요약. details: 대상마다 연관 객체(함께 지워지는 것, 영향받는 것). 팔레트 카드에 그대로 보인다.
 export type RemoveRequest = { targets: RemoveTarget[]; summary: string; details?: string[] };
+// 선형 속성 편집(이름·설명·스타일·레이어·라벨 세트·설계속도). handle·name은 미리 볼 때의 값이라, 그 뒤 바뀌었으면 적용하지 않는다.
+// 값이 없는 속성은 그대로 둔다.
+export type AlignmentEdit = {
+  handle: string; name: string; newName?: string; description?: string; style?: string; layer?: string; labelSet?: string;
+  designSpeeds?: { station: number; speed: number }[];
+};
+export type EditRequest = { edits: AlignmentEdit[]; summary: string; details: string[] };
 
 // 미달 항목을 기준 안으로 들이는 방법 하나. 코드가 계산한다.
 //   feasible:   인접 요소 사이에 들어맞음
@@ -23,6 +30,7 @@ export type FixOption = {
 
   // 선형·종단을 지우는 계획이면 changes 대신 이것(plan_delete).
   remove?: RemoveRequest;
+  edit?: EditRequest;
 
   status: "feasible" | "conflict" | "unverified";
   reason?: string;
