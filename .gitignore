@@ -16,3 +16,6 @@
 /.package-cache/
 /.package-work/
 /MyCivil3DMcp-*.zip
+
+# 관리자용 운영 매뉴얼(로컬 전용)
+/운영_매뉴얼.md
