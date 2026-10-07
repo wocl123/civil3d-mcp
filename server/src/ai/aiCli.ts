@@ -2,6 +2,7 @@ import { StringDecoder } from "node:string_decoder";
 import { rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { terminateTree } from "./processTree.js";
+import { stateFile } from "../memory/stateFile.js";
 // AI CLI(Claude, Codex, Gemini) 실행과 로그인 상태 관리.
 //   - runCli:          CLI 하나를 실행하고 출력을 모은다
 //   - verifyProvider:  로그인 확인 (세션 시작)
@@ -26,8 +27,15 @@ export const PROVIDERS = ["claude", "codex", "gemini"] as const;
 //   - 그 AI에 질문할 때마다 시간이 다시 시작된다(touchProvider).
 //   - 그만큼 쓰지 않으면 "unchecked"로 돌아가고, 사용자가 다시 고르면 로그인을 새로 확인한다.
 //   - 팔레트는 남은 시간을 보여 준다(sessionInfo).
+//   - data/state/ai-sessions.json 에도 저장해, 서비스가 다시 떠도 다시 고를 필요가 없다.
 // MY_CIVIL3D_AI_SESSION_MINUTES 로 길이를 바꿀 수 있다(기본 30분).
-const verified = new Map<Provider, { state: ProviderState; checkedAt: number }>();
+const sessions = stateFile<{ state: ProviderState; checkedAt: number }>("ai-sessions", record => record.checkedAt);
+const verified = sessions.map;
+function setVerified(provider: Provider, state: ProviderState): ProviderState {
+  verified.set(provider, { state, checkedAt: Date.now() });
+  sessions.save();
+  return state;
+}
 const SESSION_MS = Math.max(1, Number(process.env.MY_CIVIL3D_AI_SESSION_MINUTES ?? "30") || 30) * 60 * 1000;
 
 const MAX_OUTPUT = 2 * 1024 * 1024;   // CLI 출력이 이보다 크면 멈춘다
@@ -130,7 +138,10 @@ export async function getProviderState(provider: Provider): Promise<ProviderStat
 // AI를 쓰면 세션 시간이 다시 시작된다. 이미 끝난 세션은 되살리지 않는다.
 export function touchProvider(provider: Provider): void {
   const record = verified.get(provider);
-  if (record?.state === "ready" && Date.now() - record.checkedAt <= SESSION_MS) record.checkedAt = Date.now();
+  if (record?.state === "ready" && Date.now() - record.checkedAt <= SESSION_MS) {
+    record.checkedAt = Date.now();
+    sessions.save();
+  }
 }
 
 // 사용 가능한 AI의 남은 세션 시간(팔레트 표시용). 세션이 없으면 undefined.
@@ -144,8 +155,7 @@ export function sessionInfo(provider: Provider): { expiresInMs: number; sessionM
 // 로그인을 확인하고, 되면 세션을 시작한다.
 export async function verifyProvider(provider: Provider): Promise<ProviderState> {
   if (!(await isInstalled(provider))) {
-    verified.set(provider, { state: "missing", checkedAt: Date.now() });
-    return "missing";
+    return setVerified(provider, "missing");
   }
   try {
     // Claude·Codex는 로그인 상태 명령이 있다.
@@ -166,12 +176,9 @@ export async function verifyProvider(provider: Provider): Promise<ProviderState>
       }
     }
 
-    const state: ProviderState = ready ? "ready" : "unauthenticated";
-    verified.set(provider, { state, checkedAt: Date.now() });
-    return state;
+    return setVerified(provider, ready ? "ready" : "unauthenticated");
   } catch {
-    verified.set(provider, { state: "unauthenticated", checkedAt: Date.now() });
-    return "unauthenticated";
+    return setVerified(provider, "unauthenticated");
   }
 }
 

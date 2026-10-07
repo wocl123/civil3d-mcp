@@ -28,15 +28,32 @@ export function connectionFile(): string {
   return join(localAppData, "MyCivil3DMcp", "connection.json");
 }
 
+// 연결이 안 될 때 다시 시도하는 간격(3번 = 약 2초). Civil 3D 쪽 브리지가 다시 열리는 동안을 기다린다.
+const RETRY_DELAYS_MS = [500, 1500];
+
 // 플러그인에 요청 하나를 보내고 결과를 받는다.
 // timeoutMs는 사용자를 기다리는 요청(폴리라인 고르기 등)만 길게 준다.
+// 요청을 보내기 전에 실패한 경우(연결 파일 없음, 연결 거부)만 연결 파일을 다시 읽고 다시 시도한다.
+// 보낸 뒤의 실패는 다시 보내지 않는다(도면 변경이 두 번 실행되면 안 된다).
 export async function callPlugin(method: BridgeMethod, params: Record<string, unknown> = {}, timeoutMs = 30000): Promise<unknown> {
-  // 1) 연결 정보
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await callOnce(method, params, timeoutMs);
+    } catch (error) {
+      const notSent = (error as { notSent?: boolean }).notSent === true;
+      if (!notSent || attempt >= RETRY_DELAYS_MS.length) throw error;
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
+async function callOnce(method: BridgeMethod, params: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+  // 1) 연결 정보 (매번 다시 읽는다: Civil 3D가 브리지를 다시 열면 포트와 토큰이 바뀐다)
   let config: { port?: number; token?: string };
   try {
     config = JSON.parse(await readFile(connectionFile(), "utf8")) as typeof config;
   } catch {
-    throw new Error("Civil 3D plugin connection was not found. Run NETLOAD and MYC3DCONNECTION in Civil 3D.");
+    throw Object.assign(new Error("Civil 3D plugin connection was not found. Run NETLOAD and MYC3DCONNECTION in Civil 3D."), { notSent: true });
   }
   const validPort = Number.isInteger(config.port) && config.port! >= 1 && config.port! <= 65535;
   const validToken = typeof config.token === "string" && /^[a-f\d]{64}$/i.test(config.token);
@@ -61,6 +78,7 @@ export async function callPlugin(method: BridgeMethod, params: Record<string, un
       settled = true;
       socket.destroy();
       if (error) {
+        if (!requestSent) Object.assign(error, { notSent: true });
         // 전송 뒤 응답을 못 받으면 커밋 여부를 단정하지 않는다. 명시적 플러그인 거절만 false다.
         if (!("drawingChanged" in error) || (error as { drawingChanged?: unknown }).drawingChanged === undefined)
           Object.assign(error, { drawingChanged: requestSent && ["change.apply", "alignment.create", "drawing.delete", "alignment.edit", "change.undo"].includes(method) ? "unknown" : false });

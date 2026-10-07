@@ -12,6 +12,10 @@ param(
 $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
+# 동봉 Node·npm의 절대 경로를 쓰고, CLI는 쓰기 가능한 사용자 폴더에 둔다.
+$runtimeDir = if ($env:MY_CIVIL3D_NODE_EXE) { Split-Path -Parent $env:MY_CIVIL3D_NODE_EXE } else { $null }
+$cliRoot = if ($env:MY_CIVIL3D_CLI_ROOT) { $env:MY_CIVIL3D_CLI_ROOT } else { Join-Path $env:LOCALAPPDATA 'MyCivil3DMcp\cli' }
+$cliPrefix = if ($env:MY_CIVIL3D_CLI_PREFIX) { $env:MY_CIVIL3D_CLI_PREFIX } else { Join-Path $cliRoot $Provider }
 $Display = @{ claude = 'Claude'; codex = 'Codex'; gemini = 'Gemini' }[$Provider]
 $Account = @{ claude = 'Claude(Anthropic) 계정'; codex = 'ChatGPT(OpenAI) 계정'; gemini = 'Google 계정' }[$Provider]
 $Host.UI.RawUI.WindowTitle = "My Civil 3D MCP - ${Display} 설치·로그인"
@@ -19,10 +23,15 @@ $Host.UI.RawUI.WindowTitle = "My Civil 3D MCP - ${Display} 설치·로그인"
 # 이 창의 PATH를 레지스트리의 최신 값으로 맞춘다(Civil 3D가 켜진 뒤 설치한 것도 보이게).
 function Update-Path {
   # MY_CIVIL3D_CLI_DIRS: only these folders (a fixed CLI folder, or a test PC without the CLIs).
-  if ($env:MY_CIVIL3D_CLI_DIRS) { $env:Path = "$($env:MY_CIVIL3D_CLI_DIRS);$($env:SystemRoot)\System32"; return }
+  if ($env:MY_CIVIL3D_CLI_DIRS) {
+    $dirs = @($env:MY_CIVIL3D_CLI_DIRS, "$($env:SystemRoot)\System32")
+    if ($env:MY_CIVIL3D_NODE_EXE) { $dirs = @($runtimeDir, $cliPrefix) + $dirs }
+    $env:Path = ($dirs | Where-Object { $_ }) -join ';'
+    return
+  }
   $user = [Environment]::GetEnvironmentVariable('Path', 'User')
   $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-  $env:Path = (@($machine, $user, (Join-Path $env:USERPROFILE '.local\bin'), (Join-Path $env:APPDATA 'npm')) | Where-Object { $_ }) -join ';'
+  $env:Path = (@($runtimeDir, $cliPrefix, $machine, $user, (Join-Path $env:USERPROFILE '.local\bin'), (Join-Path $env:APPDATA 'npm')) | Where-Object { $_ }) -join ';'
 }
 
 function Find-Cli {
@@ -38,13 +47,22 @@ function Install-Cli {
     Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
     return
   }
-  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+  # 개발·격리 테스트에서는 기존 PATH npm을 쓴다. 배포에서는 동봉 npm을 우선한다.
+  $npmFile = if ($runtimeDir -and (Test-Path -LiteralPath (Join-Path $runtimeDir 'npm.cmd'))) { Join-Path $runtimeDir 'npm.cmd' } else { (Get-Command npm -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
+  if (-not $npmFile) {
     Write-Host 'Node.js(npm)가 필요합니다. https://nodejs.org 에서 LTS를 설치한 뒤 다시 시도하세요.' -ForegroundColor Yellow
     return
   }
   $package = @{ codex = '@openai/codex'; gemini = '@google/gemini-cli' }[$Provider]
   Write-Host "npm으로 설치합니다($package)."
-  & npm install -g $package
+  $installArgs = @('install', '-g', $package)
+  if ($env:MY_CIVIL3D_NODE_EXE) {
+    New-Item -ItemType Directory -Force -Path $cliPrefix | Out-Null
+    $installArgs += @('--prefix', $cliPrefix)
+    $env:npm_config_cache = Join-Path $cliRoot '.npm-cache'
+  }
+  & $npmFile @installArgs
+  if ($LASTEXITCODE -ne 0) { Finish 'CLI 설치에 실패했습니다. 위의 오류와 네트워크 연결을 확인하세요.' 'Yellow' }
 }
 
 # 'yes' / 'no' / 'unknown'(Gemini: 상태를 묻는 명령이 없음)

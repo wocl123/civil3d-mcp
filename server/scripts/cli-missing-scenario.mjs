@@ -6,7 +6,7 @@
 //   C. Gemini not installed and no Node.js (npm): the window says what to install
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +16,7 @@ const temporary = await mkdtemp(join(tmpdir(), 'my-civil3d-nocli-'));
 const tools = join(here, 'fixtures', 'fake-cli');
 process.env.FAKE_CLI_BIN = temporary;
 process.env.MY_CIVIL3D_CLI_DIRS = `${temporary};${tools}`;
+process.env.MY_CIVIL3D_DATA_DIR = join(temporary, 'data');   // AI 세션 파일을 실제 사용자 폴더에 쓰지 않는다
 
 const { verifyProvider } = await import('../build/ai/aiCli.js');
 const { SETUP_SCRIPT } = await import('../build/ai/cliSetup.js');
@@ -77,7 +78,28 @@ try {
   assert.equal(await verifyProvider('gemini'), 'missing', 'nothing was installed');
   say('서비스', 'Gemini 상태: missing (설치되지 않음, 안내만 표시)');
 
-  console.log('\nCLI missing scenario passed: A install + sign-in, B sign-in, C no Node.js.');
+  step('D. 시스템 npm 없이 동봉 런타임으로 사용자 폴더 설치');
+  const runtime = join(temporary, '한글 번들 런타임');
+  const cliRoot = join(temporary, '앱 전용 CLI');
+  await mkdir(runtime);
+  await copyFile(process.execPath, join(runtime, 'node.exe'));
+  await copyFile(join(tools, 'npm.cmd'), join(runtime, 'npm.cmd'));
+  await copyFile(join(tools, 'codex-template.cmd'), join(runtime, 'codex-template.cmd'));
+  process.env.MY_CIVIL3D_NODE_EXE = join(runtime, 'node.exe');
+  process.env.MY_CIVIL3D_CLI_ROOT = cliRoot;
+  await rm(join(temporary, 'codex.cmd'));
+  forgetCli('codex');
+  assert.equal(await verifyProvider('codex'), 'missing');
+  assert.match(window('codex', 'install'), /로그인을 확인했습니다/);
+  const { locateCli, cliPath } = await import('../build/ai/cliLocator.js');
+  const location = await locateCli('codex');
+  assert.equal(location.dir, join(cliRoot, 'codex'));
+  assert.ok((await cliPath('codex', location)).includes(runtime));
+  assert.equal(await verifyProvider('codex'), 'ready');
+
+  console.log('\nCLI missing scenario passed: A install + sign-in, B sign-in, C no npm, D bundled runtime + private prefix with Korean/space paths.');
 } finally {
-  await rm(temporary, { recursive: true, force: true });
+  // 잠시 뒤 저장되는 세션 파일이 정리와 충돌하지 않게 저장 큐를 마무리한다.
+  await new Promise(resolve => setTimeout(resolve, 750));
+  await rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });   // AI 세션 저장이 끝날 때까지 기다리며 지운다
 }

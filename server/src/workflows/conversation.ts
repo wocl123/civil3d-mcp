@@ -1,9 +1,10 @@
-// 팔레트 대화 기억 (서비스 메모리 안).
-// "새 대화"를 누르거나 서비스가 꺼질 때까지 질문·답을 모아 두고, 질문마다 앞 대화를 함께 AI에 보낸다.
+// 팔레트 대화 기억. "새 대화"를 누를 때까지 질문·답을 모아 두고, 질문마다 앞 대화를 함께 AI에 보낸다.
+// data/state/conversations.json 에도 저장해, 서비스가 다시 떠도(자동 재시작) 대화와 수정안 버튼이 이어진다.
 // 요청마다 CLI를 새로 띄우므로 이것이 AI가 가진 유일한 앞 대화다.
 // 대화가 길어지면 오래된 부분은 AI가 쓴 요약으로 접는다(compaction.ts).
 
 import type { Provider } from "../ai/types/Provider.js";
+import { stateFile } from "../memory/stateFile.js";
 
 // 대화 한 턴. fixIds: 이 답에서 계산한 수정안 id(다음 질문에서 사용자가 그중 하나에 동의할 수 있다).
 export type Turn = { provider: Provider; question: string; answer: string; fixIds?: string[] };
@@ -21,7 +22,11 @@ const FULL_BUDGET = 12000;
 const SHORT_BUDGET = 6000;
 const SHORT_ANSWER = 200;
 
-const conversations = new Map<string, Conversation>();
+const store = stateFile<Conversation>("conversations", conversation => conversation.usedAt);
+const conversations = store.map;
+// 읽어 온 것 중 오래 안 쓴 것과 개수를 넘는 것은 버린다.
+for (const [key, found] of [...conversations]) if (Date.now() - found.usedAt > IDLE_MS) store.remove(key);
+for (const key of [...conversations.keys()].slice(0, Math.max(0, conversations.size - MAX_CONVERSATIONS))) store.remove(key);
 
 export function isConversationId(value: unknown): value is string {
   return typeof value === "string" && /^[\w-]{8,64}$/.test(value);
@@ -32,7 +37,7 @@ function entry(id: string | undefined): Conversation | undefined {
   if (!id) return undefined;
   const found = conversations.get(id);
   if (found && Date.now() - found.usedAt > IDLE_MS) {
-    conversations.delete(id);
+    store.remove(id);
     return undefined;
   }
   return found;
@@ -49,14 +54,15 @@ export function remember(id: string | undefined, turn: Turn): void {
   // 맨 뒤로 옮겨 "최근 사용" 순서를 유지하고, 개수가 넘치면 가장 오래 안 쓴 것부터 버린다.
   conversations.delete(id);
   conversations.set(id, found);
-  for (const key of conversations.keys()) {
+  for (const key of [...conversations.keys()]) {
     if (conversations.size <= MAX_CONVERSATIONS) break;
-    conversations.delete(key);
+    store.remove(key);
   }
+  store.save();
 }
 
 export function forget(id: string): void {
-  conversations.delete(id);
+  store.remove(id);
 }
 
 const turnText = (turn: Turn) => `Q: ${turn.question}\nA (${turn.provider}): ${turn.answer}`;
@@ -77,6 +83,7 @@ export function applySummary(id: string, summary: string, from: number, upTo: nu
   if (!found || found.summarized !== from || upTo > found.turns.length) return false;
   found.summary = summary;
   found.summarized = upTo;
+  store.save();
   return true;
 }
 

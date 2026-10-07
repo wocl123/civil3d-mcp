@@ -7,6 +7,7 @@
 //   3) 공식 설치 프로그램이 쓰는 폴더
 // 찾은 폴더는 CLI 프로세스의 PATH 맨 앞에 둔다(aiCli.ts). 그래야 CLI가 자기 도우미 파일도 찾는다.
 
+import { cliPrefix, runtimeDir, withRuntimePath } from "./runtime.js";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -49,14 +50,14 @@ const windowsDir = join(process.env.SystemRoot ?? "C:\\Windows", "System32");
 // 찾아볼 폴더 목록(중복 제거).
 async function searchDirs(provider: Provider): Promise<string[]> {
   const only = onlyDirs();
-  if (only) return [...only, windowsDir];
+  if (only) return process.env.MY_CIVIL3D_NODE_EXE ? [cliPrefix(provider), runtimeDir(), ...only, windowsDir] : [...only, windowsDir];
 
   const [user, machine] = await Promise.all([
     regPath("HKCU\\Environment"),
     regPath("HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")
   ]);
   const current = (process.env.PATH ?? process.env.Path ?? "").split(delimiter).filter(Boolean);
-  return [...new Set([...current, ...user, ...machine, ...KNOWN_DIRS[provider]])];
+  return [...new Set([cliPrefix(provider), ...current, ...user, ...machine, ...KNOWN_DIRS[provider]])];
 }
 
 // CLI 실행 파일 위치. 없으면 undefined(= 설치 안 됨).
@@ -83,10 +84,10 @@ export const forgetCli = (provider: Provider) => found.delete(provider);
 
 // CLI 프로세스의 PATH: CLI 폴더 먼저, 그다음 새로 읽은 사용자·시스템 PATH.
 export async function cliPath(provider: Provider, location: CliLocation): Promise<string> {
-  return [location.dir, ...await searchDirs(provider)].join(delimiter);
+  return [location.dir, withRuntimePath(await searchDirs(provider))].join(delimiter);
 }
 
 // 설치 창의 PATH: 새로 읽은 사용자·시스템 PATH(npm과 새로 설치한 것이 보이게).
 export async function freshPath(provider: Provider): Promise<string> {
-  return (await searchDirs(provider)).join(delimiter);
+  return withRuntimePath(await searchDirs(provider));
 }

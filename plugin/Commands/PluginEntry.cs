@@ -28,6 +28,10 @@ public sealed class PluginEntry : IExtensionApplication
             DrawingSelection.Start();
             PluginBridge.Start();
             NodeService.Start();
+            // 번들 자동 로드 시 첫 도면이 준비된 Idle에서 팔레트를 연다.
+            // NETLOAD 개발 흐름은 기존처럼 MYC3DCHAT 명령으로 연다.
+            if (RuntimePaths.IsBundle(System.IO.Path.GetDirectoryName(typeof(PluginEntry).Assembly.Location)!))
+                App.Idle += ShowOnFirstDrawing;
         }
         catch (System.Exception ex)
         {
@@ -36,8 +40,17 @@ public sealed class PluginEntry : IExtensionApplication
         }
     }
 
+    private static void ShowOnFirstDrawing(object? sender, EventArgs e)
+    {
+        if (App.DocumentManager.MdiActiveDocument is null) return;
+        App.Idle -= ShowOnFirstDrawing;
+        try { ChatPalette.Show(); }
+        catch (System.Exception ex) { App.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\n팔레트 시작 실패: " + ex.Message); }
+    }
+
     public void Terminate()
     {
+        App.Idle -= ShowOnFirstDrawing;
         ChatPalette.Dispose();
         NodeService.Stop();
         PluginBridge.Stop();
@@ -55,7 +68,9 @@ public sealed class PluginEntry : IExtensionApplication
         App.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
             $"\nMyCivil3DMcp bridge: {(PluginBridge.IsRunning ? "running" : "stopped")}, " +
             $"port {PluginBridge.Port}, service {(NodeService.IsRunning ? "running" : "stopped")}, " +
-            $"config {PluginBridge.ConnectionFilePath}" +
+            $"config {PluginBridge.OwnConnectionFilePath}, " +
+            $"version {NodeService.ProductVersion} (Civil 3D 2025), node {NodeService.NodeVersion} [{NodeService.NodePath}], " +
+            $"service port {NodeService.Port}, entry {NodeService.EntryPath}" +
             (NodeService.LastError is null ? "\n" : $", error {NodeService.LastError}\n"));
     }
 

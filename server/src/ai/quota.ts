@@ -3,6 +3,7 @@
 //   Codex:  codex app-server 에 JSON-RPC로 account/rateLimits/read 요청
 //   Gemini: 조회 방법이 없음
 
+import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { tmpdir } from "node:os";
@@ -167,7 +168,8 @@ async function queryClaudeQuota(): Promise<QuotaInfo> {
 async function readClaudeQuota(forceRefresh: boolean): Promise<QuotaInfo> {
   if (!forceRefresh && claudeCache && Date.now() - claudeCache.at < 45000) return claudeCache.quota;
 
-  try {
+  // 기본 배포본은 SDK를 포함하지 않는다. 없는 도우미를 실행하며 기다리지 않는다.
+  if (process.env.MY_CIVIL3D_CLAUDE_QUOTA_MODE !== "statusline" && existsSync(claudeHelper)) try {
     const quota = await queryClaudeQuota();
     if (quota.status !== "unavailable") {
       claudeCache = { at: Date.now(), quota };
@@ -178,7 +180,11 @@ async function readClaudeQuota(forceRefresh: boolean): Promise<QuotaInfo> {
   }
 
   try {
-    const snapshot = parseClaudeQuota(JSON.parse(await readFile(claudeQuotaFile, "utf8")));
+    const recorded = JSON.parse(await readFile(claudeQuotaFile, "utf8"));
+    // reset 시각이 남아 있어도 오래된 사용률은 현재 한도로 표시하지 않는다.
+    if (typeof recorded.capturedAt !== "number" || recorded.capturedAt > Date.now() + 60000 || Date.now() - recorded.capturedAt > 15 * 60000)
+      throw new Error("Claude 상태줄 기록이 만료되었습니다.");
+    const snapshot = parseClaudeQuota(recorded);
     if (snapshot.status === "available") return snapshot;
   } catch {
     // 상태줄 기록도 없다.
@@ -186,7 +192,7 @@ async function readClaudeQuota(forceRefresh: boolean): Promise<QuotaInfo> {
 
   return {
     status: "unavailable", windows: [], ordinaryUsageAllowed: null,
-    message: "Claude 한도를 조회하지 못했습니다. CLI 로그인과 네트워크 상태를 확인하세요."
+    message: "최근 Claude 한도 기록이 없습니다. 질문은 계속 사용할 수 있습니다."
   };
 }
 

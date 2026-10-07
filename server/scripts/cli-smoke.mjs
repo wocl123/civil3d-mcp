@@ -3,6 +3,12 @@
 // when the service's PATH is as old as Civil 3D's.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// AI 세션 파일을 실제 사용자 폴더에 쓰지 않는다.
+process.env.MY_CIVIL3D_DATA_DIR = mkdtempSync(join(tmpdir(), 'my-civil3d-cli-'));
 
 const { SETUP_SCRIPT } = await import('../build/ai/cliSetup.js');
 const errors = execFileSync('powershell.exe', ['-NoProfile', '-Command',

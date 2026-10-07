@@ -22,7 +22,8 @@
     "smoke:cli": "npm run build && node scripts/cli-smoke.mjs && node scripts/cli-missing-scenario.mjs",
     "test:safety": "npm run build && node scripts/safety-regression.mjs",
     "test:delete": "npm run build && node scripts/delete-scenario.mjs",
-    "test:edit": "npm run build && node scripts/edit-scenario.mjs"
+    "test:edit": "npm run build && node scripts/edit-scenario.mjs",
+    "test:reconnect": "npm run build && node scripts/reconnect-scenario.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

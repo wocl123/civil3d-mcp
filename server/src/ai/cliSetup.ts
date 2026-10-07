@@ -3,6 +3,7 @@
 // [설치]/[로그인]을 눌렀을 때만, 그 AI 하나에 대해 server/setup/setup-ai-cli.ps1 을 새 PowerShell 창으로 연다.
 // 스크립트는 설치하고 로그인까지 이어 가며, 로그인은 사용자가 브라우저에서 자기 계정으로 한다.
 
+import { runtimeNode, cliPrefix } from "./runtime.js";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -25,6 +26,8 @@ export async function openSetupWindow(provider: Provider, action: "install" | "l
   const env: Record<string, string | undefined> = { ...process.env };
   for (const key of Object.keys(env)) if (/^path$/i.test(key)) delete env[key];
   env.Path = await freshPath(provider);
+  env.MY_CIVIL3D_NODE_EXE = runtimeNode();
+  env.MY_CIVIL3D_CLI_PREFIX = cliPrefix(provider);
 
   // detached 로 띄우면 Windows에서 자기 콘솔 창을 갖는다.
   const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", SETUP_SCRIPT, "-Provider", provider, "-Action", action];

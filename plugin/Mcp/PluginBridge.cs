@@ -12,8 +12,14 @@ namespace MyCivil3DMcp.Plugin;
 
 /// <summary>Node 프로세스가 플러그인을 부르는 로컬 JSON-RPC 브리지.</summary>
 // 127.0.0.1:48761(MY_CIVIL3D_PORT)에서 연결 하나에 요청 한 줄, 응답 한 줄.
-// 시작할 때 무작위 토큰을 만들어 %LOCALAPPDATA%\MyCivil3DMcp\connection.json 에 쓰고,
-// 그 토큰을 가진 요청만 받는다. 도면 작업은 모두 Civil 3D 명령 컨텍스트에서 실행한다.
+// 시작할 때 무작위 토큰을 만들어 연결 파일에 쓰고, 그 토큰을 가진 요청만 받는다.
+// 도면 작업은 모두 Civil 3D 명령 컨텍스트에서 실행한다.
+//
+// 연결 파일 두 개(%LOCALAPPDATA%\MyCivil3DMcp\):
+//   connection-<PID>.json  이 Civil 3D 전용. 이 Civil 3D가 띄운 서비스와 팔레트 AI는 이것만 쓴다.
+//                          그래서 Civil 3D를 두 개 켜도 질문이 다른 도면으로 가지 않는다.
+//   connection.json        가장 나중에 켠 Civil 3D. 외부 MCP 클라이언트(Claude Desktop 등)용.
+// 48761을 다른 프로그램이 쓰고 있으면 빈 포트로 연다(포트는 연결 파일에 적히므로 클라이언트가 따라온다).
 public static class PluginBridge
 {
     // 값이 없는 항목은 null로 쓰지 않고 뺀다: 결과가 모두 AI 문맥에 들어가는데,
@@ -32,9 +38,10 @@ public static class PluginBridge
     public static bool IsRunning => _listener is not null;
     internal static string? SessionToken => _token;
     public static int Port { get; private set; } = DefaultPort;
-    public static string ConnectionFilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "MyCivil3DMcp", "connection.json");
+    private static string Folder => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MyCivil3DMcp");
+    public static string ConnectionFilePath => Path.Combine(Folder, "connection.json");
+    public static string OwnConnectionFilePath => Path.Combine(Folder, $"connection-{Environment.ProcessId}.json");
 
     // 포트를 열고, 토큰을 만들어 연결 파일에 쓴 뒤 접속을 받기 시작한다.
     public static void Start()
@@ -49,15 +56,24 @@ public static class PluginBridge
                 : throw new ArgumentException("MY_CIVIL3D_PORT must be between 1 and 65535.");
 
         TcpListener listener = new(IPAddress.Loopback, port);
-        listener.Start();
+        try { listener.Start(); }
+        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse && string.IsNullOrWhiteSpace(configuredPort))
+        {
+            // 다른 Civil 3D나 다른 프로그램이 쓰는 중: 빈 포트로 우회한다.
+            listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+        RemoveStaleConnectionFiles();
         CancellationTokenSource cancellation = new();
         string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(ConnectionFilePath)!);
-            File.WriteAllText(ConnectionFilePath,
-                JsonSerializer.Serialize(new { port, token }), new UTF8Encoding(false));
+            Directory.CreateDirectory(Folder);
+            string config = JsonSerializer.Serialize(new { port, token });
+            File.WriteAllText(OwnConnectionFilePath, config, new UTF8Encoding(false));
+            File.WriteAllText(ConnectionFilePath, config, new UTF8Encoding(false));
         }
         catch
         {
@@ -83,6 +99,9 @@ public static class PluginBridge
         _cancellation?.Dispose();
         _cancellation = null;
         _token = null;
+        try { File.Delete(OwnConnectionFilePath); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
         try
         {
             if (ownToken is not null && File.Exists(ConnectionFilePath))
@@ -94,6 +113,25 @@ public static class PluginBridge
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
         catch (JsonException) { }
+    }
+
+    // Civil 3D가 비정상 종료해 남은 connection-<PID>.json 을 지운다(그 PID가 더는 없을 때).
+    private static void RemoveStaleConnectionFiles()
+    {
+        try
+        {
+            foreach (string file in Directory.EnumerateFiles(Folder, "connection-*.json"))
+            {
+                string name = Path.GetFileNameWithoutExtension(file);
+                if (!int.TryParse(name["connection-".Length..], out int pid) || pid == Environment.ProcessId) continue;
+                bool alive;
+                try { using System.Diagnostics.Process process = System.Diagnostics.Process.GetProcessById(pid); alive = !process.HasExited; }
+                catch (ArgumentException) { alive = false; }
+                if (!alive) File.Delete(file);
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private static async Task AcceptLoopAsync(TcpListener listener, CancellationToken cancellationToken)

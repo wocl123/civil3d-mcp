@@ -11,3 +11,8 @@
 **/.vs/
 /central/data/
 /central/settings.json
+
+/dist/
+/.package-cache/
+/.package-work/
+/MyCivil3DMcp-*.zip
