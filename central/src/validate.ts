@@ -34,6 +34,10 @@ const clean = (record: Obj): Obj => Object.fromEntries(Object.entries(record).fi
 const oneOf = <T>(list: readonly T[], value: unknown) => list.includes(value as T) ? value as T : undefined;
 
 const APP_VERSION = /^(\d+\.\d+\.\d+|dev)$/;                  // 프로그램 버전
+const ID = /^[\w-]{8,64}$/;                                   // 요청·대화 id(무작위)
+// 자유 글(설치 쪽에서 가림 처리를 거친 질문·답·도구 입력·변경 설명). 길이만 자른다.
+// 경로·파일·메일이 남아 있으면 묶음 전체의 마지막 검사(leak)에서 거절한다.
+const text = (value: unknown, max: number) => typeof value === "string" && value.trim() ? value.slice(0, max) : undefined;
 
 // 기록 하나: 종류별 항목 + 프로그램 버전(있으면).
 function record(value: unknown): Obj | undefined {
@@ -55,6 +59,10 @@ function recordBody(value: unknown): Obj | undefined {
       return clean({
         type: "turn",
         at,
+        id: str(item.id, ID),
+        conversation: str(item.conversation, ID),
+        question: text(item.question, 4000),
+        answer: text(item.answer, 8000),
         kind: str(item.kind, WORD),
         provider: str(item.provider, WORD),
         model: str(item.model, WORD),
@@ -77,7 +85,9 @@ function recordBody(value: unknown): Obj | undefined {
       return clean({
         type: "tool",
         at,
+        turnId: str(item.turnId, ID),
         tool: str(item.tool, NAME),
+        input: text(item.input, 1500),
         ms: num(item.ms),
         ok: item.ok === true,
         outputChars: num(item.outputChars),
@@ -90,7 +100,10 @@ function recordBody(value: unknown): Obj | undefined {
       return clean({
         type: "change",
         at,
-        state: oneOf(["applied", "failed"], item.state),
+        turnId: str(item.turnId, ID),
+        state: oneOf(["applied", "failed", "undone"], item.state),
+        title: text(item.title, 200),
+        labels: text(item.labels, 1000),
         source: oneOf(["create", "fix"], item.source),
         check: str(item.check, CHECK),
         changes: Array.isArray(item.changes)
@@ -104,6 +117,13 @@ function recordBody(value: unknown): Obj | undefined {
         curves: num(item.curves),
         errorKind: str(item.errorKind, WORD)
       });
+
+    // 사용자가 답을 이상하다고 표시함(팔레트 👎)
+    case "feedback": {
+      const turnId = str(item.turnId, ID);
+      if (!turnId) return undefined;
+      return clean({ type: "feedback", at, turnId, rating: oneOf(["bad", "good"], item.rating) ?? "bad", reason: text(item.reason, 500) });
+    }
 
     // 수정 추적 결과 1건
     case "modification": {

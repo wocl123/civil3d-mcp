@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 //   GET  /api/providers              AI별 상태와 남은 세션 시간
 //   GET  /api/version                프로그램 버전과 자동 업데이트 상태(팔레트 아래 줄)
 //   POST /api/update/check           지금 새 버전 확인
+//   POST /api/feedback               답이 이상하다고 표시(팔레트 👎): { requestId, reason? }
 //   GET  /api/usage?provider=        서비스가 켜진 뒤 토큰 합계
 //   GET  /api/quota?provider=        계정의 남은 사용 한도
 //   GET  /api/drawing                도면 상태와 객체 일부(점검용)
@@ -37,7 +38,8 @@ import { getQuota } from "../ai/quota.js";
 import { answerChat } from "../workflows/paletteChat.js";
 import { clearMemory } from "../memory/memoryStore.js";
 import { forget, isConversationId } from "../workflows/conversation.js";
-import { startSyncLoop } from "../sync/syncLoop.js";
+import { startSyncLoop, syncSoon } from "../sync/syncLoop.js";
+import { logFeedback } from "../logs/workLog.js";
 import { checkForUpdate, startUpdateLoop, updateState } from "../update/autoUpdate.js";
 
 const host = "127.0.0.1";
@@ -110,6 +112,14 @@ export const httpServer = createServer(async (request, response) => {
     // ── AI 상태
     if (route === "GET /api/version") return json(response, 200, updateState());
     if (route === "POST /api/update/check") return json(response, 200, await checkForUpdate());
+    if (route === "POST /api/feedback") {
+      const input = await body(request) as { requestId?: unknown; reason?: unknown; rating?: unknown };
+      if (typeof input.requestId !== "string" || !/^[\w-]{8,64}$/.test(input.requestId)) return json(response, 400, { error: "답을 찾을 수 없습니다." });
+      const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 500) : "";
+      await logFeedback({ requestId: input.requestId, rating: input.rating === "good" ? "good" : "bad", ...(reason ? { reason } : {}) });
+      syncSoon();
+      return json(response, 200, { recorded: true });
+    }
 
     if (route === "GET /api/providers") {
       const states = await Promise.all(PROVIDERS.map(async provider => ({

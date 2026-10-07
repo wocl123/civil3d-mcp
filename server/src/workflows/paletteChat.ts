@@ -95,7 +95,7 @@ export async function answerChat(provider: Provider, message: string,
     await log({ kind: "chat", drawing: scope.label, selected, cached: true, answer: clip(cached.answer) });
     syncSoon();
     return {
-      provider, answer: cached.answer, usage: NO_USAGE, totals: getUsageTotals(provider),
+      provider, requestId, answer: cached.answer, usage: NO_USAGE, totals: getUsageTotals(provider),
       cached: true, cachedAt: new Date(cached.createdAt).toISOString(), savedUsage: cached.usage, recorded: [],
       conversation: status(conversation)
     };
@@ -176,7 +176,7 @@ export async function answerChat(provider: Provider, message: string,
   syncSoon();
 
   return {
-    provider, answer, usage: result.usage, totals, cached: false, recorded, candidates, conversation: status(conversation),
+    provider, requestId, answer, usage: result.usage, totals, cached: false, recorded, candidates, conversation: status(conversation),
     fixes: fixes.map(fixCard),
     applied: applied.map(entry => ({ operationId: entry.operationId, fixId: entry.fixId, state: entry.state, recheck: entry.recheck, warnings: entry.warnings, title: entry.title, target: entry.target, labels: entry.labels, kind: entry.kind }))
   };

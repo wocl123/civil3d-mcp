@@ -53,6 +53,7 @@ async function newLines(path: string, from: number): Promise<{ lines: string[]; 
 export async function exportLogs(state: SyncState): Promise<{ packages: number; blocked: number; records: number }> {
   // 1) 날짜 폴더마다, 로그 파일마다 새 줄을 읽어 보낼 기록으로 바꾼다.
   const records: OutRecord[] = [];
+  const terms = await privateTerms();
   const days = (await readdir(logsDir()).catch(() => [] as string[]))
     .filter(day => /^\d{4}-\d{2}-\d{2}$/.test(day))
     .sort();
@@ -68,7 +69,7 @@ export async function exportLogs(state: SyncState): Promise<{ packages: number; 
       seen.add(key);
       for (const line of found.lines) {
         try {
-          const record = outRecord(file, JSON.parse(line) as Record<string, unknown>);
+          const record = outRecord(file, JSON.parse(line) as Record<string, unknown>, terms);
           if (record) records.push(record);
         } catch {
           // 깨진 줄은 건너뛴다.
@@ -83,7 +84,6 @@ export async function exportLogs(state: SyncState): Promise<{ packages: number; 
 
   // 2) MAX_RECORDS 개씩 묶고, 묶음 전체를 마지막으로 검사한다.
   const { installId } = await install();
-  const terms = await privateTerms();
   let packages = 0;
   let blocked = 0;
 

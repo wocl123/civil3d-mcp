@@ -6,12 +6,13 @@
 //   /중앙 검토자 <키>             이 PC를 검토자로
 //   /중앙 동기화                  지금 바로 동기화
 //   /검토, 이어서 "1 승인" / "2 반려 사유", /검토 보고    검토자 전용
+//   /검토 사례, /검토 사례 <번호>    검토자 전용: 👎·되돌림·실패가 있었던 질문과 답(내용 포함)
 //   /설정값                       지금 적용되는 설정값과 출처
 
 import { install } from "../data/install.js";
 import { centralUrl, insecureUrl, loadSettings, saveSettings } from "../data/settings.js";
 import { PARAMETERS, isParameterKey, parameterSummary } from "../knowledge/parameters.js";
-import { CentralError, decide, enroll, getOfficial, normalizeFingerprint, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
+import { CentralError, decide, enroll, getCases, getOfficial, normalizeFingerprint, getReport, getReview, type ReviewItem } from "../sync/centralClient.js";
 import { runSync, syncStatus } from "../sync/syncLoop.js";
 import { lastShown, parseDecision, pick, setShown } from "./shownLists.js";
 
@@ -24,6 +25,8 @@ export async function centralCommand(question: string, conversation?: string): P
   if (/^\/중앙(\s|$)/.test(text)) return central(text.replace(/^\/중앙\s*/, ""));
   if (text === "/검토") return reviewList(conversation);
   if (text === "/검토 보고") return report();
+  const caseMatch = /^\/검토 사례(?:\s+(\d+))?$/.exec(text);
+  if (caseMatch) return problemCases(caseMatch[1] ? Number(caseMatch[1]) : undefined);
 
   // "1 승인" 같은 답은 마지막 목록이 검토 목록일 때만 받는다.
   const listed = lastShown(conversation, "review");
@@ -139,8 +142,8 @@ async function statusText(): Promise<string> {
     `- 마지막 보냄 ${when(state.lastPush)}, 마지막 받음 ${when(state.lastPull)}, 중앙 지식 v${state.officialVersion ?? 0}`,
     ...(state.lastError ? [`- 마지막 문제: ${state.lastError}`] : []),
     "",
-    "보내는 것: 질문 종류·도구·시간·토큰·실패 종류, 도면 변경 결과, AI가 만든 값을 사람이 고쳤는지, 지식 후보.",
-    "보내지 않는 것: 질문·답변 원문, 도면 이름·경로·좌표·핸들, 사용자·PC 이름."
+    "보내는 것: 질문과 답, 도구 입력, 도면 변경 내용(적용·되돌림), 👎 의견, 시간·토큰·실패 종류, 사람이 AI 값을 고쳤는지, 지식 후보, 프로그램 버전.",
+    "가려서 보내는 것: 도면 파일 이름, 경로, 메일, 사용자·PC 이름(<이름>, <경로> 등으로 바뀜). 도면 파일 자체는 보내지 않음."
   ].join("\n");
 }
 
@@ -257,5 +260,40 @@ async function report(): Promise<string> {
     ].join("\n");
   } catch (error) {
     return `보고를 받지 못했습니다. ${failure(error)}`;
+  }
+}
+
+// /검토 사례 : 결과가 이상했을 수 있는 질문(👎, 적용 후 되돌림, 변경 실패, 질문 실패). 번호를 주면 내용까지.
+async function problemCases(number?: number): Promise<string> {
+  const central = await reviewer();
+  if (!central) return "검토자 PC가 아닙니다.";
+  try {
+    const { cases } = await getCases(central);
+    if (!cases.length) return "최근 14일 동안 문제 사례가 없습니다.";
+    const short = (value: string | undefined, max: number) => (value ?? "").replace(/\s+/g, " ").slice(0, max);
+    if (number === undefined) {
+      return [
+        `### 문제 사례 ${cases.length}건 (최근 14일)`,
+        ...cases.map((item, index) =>
+          `${index + 1}. [${item.signals.join(", ")}] ${item.appVersion ?? "?"} · ${item.provider ?? "?"} · ${short(item.question, 60) || "(질문 내용 없음)"}`),
+        "",
+        "자세히: /검토 사례 <번호>"
+      ].join("\n");
+    }
+    const item = cases[number - 1];
+    if (!item) return `사례 ${number}번이 없습니다. /검토 사례 로 목록을 보세요.`;
+    return [
+      `### 사례 ${number} · ${item.signals.join(", ")}`,
+      `${item.at} · 버전 ${item.appVersion ?? "?"} · ${item.provider ?? "?"} ${item.model ?? ""}${item.errorKind ? ` · 실패 ${item.errorKind}` : ""}`,
+      "",
+      "**질문**", item.question ?? "(내용 없음)",
+      "",
+      "**답**", item.answer ? item.answer.slice(0, 2000) : "(내용 없음)",
+      ...(item.feedback.length ? ["", "**사용자 의견**", ...item.feedback.map(text => `- ${text}`)] : []),
+      ...(item.changes.length ? ["", "**도면 변경**", ...item.changes.map(change => `- ${change.state}: ${change.title ?? ""} ${change.labels ?? ""}`)] : []),
+      ...(item.tools.length ? ["", `**도구**: ${[...new Set(item.tools)].join(", ")}`] : [])
+    ].join("\n");
+  } catch (error) {
+    return `문제 사례를 받지 못했습니다. ${failure(error)}`;
   }
 }

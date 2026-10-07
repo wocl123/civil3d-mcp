@@ -77,6 +77,10 @@ try {
   failMethod('after.undo');
   assert.equal((await operationStatus(id, [id])).state, 'undone');
   assert.equal((await undoOperation(applied.data.operationId, [id])).state, 'undone', 'repeated undo is idempotent');
+  // 되돌림도 작업 기록에 남는다(중앙의 문제 사례: "적용했다가 되돌림").
+  const { readdir: listDir, readFile: readText } = await import('node:fs/promises');
+  const changeLog = (await Promise.all((await listDir(join(temporary, 'logs'))).map(day => readText(join(temporary, 'logs', day, 'changes.jsonl'), 'utf8').catch(() => '')))).join('');
+  assert.match(changeLog, /"state":"undone"/, 'an undo is logged');
   // 되돌린 삭제는 옛 계획으로 다시 실행하지 않는다(다시 지우려면 새 계획).
   await assert.rejects(applyFix(id, [id], 'delete-reapply', applied.data.operationId), /되돌린 삭제는 다시 실행하지 않습니다/);
   assert.equal((await usedFix(id)).state, 'undone', 'a refused reapply leaves the undo in place');

@@ -8,13 +8,14 @@ import { productVersion } from "../version.js";
 //   tools.jsonl    MCP 도구 호출 1건 = 1줄 (걸린 시간, 결과)
 //   changes.jsonl  도면 변경 시도 1건 = 1줄 (changes/applyChange.ts)
 //   events.jsonl   AI 결과를 사람이 나중에 어떻게 했는지 (tracking/tracker.ts)
+//   feedback.jsonl 사용자가 답을 이상하다고 표시함(팔레트 👎)
 // 프롬프트에는 넣지 않는다. 원문이 들어 있으므로 그대로 PC 밖으로 나가지 않는다.
 // 보내는 것은 sync/records.ts 가 만든 비식별 사본이다.
 // 줄마다 프로그램 버전(appVersion)을 붙인다: 업데이트 전후 기록이 한 묶음에 섞여도 구분된다.
 // 기록에 실패해도 답변은 멈추지 않는다. 30일이 지난 폴더는 지운다(sync/retention.ts).
 
 const MAX_TEXT = 8000;   // 한 칸에 남기는 글자 수 한도
-export const LOG_FILES = ["turns.jsonl", "tools.jsonl", "changes.jsonl", "events.jsonl"] as const;
+export const LOG_FILES = ["turns.jsonl", "tools.jsonl", "changes.jsonl", "events.jsonl", "feedback.jsonl"] as const;
 export type LogFile = typeof LOG_FILES[number];
 
 // 긴 글은 잘라서 남긴다: "...…(+1234자)"
@@ -39,6 +40,7 @@ export const logTurn = (entry: Record<string, unknown>) => append("turns.jsonl",
 export const logTool = (entry: Record<string, unknown>) => append("tools.jsonl", entry);
 export const logChangeEntry = (entry: Record<string, unknown>) => append("changes.jsonl", entry);
 export const logEvent = (entry: Record<string, unknown>) => append("events.jsonl", entry);
+export const logFeedback = (entry: Record<string, unknown>) => append("feedback.jsonl", entry);
 
 // 어제와 오늘 파일의 줄들(자정을 넘긴 요청도 찾도록).
 export async function recentLines(name: LogFile): Promise<Record<string, unknown>[]> {

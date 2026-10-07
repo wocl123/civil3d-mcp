@@ -28,13 +28,15 @@ export function leak(text: string, terms: string[]): string | undefined {
   return term ? `가릴 낱말(${term.length}자)` : undefined;
 }
 
-// 자유 글(지식 후보)에서 경로·파일·메일·가릴 낱말을 <경로>, <파일>, <메일>, <이름>으로 바꾼다.
+// 자유 글(질문·답, 지식 후보, 도구 입력)에서 경로·파일·메일·키·가릴 낱말을 <경로>, <파일>, <메일>, <키>, <이름>으로 바꾼다.
+// 가릴 낱말: 도면 이름, Windows 사용자 이름, PC 이름(data/terms.ts).
 export function blank(text: string, terms: string[]): string {
   let out = text
     .replace(/[A-Za-z]:[\\/][^\s"']*/g, "<경로>")
     .replace(/\\\\[\w.-]+\\[^\s"']*/g, "<경로>")
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "<메일>")
-    .replace(/[^\s"'\\/]+\.(dwg|dxf|dwt|rvt|pdf|xlsx?)\b/gi, "<파일>");
+    .replace(/[^\s"'\\/]+\.(dwg|dxf|dwt|rvt|pdf|xlsx?)\b/gi, "<파일>")
+    .replace(/\b(sk|pk|ghp|gho)[-_][A-Za-z\d]{16,}/g, "<키>");
   for (const term of terms) out = out.replace(termPattern(term), "<이름>");
   return out;
 }

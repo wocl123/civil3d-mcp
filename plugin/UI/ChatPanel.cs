@@ -125,6 +125,22 @@ internal sealed class ChatPanel : UserControl
         await RefreshProvidersAsync();
         if (_selected is not null) await RefreshUsageAsync(_selected, refreshQuota: false);
         await RefreshVersionAsync();
+        ShowSharingNoticeOnce();
+    }
+
+    // 처음 한 번만: 질문·답이 회사 중앙 서버로 간다는 안내(모르는 채로 보내지 않게).
+    private void ShowSharingNoticeOnce()
+    {
+        try
+        {
+            string flag = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "MyCivil3DMcp", "data", "state", "sharing-notice-shown");
+            if (System.IO.File.Exists(flag)) return;
+            AddNotice("안내: 질문과 답변은 결과 품질 개선을 위해 회사 중앙 서버로 전송됩니다. 도면 파일 이름·경로·사용자 이름은 가려서 보냅니다.");
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(flag)!);
+            System.IO.File.WriteAllText(flag, DateTime.Now.ToString("o"));
+        }
+        catch (System.Exception) { }
     }
 
     // 프로그램 버전과 자동 업데이트 상태(서비스가 중앙 서버에 묻고, 새 버전을 받아 두면 Civil 3D를 끌 때 설치한다).
@@ -358,6 +374,8 @@ internal sealed class ChatPanel : UserControl
             answer.Child = MarkdownView.Render(text, _theme, ForwardWheel);
             copy.Tag = text;
             copy.Visibility = Visibility.Visible;
+            if (data["requestId"]?.ToString() is { } requestId && copy.Parent is Panel answerFooter)
+                answerFooter.Children.Add(FeedbackButton(requestId));
             bool cached = data["cached"]?.GetValue<bool>() == true;
             int recorded = (data["recorded"] as JsonArray)?.Count ?? 0;
             int candidates = (data["candidates"] as JsonArray)?.Count ?? 0;
@@ -501,6 +519,48 @@ internal sealed class ChatPanel : UserControl
         _messages.Children.Add(footer);
         ScrollToEnd();
         return (bubble, line, copy);
+    }
+
+    // 답 아래 작은 👎: 누르면 한 줄 의견 칸이 열리고, 보내면 중앙 서버의 문제 사례로 간다(/검토 사례).
+    private UIElement FeedbackButton(string requestId)
+    {
+        StackPanel host = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 0, 0) };
+        Button bad = new()
+        {
+            Content = "👎", ToolTip = "답이 이상하면 눌러 주세요. 질문과 답이 개선 자료로 쓰입니다.",
+            FontSize = 11, Padding = new Thickness(5, 0, 5, 1), Cursor = Cursors.Hand,
+            Background = Brushes.Transparent, Foreground = _theme.Muted, BorderBrush = _theme.Border,
+            BorderThickness = new Thickness(1), Template = FlatTemplate()
+        };
+        host.Children.Add(bad);
+        bad.Click += (_, _) =>
+        {
+            TextBox reason = new() { Width = 200, FontSize = 11, Margin = new Thickness(0, 0, 4, 0), ToolTip = "무엇이 이상했나요? (선택, 비워도 됨)" };
+            Button send = new()
+            {
+                Content = "보내기", FontSize = 11, Padding = new Thickness(6, 0, 6, 1), Cursor = Cursors.Hand,
+                Background = Brushes.Transparent, Foreground = _theme.Muted, BorderBrush = _theme.Border,
+                BorderThickness = new Thickness(1), Template = FlatTemplate()
+            };
+            async Task Send()
+            {
+                send.IsEnabled = false;
+                try
+                {
+                    await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/feedback", new { requestId, reason = reason.Text });
+                    host.Children.Clear();
+                    host.Children.Add(new TextBlock { Text = "의견을 보냈습니다", FontSize = 11, Foreground = _theme.Muted, VerticalAlignment = VerticalAlignment.Center });
+                }
+                catch (System.Exception) { send.IsEnabled = true; send.Content = "다시 보내기"; }
+            }
+            send.Click += async (_, _) => await Send();
+            reason.KeyDown += async (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; await Send(); } };
+            host.Children.Clear();
+            host.Children.Add(reason);
+            host.Children.Add(send);
+            reason.Focus();
+        };
+        return host;
     }
 
     private static void CopyAnswer(Button copy)

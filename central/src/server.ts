@@ -13,6 +13,7 @@
 //   GET  /v1/review                검토 목록                     (설치 토큰 + 검토자 키)
 //   POST /v1/review/decide         승인 / 반려 / 철회            (설치 토큰 + 검토자 키)
 //   GET  /v1/report                보고                          (설치 토큰 + 검토자 키)
+//   GET  /v1/review/cases          문제 사례(👎·되돌림·실패, 내용 포함) (설치 토큰 + 검토자 키)
 //   GET  /v1/release               배포 중인 버전·SHA-256·크기   (가입키 또는 설치 토큰)
 //   GET  /v1/release/download      배포 zip                       (가입키 또는 설치 토큰)
 //   배포 버전은 release.ts 명령으로 받아 두고 지정한다(releases.ts).
@@ -24,7 +25,7 @@ import { createServer as createHttpsServer } from "node:https";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { dataDir, host, loadConfig, port, settingsFile } from "./config.js";
-import { decide, groupKey, report, ReviewError, reviewItems } from "./review.js";
+import { decide, groupKey, problemCases, report, ReviewError, reviewItems } from "./review.js";
 import { current, releaseFile } from "./releases.js";
 import { Store } from "./store.js";
 import { loadTls, loopbackHost } from "./tls.js";
@@ -227,6 +228,7 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
     }
 
     if (route === "GET /v1/report") return json(response, 200, report(store, config));
+    if (route === "GET /v1/review/cases") return json(response, 200, { cases: problemCases(store, Number(url.searchParams.get("days") ?? 14) || 14) });
 
     json(response, 404, { error: "Not found." });
   } catch (error) {

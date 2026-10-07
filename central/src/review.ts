@@ -220,3 +220,49 @@ export function report(store: Store, config: Config) {
     kept
   };
 }
+
+// ── 문제 사례: 결과가 이상했을 가능성이 큰 질문을 내용과 함께 모은다(검토자 전용).
+//   신호: 사용자가 👎를 누름(feedback), 적용한 변경을 되돌림(change undone), 변경 실패, 질문 실패(errorKind).
+//   같은 질문의 도구 호출·변경·평가를 turnId로 묶는다. 질문·답은 설치 쪽에서 가림 처리된 것이다.
+export type ProblemCase = {
+  id: string; at: string; appVersion?: string; provider?: string; model?: string; errorKind?: string;
+  question?: string; answer?: string; signals: string[]; feedback: string[];
+  changes: { state: string; title?: string; labels?: string }[]; tools: string[];
+};
+
+export function problemCases(store: Store, days = 14, limit = 50): ProblemCase[] {
+  const since = new Date(Date.now() - days * 24 * 3600000).toISOString();
+  const rows = store.records.filter(row => row.receivedAt >= since);
+  const cases = new Map<string, ProblemCase>();
+  const caseOf = (installId: string, id: string, at: string) => {
+    const key = `${installId}:${id}`;
+    let found = cases.get(key);
+    if (!found) cases.set(key, found = { id, at, signals: [], feedback: [], changes: [], tools: [] });
+    return found;
+  };
+  for (const { installId, record } of rows) {
+    const r = record as Record<string, unknown>;
+    const at = String(r.at ?? "");
+    if (r.type === "turn" && typeof r.id === "string") {
+      const item = caseOf(installId, r.id, at);
+      Object.assign(item, { at, appVersion: r.appVersion, provider: r.provider, model: r.model, errorKind: r.errorKind, question: r.question, answer: r.answer });
+      if (r.errorKind) item.signals.push(`실패(${r.errorKind})`);
+    } else if (r.type === "feedback" && typeof r.turnId === "string") {
+      const item = caseOf(installId, r.turnId, at);
+      item.signals.push(r.rating === "good" ? "👍" : "👎");
+      if (typeof r.reason === "string") item.feedback.push(r.reason);
+    } else if (r.type === "change" && typeof r.turnId === "string") {
+      const item = caseOf(installId, r.turnId, at);
+      item.changes.push({ state: String(r.state), title: r.title as string | undefined, labels: r.labels as string | undefined });
+      if (r.state === "undone") item.signals.push("되돌림");
+      if (r.state === "failed") item.signals.push("변경 실패");
+    } else if (r.type === "tool" && typeof r.turnId === "string") {
+      caseOf(installId, r.turnId, at).tools.push(String(r.tool));
+    }
+  }
+  return [...cases.values()]
+    .filter(item => item.signals.some(signal => signal !== "👍"))
+    .map(item => ({ ...item, signals: [...new Set(item.signals)] }))
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, limit);
+}

@@ -18,7 +18,7 @@ const { storeFix } = await import(build + 'changes/changeStore.js');
 const { applyFix } = await import(build + 'changes/applyChange.js');
 const { checkTracked } = await import(build + 'tracking/tracker.js');
 const { currentDrawingScope } = await import(build + 'memory/drawingScope.js');
-const { logEvent, logTurn, logTool } = await import(build + 'logs/workLog.js');
+const { logEvent, logFeedback, logTurn, logTool } = await import(build + 'logs/workLog.js');
 const { addCandidates } = await import(build + 'knowledge/candidateStore.js');
 const { runSync } = await import(build + 'sync/syncLoop.js');
 const { cleanUp } = await import(build + 'sync/retention.js');
@@ -32,11 +32,13 @@ const ops = {
   // A turn as the palette logs it, with the question text and drawing name that must never leave.
   log: async ({ question, drawing }) => {
     await addTerms([drawing]);
-    await logTurn({ requestId: 'r1', conversation: 'c1', provider: 'claude', question, kind: 'chat', drawing, ms: 900,
+    await logTurn({ requestId: 'turn-0001', conversation: 'c1', provider: 'claude', question, kind: 'chat', drawing, ms: 900,
       model: { model: 'sonnet', effort: 'medium' }, tools: ['get_alignment'], answer: `${drawing}의 본선은 ...`, usage: { inputTokens: 100, outputTokens: 20 } });
-    await logTool({ requestId: 'r1', tool: 'get_alignment', input: `{"alignment":"${drawing} 본선"}`, ms: 40, ok: false, error: `Alignment '${drawing}' was not found.` });
+    await logTool({ requestId: 'turn-0001', tool: 'get_alignment', input: `{"alignment":"${drawing} 본선"}`, ms: 40, ok: false, error: `Alignment '${drawing}' was not found.` });
     return 'logged';
   },
+  // The person marks an answer as wrong (palette 👎) with a reason.
+  feedback: async ({ requestId, reason }) => { await logFeedback({ requestId, rating: 'bad', reason }); return 'logged'; },
   // The AI creates a road alignment; a person then changes the radii; the next look records it.
   createAndModify: async ({ radii }) => {
     const plan = await planAlignmentLayout(road);

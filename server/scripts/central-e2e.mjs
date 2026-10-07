@@ -54,8 +54,9 @@ const mod = (aiValue, userValue) => ({ outcome: 'modified', source: 'create', ch
 
 try {
   // Install A: work, a tracked change, two candidates (one with a path and the drawing name), then connect and send.
-  const [, created, , , , connected, synced, status] = await run(dirs.a, [
+  const [, , created, , , , connected, synced, status] = await run(dirs.a, [
     { op: 'log', question: '부산신항_2공구 도로 반지름 알려줘', drawing: '부산신항_2공구.dwg' },
+    { op: 'feedback', requestId: 'turn-0001', reason: '부산신항 반지름이 기준과 다름' },
     { op: 'createAndModify', radii: [130, 250] },
     { op: 'events', list: [mod(123, 130), mod(87, 90), mod(248, 250)] },
     { op: 'candidate', drawing: '부산신항_2공구.dwg', proposal: general('평면곡선 반지름은 10 m 단위로 올린다.') },
@@ -76,12 +77,14 @@ try {
   const settingsA = JSON.parse(await readFile(join(dirs.a, 'settings.json'), 'utf8'));
   assert.ok(!JSON.stringify(settingsA).includes(config.enrollKey), 'the enrol key is not stored');
 
-  // What reached the server carries no question text, drawing name, path, or handle.
+  // The question and answer reach the server (2026-10-07) with the drawing name, path and handle masked.
   const stored = (await readdir(join(dirs.central, 'records'))).map(name => join(dirs.central, 'records', name));
   const serverText = (await Promise.all(stored.map(file => readFile(file, 'utf8')))).join('') +
     await readFile(join(dirs.central, 'candidates.json'), 'utf8');
-  for (const secret of ['부산신항', '2공구', '반지름 알려줘', 'D:', 'FAKE', '.dwg', 'C1', '본선'])
+  for (const secret of ['부산신항', '2공구', 'D:', 'FAKE', '.dwg', 'C1'])
     assert.ok(!serverText.includes(secret), `server data must not contain ${secret}`);
+  assert.match(serverText, /"question":"<이름> 도로 반지름 알려줘"/, 'the question arrives, masked');
+  assert.match(serverText, /"input":"\{\\"alignment\\":\\"<파일> 본선\\"\}"/, 'tool input arrives, masked');
   assert.match(serverText, /"type":"modification"/);
   assert.match(serverText, /<경로> 같은 LH 사업은 도시지역이다/);
   assert.match(serverText, /"errorKind":"not_found"/);
@@ -115,6 +118,14 @@ try {
   // 기록마다 프로그램 버전이 붙어 와서 보고서에 버전별로 나온다(개발 폴더에서 돌면 "dev").
   const report = (await api('/v1/report', { headers: { 'X-Reviewer-Key': config.reviewerKey, Authorization: `Bearer ${settingsA.central.token}` } })).body;
   assert.ok(report.byVersion?.some(item => item.version === 'dev' && item.turns > 0 && item.installs === 2), JSON.stringify(report.byVersion));
+  // 👎 단 질문은 문제 사례로 내용과 함께 보인다(검토자 전용).
+  const cases = (await api('/v1/review/cases', { headers: { 'X-Reviewer-Key': config.reviewerKey, Authorization: `Bearer ${settingsA.central.token}` } })).body.cases;
+  const marked = cases.find(item => item.id === 'turn-0001');
+  assert.ok(marked && marked.signals.includes('👎'), JSON.stringify(cases));
+  assert.equal(marked.question, '<이름> 도로 반지름 알려줘');
+  assert.deepEqual(marked.feedback, ['<이름> 반지름이 기준과 다름']);
+  assert.ok(marked.tools.includes('get_alignment'));
+  assert.equal((await api('/v1/review/cases', { headers: { Authorization: `Bearer ${settingsA.central.token}` } })).status, 403, 'cases need the reviewer key');
 
   const [reviewer, list, approved, rejected, after] = await run(dirs.a, [
     { op: 'command', text: `/중앙 검토자 ${config.reviewerKey}` },

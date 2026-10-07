@@ -168,6 +168,8 @@ export async function undoOperation(operationId: string, offered: string[]) {
     current.state = result.state;
     current.revision = result.revision;
     await saveOperation(current);
+    // 되돌림도 기록한다. 적용한 질문(requestId)과 이어져, 중앙에서 "적용했다가 되돌린 답"을 찾을 수 있다.
+    await logChange({ requestId: current.requestId, fixId: current.fixId, state: "undone", title: current.title, target: current.target, labels: current.labels });
     // 플러그인은 작업 기록(시작~끝)과 작업 뒤 기록(끝~되돌리기)으로 작업 시작 시점까지 거슬러 올라간다.
     // 함께 되돌린 것(화면 확대·이동 등, Civil 3D가 함께 갱신한 연관 객체)을 알리고, 도면 확인을 부탁한다.
     const skipped = result.skippedSteps?.length ?? 0;

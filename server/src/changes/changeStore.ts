@@ -103,7 +103,7 @@ export async function fixesFor(id: string): Promise<StoredFix[]> {
 }
 
 // 적용 시도 하나를 기록한다.
-export async function logChange(entry: Omit<ChangeLogEntry, "at" | "requestId">): Promise<void> {
+export async function logChange(entry: Omit<ChangeLogEntry, "at" | "requestId"> & { requestId?: string }): Promise<void> {
   await logChangeEntry({ requestId: requestId(), ...entry });
 }
 

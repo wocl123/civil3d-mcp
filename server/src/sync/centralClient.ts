@@ -150,3 +150,12 @@ export async function downloadRelease(central: CentralSettings, version: string)
   if (!response.ok) throw new CentralError(`설치 파일을 받지 못했습니다(HTTP ${response.status}).`, response.status);
   return response.data;
 }
+
+// 검토자: 문제 사례(👎·되돌림·실패가 있었던 질문, 내용 포함).
+export type ProblemCase = {
+  id: string; at: string; appVersion?: string; provider?: string; model?: string; errorKind?: string;
+  question?: string; answer?: string; signals: string[]; feedback: string[];
+  changes: { state: string; title?: string; labels?: string }[]; tools: string[];
+};
+export const getCases = (central: CentralSettings) =>
+  call<{ cases: ProblemCase[] }>(central.url, "/v1/review/cases", { token: central.token, reviewerKey: central.reviewerKey, pin: central.certSha256 });

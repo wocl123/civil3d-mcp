@@ -3,7 +3,7 @@ export type ChangeLogEntry = {
   at: string;
   requestId: string;
   fixId: string;
-  state: "applied" | "failed";
+  state: "applied" | "failed" | "undone";
   title: string;
   target: string;
   labels: string[];   // 사람이 읽는 변경 내용 (describe.ts)
