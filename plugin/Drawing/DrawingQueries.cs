@@ -38,6 +38,7 @@ public static class DrawingQueries
         {
             DrawingUnits = document.Database.Insunits.ToString(),
             CoordinateSystem = coordinateSystem,
+            DrawingId = DrawingRevisions.Id(document.Database),
             Revision = DrawingRevisions.Of(document.Database)
         };
     }

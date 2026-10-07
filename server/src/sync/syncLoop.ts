@@ -47,7 +47,7 @@ export function runSync(): Promise<SyncResult> {
 // 답변이 끝나면 조금 뒤에 한 번. 그사이에 답변이 여러 번 와도 한 번만 돈다.
 export function syncSoon(): void {
   if (soon) clearTimeout(soon);
-  soon = setTimeout(() => { soon = undefined; void runSync(); }, AFTER_TURN_MS);
+  soon = setTimeout(() => { soon = undefined; void runSync().catch(error => process.stderr.write(`MyCivil3DMcp sync failed: ${String(error)}\n`)); }, AFTER_TURN_MS);
   soon.unref();
 }
 

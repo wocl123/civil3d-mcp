@@ -42,7 +42,10 @@ internal static class PaletteApiClient
             switch (item["type"]?.ToString())
             {
                 case "done": return item;
-                case "error": throw new InvalidOperationException(item["error"]?.ToString() ?? "답변을 만들지 못했습니다.");
+                case "error":
+                    // AI 응답 실패·취소 직전 커밋된 변경도 되돌리기 카드를 잃지 않는다.
+                    if (item["applied"] is JsonArray applied) onEvent(new JsonObject { ["type"] = "changes", ["applied"] = applied.DeepClone() });
+                    throw new InvalidOperationException(item["error"]?.ToString() ?? "답변을 만들지 못했습니다.");
                 default: onEvent(item); break;
             }
         }

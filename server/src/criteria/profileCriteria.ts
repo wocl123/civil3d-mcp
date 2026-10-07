@@ -1,3 +1,4 @@
+import { withDrawing } from "../bridge/boundOperation.js";
 // 종단(설계 종단) 설계기준 검토.
 // 종단곡선의 K·길이(제27조)와 종단경사(제25조)를 기준표(기본: 도로구조규칙)와 비교한다.
 
@@ -47,7 +48,7 @@ const UNCHECKED_TYPES = new Set(["EG"]);
 const GRADE_PROVISO = 1;
 
 // 종단을 검토한다. 종단을 주지 않고 선형만 주면 그 선형의 설계 종단을 모두 검토한다.
-export async function checkProfileCriteria(input: ProfileCriteriaInput): Promise<CriteriaReport[]> {
+async function checkProfileCriteriaInternal(input: ProfileCriteriaInput): Promise<CriteriaReport[]> {
   await loadParameters();
   const set = await loadCriteria(input.criteria ?? "도로구조규칙");
 
@@ -87,7 +88,7 @@ export async function checkProfileCriteria(input: ProfileCriteriaInput): Promise
     if (notRoad) {
       const skipped = new ReportBuilder(set, `종단 ${profile.name} (${profile.type}, 선형 ${profile.alignmentName ?? alignment})`);
       skipped.notes.push(notRoad);
-      reports.push(skipped.build());
+      reports.push({ ...skipped.build(), assessment: "not_applicable" });
       continue;
     }
 
@@ -118,14 +119,14 @@ export async function checkProfileCriteria(input: ProfileCriteriaInput): Promise
 async function checkOne(set: CriteriaSet, profile: ProfileSummary, input: ProfileCriteriaInput,
   speeds: AlignmentDesignSpeed[]): Promise<CriteriaReport> {
   const alignmentName = profile.alignmentName ?? input.alignment ?? "알 수 없음";
-  const report = new ReportBuilder(set, `종단 ${profile.name} (${profile.type}, 선형 ${alignmentName})`, notCovered(set));
+  const report = new ReportBuilder(set, `종단 ${profile.name} (${profile.type}, 선형 ${alignmentName})`, notCovered(set), profile.handle);
   const grade = table(set, "max_grade");
   const kTable = table(set, "min_vertical_k");
   const lengthTable = table(set, "min_vertical_length");
 
   if (UNCHECKED_TYPES.has(profile.type)) {
     report.notes.push("지표면 종단(EG)은 지반선이라 설계 기준 비교 대상이 아니다.");
-    return report.build();
+    return { ...report.build(), assessment: "not_applicable" };
   }
 
   // 1) 종단곡선·경사·PVI를 읽는다.
@@ -213,4 +214,9 @@ async function checkOne(set: CriteriaSet, profile: ProfileSummary, input: Profil
 
   if (curves.length === 0) report.notes.push("종단곡선이 없는 종단이다.");
   return report.build();
+}
+
+// 공개 진입점은 계산 전체를 하나의 도면 문맥으로 묶는다.
+export async function checkProfileCriteria(input: ProfileCriteriaInput) {
+  return withDrawing(() => checkProfileCriteriaInternal(input));
 }

@@ -11,6 +11,16 @@ import type { ConditionValue, CriteriaReport } from "./types/CriteriaReport.js";
 
 // 항목이 이보다 많으면 통과 항목은 개수만 세고, 미달·판단불가 항목만 나열한다.
 const MAX_LISTED = 40;
+// 전체 항목은 프로세스 내부에만 보관한다. 응답 축약은 재검토 판정에 영향을 주지 않는다.
+const completeItems = new WeakMap<CriteriaReport, CheckItem[]>();
+export const fullItems = (report: CriteriaReport) => completeItems.get(report) ?? report.items;
+export type Assessment = NonNullable<CriteriaReport["assessment"]>;
+export function assess(items: CheckItem[], missing = false): Assessment {
+  if (items.some(item => item.result === "fail")) return "fail";
+  if (missing || !items.length || items.some(item => item.result === "n/a")) return "incomplete";
+  if (items.some(item => item.result === "review")) return "review";
+  return "pass";
+}
 
 // 검토 이름: "제19조 최소 평면곡선 반지름"처럼 조문과 제목을 함께 쓴다.
 // 다른 기준을 따르는 기준(예: LH 지침)이면 문서 약칭을 앞에 붙인다.
@@ -40,7 +50,8 @@ export class ReportBuilder {
   constructor(
     private readonly set: CriteriaSet,
     private readonly target: string,
-    private readonly notCovered: string[] = []
+    private readonly notCovered: string[] = [],
+    private readonly objectHandle = ""
   ) {
     if (!set.reviewed) this.notes.push("기준표는 원문에서 옮긴 값이며 사람 검토 전이다.");
     this.notes.push(...(set.notes ?? []));
@@ -76,6 +87,7 @@ export class ReportBuilder {
       check: source.title,
       article: cite(source),
       target,
+      targetRef: this.reference(target),
       actual: round(actual),
       limit,
       unit: source.unit,
@@ -90,14 +102,14 @@ export class ReportBuilder {
   missingElement(source: Pick<CriteriaTable, "title" | "article" | "unit" | "document">, target: string,
     note: string, fixes: FixOption[] = []): void {
     this.items.push({
-      check: source.title, article: cite(source), target, unit: source.unit, result: "fail", note,
+      check: source.title, article: cite(source), target, targetRef: this.reference(target), unit: source.unit, result: "fail", note,
       ...(fixes.length ? { fixes } : {})
     });
   }
 
   // 비교하지 못한 항목(n/a). note에 이유를 적는다.
   skip(source: Pick<CriteriaTable, "title" | "article" | "unit" | "document">, target: string, note: string): void {
-    this.items.push({ check: source.title, article: cite(source), target, unit: source.unit, result: "n/a", note });
+    this.items.push({ check: source.title, article: cite(source), target, targetRef: this.reference(target), unit: source.unit, result: "n/a", note });
   }
 
   // 검토에 필요한데 빠진 조건. 같은 조건이 여러 번 필요하면 용도만 덧붙인다.
@@ -110,12 +122,18 @@ export class ReportBuilder {
     this.missing.set(name, { name, neededFor, ...(choices ? { options: choices } : {}) });
   }
 
+  private reference(target: string): CheckItem["targetRef"] {
+    const element = /^(곡선|경사) (\d+)/.exec(target);
+    return { objectHandle: this.objectHandle, kind: element?.[1] ?? "object", elementKey: element?.[2] ?? target };
+  }
+
   build(): CriteriaReport {
     const count = (result: CheckItem["result"]) => this.items.filter(item => item.result === result).length;
     const listAll = this.items.length <= MAX_LISTED;
     const items = listAll ? this.items : this.items.filter(item => item.result !== "pass");
 
-    return {
+    const result: CriteriaReport = {
+      assessment: assess(this.items, this.missing.size > 0),
       criteria: criteriaHeader(this.set),
       target: this.target,
       conditions: this.conditions,
@@ -126,5 +144,7 @@ export class ReportBuilder {
       notes: this.notes,
       notCovered: this.notCovered
     };
+    completeItems.set(result, this.items);
+    return result;
   }
 }

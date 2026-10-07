@@ -45,7 +45,7 @@ public static class AlignmentQueries
 
     private static AlignmentSnapshot Snapshot(Document document, Transaction transaction, Alignment alignment)
     {
-        string key = $"{document.Database.Filename}|{alignment.Handle}";
+        string key = $"{DrawingRevisions.Id(document.Database)}|{alignment.Handle}";
         string revision = DrawingRevisions.Of(document.Database);
         if (Snapshots.TryGetValue(key, out var cached) && cached.Revision == revision) return cached.Snapshot;
         AlignmentSnapshot snapshot = AlignmentSnapshot.Read(transaction, alignment);

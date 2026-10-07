@@ -1,3 +1,5 @@
+import { inDrawingContext } from "../bridge/drawingContext.js";
+import { currentDrawingScope } from "../memory/drawingScope.js";
 // 수정 추적: 사람이 AI가 그린 것을 그대로 두는지.
 //
 // AI가 도면에 넣은 값(만든 선형의 곡선, 적용한 수정안)을 data/tracking/<도면>.json 에 기억해 두고
@@ -16,7 +18,7 @@ import type { AlignmentElement } from "../civil/types/AlignmentElement.js";
 import type { ProfileCurve } from "../civil/types/ProfileCurve.js";
 import type { ProfilePvi } from "../civil/types/ProfilePvi.js";
 import { failureGuide } from "../errors/failureGuide.js";
-import { writeAtomic } from "../files.js";
+import { withFileLock, writeAtomic } from "../files.js";
 import { logEvent } from "../logs/workLog.js";
 import { hashKey } from "../memory/memoryStore.js";
 import type { DrawingScope } from "../memory/types/DrawingScope.js";
@@ -75,7 +77,7 @@ const queued = <T>(work: () => Promise<T>): Promise<T> => {
 export async function track(scope: DrawingScope, items: Omit<Tracked, "id" | "lastValue" | "createdAt">[]): Promise<void> {
   if (!scope.key || !items.length) return;
 
-  await queued(async () => {
+  await queued(() => withFileLock(fileOf(scope), async () => {
     const file = await load(scope);
     const now = new Date().toISOString();
     for (const item of items) {
@@ -87,7 +89,7 @@ export async function track(scope: DrawingScope, items: Omit<Tracked, "id" | "la
     }
     file.lastState = scope.state;
     await writeAtomic(fileOf(scope), JSON.stringify(file, null, 1));
-  }).catch(error => process.stderr.write(`MyCivil3DMcp tracking was not saved: ${String(error)}\n`));
+  })).catch(error => process.stderr.write(`MyCivil3DMcp tracking was not saved: ${String(error)}\n`));
 }
 
 // 한 항목을 다시 읽은 결과: 지금 값, 또는 비교할 수 없는 이유(deleted / restructured).
@@ -169,9 +171,9 @@ function emit(item: Tracked, outcome: Outcome, userValue?: number): Promise<void
 // 열린 도면의 추적 값을 다시 읽는다. 지난번 이후 도면이 바뀌었을 때만 읽는다.
 // 기록한 결과 수를 돌려준다. 연결 문제면 모두 다음으로 미룬다.
 export async function checkTracked(scope: DrawingScope): Promise<number> {
-  if (!scope.key) return 0;
+  if (!scope.key || !scope.drawingId) return 0;
 
-  return queued(async () => {
+  return queued(() => withFileLock(fileOf(scope), async () => {
     const file = await load(scope);
     if (!file.items.length) return 0;
 
@@ -182,20 +184,28 @@ export async function checkTracked(scope: DrawingScope): Promise<number> {
 
     // 1) 도면이 바뀌었으면 객체(핸들)별로 다시 읽어 비교한다.
     if (file.lastState !== scope.state) {
+      // 먼저 전부 읽고 도면 상태를 확인한 뒤 관측 결과를 기록한다. 도면 전환을 사람 수정으로 오인하지 않는다.
+      const allReadings = new Map<Tracked, Reading>();
       const handles = new Map<string, Tracked[]>();
       for (const item of file.items) handles.set(item.handle, [...handles.get(item.handle) ?? [], item]);
 
       for (const [handle, items] of handles) {
         let readings: Map<Tracked, Reading>;
         try {
-          readings = await (items[0].objectKind === "alignment" ? readAlignment : readProfile)(handle, items);
+          readings = await inDrawingContext({ drawingId: scope.drawingId!, revision: scope.state },
+            () => (items[0].objectKind === "alignment" ? readAlignment : readProfile)(handle, items));
         } catch (error) {
           // 도면이 없거나 연결이 안 되면 다음에. 그 밖의 오류는 이 객체만 건너뛴다.
-          if (STOP.has(failureGuide(error instanceof Error ? error.message : String(error)).kind)) return recorded;
+          if ((error as { kind?: string }).kind === "drawing_mismatch" || (error as { kind?: string }).kind === "revision_mismatch" ||
+              STOP.has(failureGuide(error instanceof Error ? error.message : String(error)).kind)) return recorded;
           continue;
         }
 
-        for (const [item, reading] of readings) {
+        for (const [item, reading] of readings) allReadings.set(item, reading);
+      }
+      const after = await currentDrawingScope();
+      if (after.drawingId !== scope.drawingId || after.state !== scope.state) return 0;
+      for (const [item, reading] of allReadings) {
           if (reading.outcome) {
             await emit(item, reading.outcome);
             done.add(item);
@@ -209,7 +219,6 @@ export async function checkTracked(scope: DrawingScope): Promise<number> {
             recorded++;
           }
         }
-      }
       file.lastState = scope.state;
     }
 
@@ -229,7 +238,7 @@ export async function checkTracked(scope: DrawingScope): Promise<number> {
     else await rm(fileOf(scope), { force: true });
 
     return recorded;
-  });
+  }));
 }
 
 // 오래 열지 않은 도면의 추적 파일: 기간이 지난 항목을 끝낸다(한 번도 안 고쳤으면 kept).
@@ -237,16 +246,19 @@ export function closeStaleTracking(): Promise<number> {
   return queued(async () => {
     let closed = 0;
     for (const name of await readdir(dir()).catch(() => [] as string[])) {
+      if (!name.endsWith(".json")) continue;
       const path = join(dir(), name);
+      await withFileLock(path, async () => {
       const file = JSON.parse(await readFile(path, "utf8").catch(() => "{\"items\":[]}")) as TrackFile;
       const now = Date.now();
       const stale = file.items.filter(item => now - Date.parse(item.createdAt) > KEEP_DAYS * 24 * 3600000);
-      if (!stale.length) continue;
+      if (!stale.length) return;
 
       for (const item of stale) if (!item.modifiedAt) { await emit(item, "kept"); closed++; }
       file.items = file.items.filter(item => !stale.includes(item));
       if (file.items.length) await writeAtomic(path, JSON.stringify(file, null, 1));
       else await rm(path, { force: true });
+      });
     }
     return closed;
   });

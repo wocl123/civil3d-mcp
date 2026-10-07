@@ -1929,6 +1929,7 @@
  "selection mixed": "Selected in the drawing now (3):\n- Polyline [2A1, 레이어 C-ROAD-PLAN, 꼭짓점 4, 호 0, 길이 1534.001 m]\n- Alignment 본선 [B1, 레이어 C-ROAD-CL]\n- Polyline [2A3, 레이어 0, 꼭짓점 3, 호 0, 길이 20 m, 닫힘]",
  "selection large": "Selected in the drawing now (31):\nAll selected by type: Solid3d 30, Polyline 1\nAll selected by layer (largest 15): 우수받이 25, 터파기 토사 5, C-ROAD-PLAN 1\n- Polyline [2A1, 레이어 C-ROAD-PLAN, 꼭짓점 4, 호 0, 길이 1534.001 m]\n- Solid3d [S0, 레이어 우수받이]\n- Solid3d [S1, 레이어 우수받이]\n- Solid3d [S2, 레이어 우수받이]\n- Solid3d [S3, 레이어 우수받이]\n- 그 밖에 26개 (get_selection으로 20개까지 볼 수 있음)",
  "check 본선 지방": {
+  "assessment": "fail",
   "criteria": {
    "id": "도로구조규칙",
    "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
@@ -1960,6 +1961,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "제19조",
     "target": "곡선 1 (0+300.00~0+670.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 600,
     "limit": 250,
     "unit": "m",
@@ -1970,6 +1976,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "제20조",
     "target": "곡선 1 (0+300.00~0+670.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 370,
     "limit": 90,
     "unit": "m",
@@ -1980,6 +1991,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "제23조②",
     "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+300.00~0+360.00",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 60,
     "limit": 50,
     "unit": "m",
@@ -1990,6 +2006,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "제23조②",
     "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+610.00~0+670.00",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 60,
     "limit": 50,
     "unit": "m",
@@ -2000,6 +2021,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "제19조",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 380,
     "limit": 250,
     "unit": "m",
@@ -2010,6 +2036,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "제20조",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 150,
     "limit": 90,
     "unit": "m",
@@ -2020,6 +2051,11 @@
     "check": "완화곡선 설치",
     "article": "제23조①",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "unit": "m",
     "result": "fail",
     "note": "완화곡선 없음. 설계속도 60 km/h 이상은 완화곡선을 설치해야 함",
@@ -2059,6 +2095,11 @@
     "check": "최대 편경사",
     "article": "제21조①",
     "target": "선형 전체 최대 편경사",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "object",
+     "elementKey": "선형 전체 최대 편경사"
+    },
     "actual": 6,
     "limit": 8,
     "unit": "%",
@@ -2079,6 +2120,7 @@
   ]
  },
  "check 본선 100 도시": {
+  "assessment": "fail",
   "criteria": {
    "id": "도로구조규칙",
    "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
@@ -2113,6 +2155,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "제19조",
     "target": "곡선 1 (0+300.00~0+670.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 600,
     "limit": 460,
     "unit": "m",
@@ -2123,6 +2170,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "제20조",
     "target": "곡선 1 (0+300.00~0+670.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 370,
     "limit": 110,
     "unit": "m",
@@ -2133,6 +2185,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "제23조②",
     "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+300.00~0+360.00",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 60,
     "limit": 60,
     "unit": "m",
@@ -2143,6 +2200,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "제23조②",
     "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+610.00~0+670.00",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 60,
     "limit": 60,
     "unit": "m",
@@ -2153,6 +2215,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "제19조",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 380,
     "limit": 460,
     "unit": "m",
@@ -2187,6 +2254,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "제20조",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 150,
     "limit": 110,
     "unit": "m",
@@ -2197,6 +2269,11 @@
     "check": "완화곡선 설치",
     "article": "제23조①",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "unit": "m",
     "result": "fail",
     "note": "완화곡선 없음. 설계속도 60 km/h 이상은 완화곡선을 설치해야 함",
@@ -2236,6 +2313,11 @@
     "check": "최대 편경사",
     "article": "제21조①",
     "target": "선형 전체 최대 편경사",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "object",
+     "elementKey": "선형 전체 최대 편경사"
+    },
     "actual": 6,
     "limit": 6,
     "unit": "%",
@@ -2255,6 +2337,7 @@
   ]
  },
  "check 본선 class": {
+  "assessment": "fail",
   "criteria": {
    "id": "도로구조규칙",
    "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
@@ -2294,6 +2377,11 @@
     "check": "설계속도",
     "article": "제8조①",
     "target": "설계속도 0+000.00부터",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "object",
+     "elementKey": "설계속도 0+000.00부터"
+    },
     "actual": 80,
     "limit": 60,
     "unit": "km/h",
@@ -2304,6 +2392,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "제19조",
     "target": "곡선 1 (0+300.00~0+670.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 600,
     "limit": 280,
     "unit": "m",
@@ -2314,6 +2407,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "제20조",
     "target": "곡선 1 (0+300.00~0+670.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 370,
     "limit": 90,
     "unit": "m",
@@ -2324,6 +2422,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "제23조②",
     "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+300.00~0+360.00",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 60,
     "limit": 50,
     "unit": "m",
@@ -2334,6 +2437,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "제23조②",
     "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+610.00~0+670.00",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 60,
     "limit": 50,
     "unit": "m",
@@ -2344,6 +2452,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "제19조",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 380,
     "limit": 280,
     "unit": "m",
@@ -2354,6 +2467,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "제20조",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 150,
     "limit": 90,
     "unit": "m",
@@ -2364,6 +2482,11 @@
     "check": "완화곡선 설치",
     "article": "제23조①",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "unit": "m",
     "result": "fail",
     "note": "완화곡선 없음. 설계속도 60 km/h 이상은 완화곡선을 설치해야 함",
@@ -2403,6 +2526,11 @@
     "check": "최대 편경사",
     "article": "제21조①",
     "target": "선형 전체 최대 편경사",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "object",
+     "elementKey": "선형 전체 최대 편경사"
+    },
     "actual": 6,
     "limit": 6,
     "unit": "%",
@@ -2423,6 +2551,7 @@
   ]
  },
  "check 본선 speed review": {
+  "assessment": "fail",
   "criteria": {
    "id": "도로구조규칙",
    "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
@@ -2462,6 +2591,11 @@
     "check": "설계속도",
     "article": "제8조①",
     "target": "설계속도 0+000.00부터",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "object",
+     "elementKey": "설계속도 0+000.00부터"
+    },
     "actual": 80,
     "limit": 100,
     "unit": "km/h",
@@ -2473,6 +2607,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "제19조",
     "target": "곡선 1 (0+300.00~0+670.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 600,
     "limit": 280,
     "unit": "m",
@@ -2483,6 +2622,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "제20조",
     "target": "곡선 1 (0+300.00~0+670.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 370,
     "limit": 90,
     "unit": "m",
@@ -2493,6 +2637,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "제23조②",
     "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+300.00~0+360.00",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 60,
     "limit": 50,
     "unit": "m",
@@ -2503,6 +2652,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "제23조②",
     "target": "곡선 1 (0+300.00~0+670.00) 완화곡선 0+610.00~0+670.00",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 60,
     "limit": 50,
     "unit": "m",
@@ -2513,6 +2667,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "제19조",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 380,
     "limit": 280,
     "unit": "m",
@@ -2523,6 +2682,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "제20조",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 150,
     "limit": 90,
     "unit": "m",
@@ -2533,6 +2697,11 @@
     "check": "완화곡선 설치",
     "article": "제23조①",
     "target": "곡선 2 (0+900.00~1+050.00)",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "unit": "m",
     "result": "fail",
     "note": "완화곡선 없음. 설계속도 60 km/h 이상은 완화곡선을 설치해야 함",
@@ -2572,6 +2741,11 @@
     "check": "최대 편경사",
     "article": "제21조①",
     "target": "선형 전체 최대 편경사",
+    "targetRef": {
+     "objectHandle": "B1",
+     "kind": "object",
+     "elementKey": "선형 전체 최대 편경사"
+    },
     "actual": 6,
     "limit": 6,
     "unit": "%",
@@ -2598,6 +2772,7 @@
  ],
  "check profile": [
   {
+   "assessment": "fail",
    "criteria": {
     "id": "도로구조규칙",
     "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
@@ -2629,6 +2804,11 @@
      "check": "종단곡선 최소 변화 비율(K)",
      "article": "제27조②",
      "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "1"
+     },
      "actual": 37.21,
      "limit": 40,
      "unit": "m/%",
@@ -2640,6 +2820,11 @@
      "check": "종단곡선 필요 길이",
      "article": "제27조①",
      "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "1"
+     },
      "actual": 160,
      "limit": 172,
      "unit": "m",
@@ -2697,6 +2882,11 @@
      "check": "종단곡선 최소 변화 비율(K)",
      "article": "제27조②",
      "target": "곡선 2 오목 (VIP 0+900.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "2"
+     },
      "actual": 44.44,
      "limit": 30,
      "unit": "m/%",
@@ -2707,6 +2897,11 @@
      "check": "종단곡선 필요 길이",
      "article": "제27조①",
      "target": "곡선 2 오목 (VIP 0+900.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "2"
+     },
      "actual": 120,
      "limit": 81,
      "unit": "m",
@@ -2718,6 +2913,11 @@
      "check": "최대 종단경사",
      "article": "제25조①",
      "target": "경사 1 (0+000.00~0+340.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "경사",
+      "elementKey": "1"
+     },
      "actual": 2.5,
      "limit": 4,
      "unit": "%",
@@ -2728,6 +2928,11 @@
      "check": "최대 종단경사",
      "article": "제25조①",
      "target": "경사 2 (0+500.00~0+840.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "경사",
+      "elementKey": "2"
+     },
      "actual": 1.8,
      "limit": 4,
      "unit": "%",
@@ -2738,6 +2943,11 @@
      "check": "최대 종단경사",
      "article": "제25조①",
      "target": "경사 3 (0+960.00~1+250.50)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "경사",
+      "elementKey": "3"
+     },
      "actual": 0.9,
      "limit": 4,
      "unit": "%",
@@ -2758,6 +2968,7 @@
  ],
  "check profile fixes": [
   {
+   "assessment": "fail",
    "criteria": {
     "id": "도로구조규칙",
     "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
@@ -2792,6 +3003,11 @@
      "check": "종단곡선 최소 변화 비율(K)",
      "article": "제27조②",
      "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "1"
+     },
      "actual": 37.21,
      "limit": 40,
      "unit": "m/%",
@@ -2803,6 +3019,11 @@
      "check": "종단곡선 필요 길이",
      "article": "제27조①",
      "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "1"
+     },
      "actual": 160,
      "limit": 172,
      "unit": "m",
@@ -2860,6 +3081,11 @@
      "check": "종단곡선 최소 변화 비율(K)",
      "article": "제27조②",
      "target": "곡선 2 오목 (VIP 0+900.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "2"
+     },
      "actual": 44.44,
      "limit": 30,
      "unit": "m/%",
@@ -2870,6 +3096,11 @@
      "check": "종단곡선 필요 길이",
      "article": "제27조①",
      "target": "곡선 2 오목 (VIP 0+900.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "2"
+     },
      "actual": 120,
      "limit": 81,
      "unit": "m",
@@ -2881,6 +3112,11 @@
      "check": "최대 종단경사",
      "article": "제25조①",
      "target": "경사 1 (0+000.00~0+340.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "경사",
+      "elementKey": "1"
+     },
      "actual": 2.5,
      "limit": 4,
      "unit": "%",
@@ -2891,6 +3127,11 @@
      "check": "최대 종단경사",
      "article": "제25조①",
      "target": "경사 2 (0+500.00~0+840.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "경사",
+      "elementKey": "2"
+     },
      "actual": 1.8,
      "limit": 4,
      "unit": "%",
@@ -2901,6 +3142,11 @@
      "check": "최대 종단경사",
      "article": "제25조①",
      "target": "경사 3 (0+960.00~1+250.50)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "경사",
+      "elementKey": "3"
+     },
      "actual": 0.9,
      "limit": 4,
      "unit": "%",
@@ -2921,6 +3167,7 @@
  ],
  "check profile missing": [
   {
+   "assessment": "fail",
    "criteria": {
     "id": "도로구조규칙",
     "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
@@ -2963,6 +3210,11 @@
      "check": "종단곡선 최소 변화 비율(K)",
      "article": "제27조②",
      "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "1"
+     },
      "actual": 37.21,
      "limit": 40,
      "unit": "m/%",
@@ -2974,6 +3226,11 @@
      "check": "종단곡선 필요 길이",
      "article": "제27조①",
      "target": "곡선 1 볼록 (VIP 0+420.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "1"
+     },
      "actual": 160,
      "limit": 172,
      "unit": "m",
@@ -3031,6 +3288,11 @@
      "check": "종단곡선 최소 변화 비율(K)",
      "article": "제27조②",
      "target": "곡선 2 오목 (VIP 0+900.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "2"
+     },
      "actual": 44.44,
      "limit": 30,
      "unit": "m/%",
@@ -3041,6 +3303,11 @@
      "check": "종단곡선 필요 길이",
      "article": "제27조①",
      "target": "곡선 2 오목 (VIP 0+900.00)",
+     "targetRef": {
+      "objectHandle": "C2",
+      "kind": "곡선",
+      "elementKey": "2"
+     },
      "actual": 120,
      "limit": 81,
      "unit": "m",
@@ -3120,6 +3387,8 @@
  },
  "create road": {
   "applied": true,
+  "mutation": "applied",
+  "drawingChanged": true,
   "fix": "선형 선형-1 생성",
   "created": {
    "name": "선형-1",
@@ -3137,17 +3406,27 @@
      "radius": 90,
      "spiralLength": null
     }
-   ]
+   ],
+   "drawingId": "fake-drawing-1",
+   "state": "applied"
   },
-  "undo": "Ctrl+Z 한 번(또는 UNDO 1)으로 되돌릴 수 있음",
+  "undo": "팔레트의 되돌리기 버튼으로 취소할 수 있음",
+  "warnings": [],
   "recheck": {
+   "state": "completed",
+   "assessment": "incomplete",
    "target": "선형 선형-1",
-   "targetPassed": true,
+   "targetPassed": false,
    "targetItems": [
     {
      "check": "설계속도",
      "article": "도로구조규칙 제8조①",
      "target": "설계속도 입력값",
+     "targetRef": {
+      "objectHandle": "D0",
+      "kind": "object",
+      "elementKey": "설계속도 입력값"
+     },
      "actual": 50,
      "limit": 50,
      "unit": "km/h",
@@ -3158,6 +3437,11 @@
      "check": "최소 평면곡선 반지름",
      "article": "도로구조규칙 제19조",
      "target": "곡선 1 (0+464.93~0+531.81)",
+     "targetRef": {
+      "objectHandle": "D0",
+      "kind": "곡선",
+      "elementKey": "1"
+     },
      "actual": 90,
      "limit": 90,
      "unit": "m",
@@ -3168,6 +3452,11 @@
      "check": "평면곡선의 최소 길이(완화곡선 포함)",
      "article": "도로구조규칙 제20조",
      "target": "곡선 1 (0+464.93~0+531.81)",
+     "targetRef": {
+      "objectHandle": "D0",
+      "kind": "곡선",
+      "elementKey": "1"
+     },
      "actual": 66.885,
      "limit": 60,
      "unit": "m",
@@ -3178,6 +3467,11 @@
      "check": "완화곡선의 최소 길이",
      "article": "도로구조규칙 제23조②",
      "target": "곡선 1 (0+464.93~0+531.81)",
+     "targetRef": {
+      "objectHandle": "D0",
+      "kind": "곡선",
+      "elementKey": "1"
+     },
      "unit": "m",
      "result": "n/a",
      "note": "설계속도 50 km/h는 완화구간 대상(제23조③)이며 아직 비교하지 않음"
@@ -3186,6 +3480,11 @@
      "check": "최소 평면곡선 반지름",
      "article": "도로구조규칙 제19조",
      "target": "곡선 2 (0+960.20~1+033.86)",
+     "targetRef": {
+      "objectHandle": "D0",
+      "kind": "곡선",
+      "elementKey": "2"
+     },
      "actual": 90,
      "limit": 90,
      "unit": "m",
@@ -3196,6 +3495,11 @@
      "check": "평면곡선의 최소 길이(완화곡선 포함)",
      "article": "도로구조규칙 제20조",
      "target": "곡선 2 (0+960.20~1+033.86)",
+     "targetRef": {
+      "objectHandle": "D0",
+      "kind": "곡선",
+      "elementKey": "2"
+     },
      "actual": 73.665,
      "limit": 60,
      "unit": "m",
@@ -3206,6 +3510,11 @@
      "check": "완화곡선의 최소 길이",
      "article": "도로구조규칙 제23조②",
      "target": "곡선 2 (0+960.20~1+033.86)",
+     "targetRef": {
+      "objectHandle": "D0",
+      "kind": "곡선",
+      "elementKey": "2"
+     },
      "unit": "m",
      "result": "n/a",
      "note": "설계속도 50 km/h는 완화구간 대상(제23조③)이며 아직 비교하지 않음"
@@ -3214,6 +3523,11 @@
      "check": "최대 편경사",
      "article": "도로구조규칙 제21조①",
      "target": "선형 전체",
+     "targetRef": {
+      "objectHandle": "D0",
+      "kind": "object",
+      "elementKey": "선형 전체"
+     },
      "unit": "%",
      "result": "n/a",
      "note": "편경사가 계산되어 있지 않음"
@@ -3232,6 +3546,7 @@
   }
  },
  "check created": {
+  "assessment": "incomplete",
   "criteria": {
    "id": "LH_설계지침_토목",
    "title": "LH 설계지침(토목)",
@@ -3271,6 +3586,11 @@
     "check": "설계속도",
     "article": "도로구조규칙 제8조①",
     "target": "설계속도 0+000.00부터",
+    "targetRef": {
+     "objectHandle": "D0",
+     "kind": "object",
+     "elementKey": "설계속도 0+000.00부터"
+    },
     "actual": 50,
     "limit": 50,
     "unit": "km/h",
@@ -3281,6 +3601,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "도로구조규칙 제19조",
     "target": "곡선 1 (0+464.93~0+531.81)",
+    "targetRef": {
+     "objectHandle": "D0",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 90,
     "limit": 90,
     "unit": "m",
@@ -3291,6 +3616,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "도로구조규칙 제20조",
     "target": "곡선 1 (0+464.93~0+531.81)",
+    "targetRef": {
+     "objectHandle": "D0",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "actual": 66.885,
     "limit": 60,
     "unit": "m",
@@ -3301,6 +3631,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "도로구조규칙 제23조②",
     "target": "곡선 1 (0+464.93~0+531.81)",
+    "targetRef": {
+     "objectHandle": "D0",
+     "kind": "곡선",
+     "elementKey": "1"
+    },
     "unit": "m",
     "result": "n/a",
     "note": "설계속도 50 km/h는 완화구간 대상(제23조③)이며 아직 비교하지 않음"
@@ -3309,6 +3644,11 @@
     "check": "최소 평면곡선 반지름",
     "article": "도로구조규칙 제19조",
     "target": "곡선 2 (0+960.20~1+033.86)",
+    "targetRef": {
+     "objectHandle": "D0",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 90,
     "limit": 90,
     "unit": "m",
@@ -3319,6 +3659,11 @@
     "check": "평면곡선의 최소 길이(완화곡선 포함)",
     "article": "도로구조규칙 제20조",
     "target": "곡선 2 (0+960.20~1+033.86)",
+    "targetRef": {
+     "objectHandle": "D0",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "actual": 73.665,
     "limit": 60,
     "unit": "m",
@@ -3329,6 +3674,11 @@
     "check": "완화곡선의 최소 길이",
     "article": "도로구조규칙 제23조②",
     "target": "곡선 2 (0+960.20~1+033.86)",
+    "targetRef": {
+     "objectHandle": "D0",
+     "kind": "곡선",
+     "elementKey": "2"
+    },
     "unit": "m",
     "result": "n/a",
     "note": "설계속도 50 km/h는 완화구간 대상(제23조③)이며 아직 비교하지 않음"
@@ -3337,6 +3687,11 @@
     "check": "최대 편경사",
     "article": "도로구조규칙 제21조①",
     "target": "선형 전체",
+    "targetRef": {
+     "objectHandle": "D0",
+     "kind": "object",
+     "elementKey": "선형 전체"
+    },
     "unit": "%",
     "result": "n/a",
     "note": "편경사가 계산되어 있지 않음"
@@ -3359,18 +3714,27 @@
  },
  "create utility": {
   "applied": true,
+  "mutation": "applied",
+  "drawingChanged": true,
   "fix": "선형 SD-1 생성",
   "created": {
    "name": "SD-1",
    "handle": "D1",
    "type": "Utility",
    "length": 200,
-   "curves": []
+   "curves": [],
+   "drawingId": "fake-drawing-1",
+   "state": "applied"
   },
-  "undo": "Ctrl+Z 한 번(또는 UNDO 1)으로 되돌릴 수 있음",
-  "recheck": "용도에 도로가 없어 설계 기준 검토 없음"
+  "undo": "팔레트의 되돌리기 버튼으로 취소할 수 있음",
+  "warnings": [],
+  "recheck": {
+   "state": "not_required",
+   "assessment": "not_applicable"
+  }
  },
  "check utility": {
+  "assessment": "not_applicable",
   "criteria": {
    "id": "도로구조규칙",
    "title": "도로의 구조ㆍ시설 기준에 관한 규칙",
@@ -3467,5 +3831,5 @@
   ]
  },
  "plan next name": "선형-2",
- "apply not offered": "error: Fix fx-f819c8dd0d was not offered to the user in this conversation. Show it and ask before applying."
+ "apply not offered": "error: Fix fx-37849a4a6a was not offered to the user in this conversation. Show it and ask before applying."
 }

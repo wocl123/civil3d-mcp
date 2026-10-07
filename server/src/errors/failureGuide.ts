@@ -58,7 +58,13 @@ const GUIDES: [RegExp, Guide][] = [
     userAction: ASK_NOTHING,
     next: "limit을 줄이거나 측점 범위(fromStation, toStation)나 구간(section)을 좁혀 다시 읽는다."
   }],
-  [/Several (alignments|profiles) are named/, {
+  [/was cancelled by the user/, {
+    kind: "fix_cancelled",
+    meaning: "사용자가 이 계획을 [취소] 버튼으로 취소했다. 도면은 바뀌지 않았다.",
+    userAction: ASK_NOTHING,
+    next: "적용하지 않는다. 사용자가 다시 원하면 계획을 새로 만들어 보여 주고 다시 묻는다."
+  }],
+  [/Several (alignments|profiles|corridors) are named/, {
     kind: "ambiguous_name",
     meaning: "같은 이름의 객체가 여럿 있다.",
     userAction: ASK_NOTHING,

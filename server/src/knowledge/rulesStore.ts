@@ -1,3 +1,4 @@
+import { withFileLock } from "../files.js";
 // 공통 규칙 (data/knowledge/rules/*.md).
 // 모든 도면에 적용된다. 사람이 쓰고 AI는 읽기만 한다.
 //   - always: true 인 규칙은 매 요청에 들어가므로 짧게 둔다.
@@ -25,12 +26,15 @@ export function rulesDir(): string {
 //   - 아무도 고치지 않은 사본은, 새 버전이 다른 내용을 배포하면 새 내용으로 바꾼다.
 //   - 사람이 고친 사본이나 지운 규칙은 그대로 둔다.
 //   - 해시 없는 옛 기록은 사본이 배포본과 같아질 때까지 그대로 둔다.
-let ensured = false;
+let ensuring: Promise<void> | undefined;
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
-async function ensureDefaultRules(): Promise<void> {
-  if (ensured) return;
-  ensured = true;
+function ensureDefaultRules(): Promise<void> {
+  // 여러 MCP 프로세스의 초기 설치가 .installed 및 규칙 파일을 동시에 덮어쓰지 않게 한다.
+  return ensuring ??= withFileLock(join(rulesDir(), ".installed"), installDefaultRules);
+}
+
+async function installDefaultRules(): Promise<void> {
   try {
     await mkdir(rulesDir(), { recursive: true });
 

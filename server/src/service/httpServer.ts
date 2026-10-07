@@ -1,3 +1,8 @@
+import { fixesFor } from "../changes/changeStore.js";
+import { cancelFix, fixCard, operationStatus } from "../changes/operations.js";
+import { applyFix, undoOperation } from "../changes/applyChange.js";
+import { conversationProvider, offeredFixes, remember } from "../workflows/conversation.js";
+import { randomUUID } from "node:crypto";
 // 로컬 서비스 (127.0.0.1:48900). Civil 3D 플러그인이 띄우고, 팔레트가 이 HTTP API를 부른다.
 //
 // API (모두 플러그인 세션 토큰이 필요하다):
@@ -8,6 +13,8 @@
 //   POST /api/provider/check         로그인 확인(세션 시작)
 //   POST /api/provider/setup         AI CLI 설치·로그인 창 열기
 //   POST /api/chat, /api/chat/stream 팔레트 질문 (stream은 진행 상황을 한 줄씩 보냄)
+//   POST /api/change/apply, /api/change/undo, /api/change/cancel 수정안 버튼 (AI 호출 없음)
+//   POST /api/chat/cancel             AI 실행 중지 및 작업 결과 확인
 //   POST /api/conversation/clear     대화 지우기
 //   POST /api/memory/clear           답변 재사용 저장소 지우기
 //   POST /api/shutdown               새 서비스가 자리를 넘겨 달라고 할 때
@@ -37,6 +44,8 @@ if (!Number.isInteger(configuredPort) || configuredPort < 1 || configuredPort > 
 const port = configuredPort;
 
 const MAX_BODY = 16 * 1024;
+const activeChats = new Map<string, AbortController>();
+const busyChanges = new Set<string>();
 
 // 플러그인 연결 파일(토큰이 들어 있다).
 const connectionPath = () => process.env.MY_CIVIL3D_CONNECTION_FILE ??
@@ -81,7 +90,7 @@ async function body(request: IncomingMessage): Promise<Record<string, unknown>> 
   return parsed as Record<string, unknown>;
 }
 
-const httpServer = createServer(async (request, response) => {
+export const httpServer = createServer(async (request, response) => {
   try {
     // ── 보안 검사: 이 주소로 온 요청인지, 세션 토큰이 맞는지, POST는 JSON이고 다른 사이트에서 온 것이 아닌지.
     if (request.headers.host !== `${host}:${port}`) return json(response, 403, { error: "Invalid host." });
@@ -138,6 +147,46 @@ const httpServer = createServer(async (request, response) => {
       return json(response, 200, await openSetupWindow(input.provider, input.action));
     }
 
+    // 버튼 작업은 AI를 다시 호출하지 않는다. 대화에서 제안된 수정안만 직접 적용한다.
+    if (route === "POST /api/change/apply" || route === "POST /api/change/undo" || route === "POST /api/change/status" || route === "POST /api/change/cancel") {
+      const input = await body(request);
+      if (!isConversationId(input.conversation)) return json(response, 400, { error: "대화 ID가 필요합니다." });
+      const conversation = input.conversation;
+      if (activeChats.has(conversation) || busyChanges.has(conversation)) return json(response, 409, { error: "진행 중인 작업이 끝난 뒤 눌러 주세요." });
+      busyChanges.add(conversation);
+      try {
+        const offered = offeredFixes(conversation, Number.MAX_SAFE_INTEGER);
+        if (route.endsWith("/status")) {
+          if (typeof input.fixId !== "string") return json(response, 400, { error: "수정안 ID가 필요합니다." });
+          return json(response, 200, await operationStatus(input.fixId, offered));
+        }
+        if (route.endsWith("/cancel")) {
+          if (typeof input.fixId !== "string") return json(response, 400, { error: "수정안 ID가 필요합니다." });
+          await cancelFix(input.fixId, offered);
+          remember(conversation, { provider: conversationProvider(conversation), question: "[취소 버튼]", answer: `${input.fixId}: 사용자가 취소함. 적용하지 않음`, fixIds: [] });
+          return json(response, 200, { state: "cancelled", message: "취소했습니다. 도면은 바뀌지 않았습니다." });
+        }
+        if (route.endsWith("/undo")) {
+          if (typeof input.operationId !== "string") return json(response, 400, { error: "작업 ID가 필요합니다." });
+          const result = await undoOperation(input.operationId, offered);
+          remember(conversation, { provider: conversationProvider(conversation), question: "[되돌리기 버튼]", answer: `${result.title}: 되돌림`, fixIds: [result.fixId] });
+          return json(response, 200, result);
+        }
+        if (typeof input.fixId !== "string") return json(response, 400, { error: "수정안 ID가 필요합니다." });
+        const requestId = randomUUID();
+        const result = await applyFix(input.fixId, offered, requestId, typeof input.operationId === "string" ? input.operationId : undefined);
+        // 제안 카드 읽기 실패가 이미 커밋한 변경을 HTTP 실패로 바꾸지 않게 한다.
+        const fixes = await fixesFor(requestId).catch(() => []);
+        remember(conversation, { provider: conversationProvider(conversation), question: "[적용하기 버튼]", answer: JSON.stringify(result), fixIds: [input.fixId, ...fixes.map(fix => fix.id)] });
+        return json(response, 200, { ...result, fixes: fixes.map(fixCard) });
+      } finally { busyChanges.delete(conversation); }
+    }
+    if (route === "POST /api/chat/cancel") {
+      const input = await body(request);
+      if (isConversationId(input.conversation)) activeChats.get(input.conversation)?.abort();
+      return json(response, 200, { cancelling: true });
+    }
+
     // ── 팔레트 질문
     if (route === "POST /api/chat" || route === "POST /api/chat/stream") {
       const input = await body(request);
@@ -158,28 +207,37 @@ const httpServer = createServer(async (request, response) => {
       touchProvider(input.provider);
       const conversation = isConversationId(input.conversation) ? input.conversation : undefined;
 
-      // 한 번에 답 전체
-      if (url.pathname === "/api/chat") {
-        const result = await answerChat(input.provider, input.message, undefined, conversation);
-        touchProvider(input.provider);
-        return json(response, 200, { ...result, session: sessionInfo(input.provider) });
-      }
-
-      // 스트림: 한 줄에 JSON 하나. 진행(progress)·답 조각(delta) 이벤트, 끝에 done(위와 같은 결과) 또는 error.
-      response.writeHead(200, {
-        "Content-Type": "application/x-ndjson; charset=utf-8",
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff"
-      });
-      const send = (event: Record<string, unknown>) => response.write(JSON.stringify(event) + "\n");
+      const chatKey = conversation ?? "anonymous";
+      if (activeChats.has(chatKey) || busyChanges.has(chatKey)) return json(response, 409, { error: "이미 이 대화의 작업이 진행 중입니다." });
+      const controller = new AbortController();
+      activeChats.set(chatKey, controller);
+      const disconnected = () => { if (!response.writableEnded) controller.abort(); };
+      response.once("close", disconnected);
       try {
-        const result = await answerChat(input.provider, input.message, event => send(event), conversation);
-        touchProvider(input.provider);
-        send({ type: "done", ...result, session: sessionInfo(input.provider) });
-      } catch (error) {
-        send({ type: "error", error: paletteMessage(error instanceof Error ? error.message : String(error)) });
-      }
-      return response.end();
+        // 한 번에 답 전체
+        if (url.pathname === "/api/chat") {
+          const result = await answerChat(input.provider, input.message, undefined, conversation, controller.signal);
+          touchProvider(input.provider);
+          return json(response, 200, { ...result, session: sessionInfo(input.provider) });
+        }
+
+        // 스트림: 한 줄에 JSON 하나. 진행(progress)·답 조각(delta) 이벤트, 끝에 done(위와 같은 결과) 또는 error.
+        response.writeHead(200, {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff"
+        });
+        const send = (event: Record<string, unknown>) => response.write(JSON.stringify(event) + "\n");
+        try {
+          const result = await answerChat(input.provider, input.message, event => send(event), conversation, controller.signal);
+          touchProvider(input.provider);
+          send({ type: "done", ...result, session: sessionInfo(input.provider) });
+        } catch (error) {
+          send({ type: "error", error: paletteMessage(error instanceof Error ? error.message : String(error)),
+            applied: (error as { applied?: unknown }).applied });
+        }
+        return response.end();
+      } finally { activeChats.delete(chatKey); response.off("close", disconnected); }
     }
 
     // ── 지우기
@@ -205,7 +263,7 @@ const httpServer = createServer(async (request, response) => {
 
     json(response, 404, { error: "Not found." });
   } catch (error) {
-    json(response, 503, { error: paletteMessage(error instanceof Error ? error.message : String(error)) });
+    json(response, 503, { error: paletteMessage(error instanceof Error ? error.message : String(error)), applied: (error as { applied?: unknown }).applied });
   }
 });
 

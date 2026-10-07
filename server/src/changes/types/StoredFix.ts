@@ -17,4 +17,6 @@ export type StoredFix = FixOption & {
   createdAt: string;
   requestId: string;     // 수정안을 계산한 팔레트 요청
   source: FixSource;
+  binding?: { drawingId: string; revision: string; criteriaVersion: string; expiresAt: string };
+  targetRef?: { objectHandle: string; kind: string; elementKey: string };
 };

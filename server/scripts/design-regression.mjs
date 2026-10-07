@@ -29,7 +29,7 @@ const selectionOutline = async () => (await readSelection()).outline;
 const { loadCriteria, table } = await import('../build/criteria/criteriaStore.js');
 
 // Values that change from run to run.
-const VOLATILE = new Set(['at', 'revision', 'requestId']);
+const VOLATILE = new Set(['at', 'revision', 'requestId', 'operationId', 'originalChanges']);
 const stable = value => JSON.parse(JSON.stringify(value, (key, item) => VOLATILE.has(key) ? undefined : item));
 const failure = async run => { try { await run(); return 'no error'; } catch (error) { return `error: ${error.message}`; } };
 

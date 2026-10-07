@@ -1,3 +1,7 @@
+import { StringDecoder } from "node:string_decoder";
+import { rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { terminateTree } from "./processTree.js";
 // AI CLI(Claude, Codex, Gemini) 실행과 로그인 상태 관리.
 //   - runCli:          CLI 하나를 실행하고 출력을 모은다
 //   - verifyProvider:  로그인 확인 (세션 시작)
@@ -36,7 +40,7 @@ export function isProvider(value: unknown): value is Provider {
 //   - 명령 인자는 모두 이 모듈이 정한다. 사용자 글은 stdin으로만 보낸다(cmd.exe 인자 해석을 거치지 않게).
 //   - onLine: 출력 한 줄마다 부른다(진행 상황 표시용).
 async function runCli(provider: Provider, args: string[], input = "", timeoutMs = 15000,
-  cwd = tmpdir(), extraEnv: Record<string, string> = {}, onLine?: (line: string) => void): Promise<CliResult> {
+  cwd = tmpdir(), extraEnv: Record<string, string> = {}, onLine?: (line: string) => void, signal?: AbortSignal): Promise<CliResult> {
   const windows = process.platform === "win32";
   const executable = windows ? "cmd.exe" : provider;
   const commandArgs = windows ? ["/d", "/s", "/c", provider, ...args] : args;
@@ -51,25 +55,36 @@ async function runCli(provider: Provider, args: string[], input = "", timeoutMs 
   }
 
   return await new Promise<CliResult>((resolve, reject) => {
-    const child = spawn(executable, commandArgs, { cwd, windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env });
+    const child = spawn(executable, commandArgs, { cwd, windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env, detached: !windows });
     let stdout = "";
     let stderr = "";
     let pending = "";      // 아직 줄바꿈이 오지 않은 stdout 조각
     let settled = false;
+    let stopping = false;
+    let outputBytes = 0;
+    const outDecoder = new StringDecoder("utf8");
+    const errDecoder = new StringDecoder("utf8");
+    const stop = (message: string) => {
+      if (settled || stopping) return;
+      stopping = true;
+      clearTimeout(timer);
+      void terminateTree(child).finally(() => {
+        if (!settled) { settled = true; reject(new Error(message)); }
+      });
+    };
+    const abort = () => stop("요청을 취소했습니다. 도면 변경 결과는 작업 카드에서 확인하세요.");
 
     // 시간 초과
-    const timer = setTimeout(() => {
-      child.kill();
-      if (!settled) {
-        settled = true;
-        reject(new Error(`${provider} timed out.`));
-      }
-    }, timeoutMs);
+    const timer = setTimeout(() => stop(`${provider} timed out.`), timeoutMs);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
 
     // 출력 모으기. stdout은 줄 단위로 onLine에도 넘긴다.
     const append = (target: "stdout" | "stderr", chunk: Buffer) => {
+      if (settled || stopping) return;
+      outputBytes += chunk.length;
       if (target === "stdout") {
-        const text = chunk.toString("utf8");
+        const text = outDecoder.write(chunk);
         stdout += text;
         if (onLine) {
           pending += text;
@@ -78,9 +93,9 @@ async function runCli(provider: Provider, args: string[], input = "", timeoutMs 
           for (const line of lines) if (line.trim()) onLine(line);
         }
       } else {
-        stderr += chunk.toString("utf8");
+        stderr += errDecoder.write(chunk);
       }
-      if (stdout.length + stderr.length > MAX_OUTPUT) child.kill();
+      if (outputBytes > MAX_OUTPUT) stop(`${provider} output exceeded 2 MiB.`);
     };
 
     child.stdout.on("data", (chunk: Buffer) => append("stdout", chunk));
@@ -90,7 +105,10 @@ async function runCli(provider: Provider, args: string[], input = "", timeoutMs 
       if (!settled) { settled = true; clearTimeout(timer); reject(error); }
     });
     child.on("close", (code) => {
-      if (!settled) { settled = true; clearTimeout(timer); resolve({ code: code ?? 1, stdout, stderr }); }
+      signal?.removeEventListener("abort", abort);
+      stdout += outDecoder.end(); stderr += errDecoder.end();
+      if (pending.trim() && !stopping) onLine?.(pending);
+      if (!settled && !stopping) { settled = true; clearTimeout(timer); resolve({ code: code ?? 1, stdout, stderr }); }
     });
 
     child.stdin.end(input);
@@ -191,18 +209,23 @@ function chatEvent(provider: Provider, line: string): ChatEvent | undefined {
 // 팔레트 질문 하나를 AI에게 보내고 답과 토큰 사용량을 받는다.
 //   tools: true면 이 프로젝트의 MCP 도구로 도면을 볼 수 있다. false면 프롬프트만으로 답한다.
 export async function askProvider(provider: Provider, prompt: string,
-  options: { tools?: boolean; onEvent?: (event: ChatEvent) => void; requestId?: string; offeredFixes?: string[] } = {}):
+  options: { tools?: boolean; onEvent?: (event: ChatEvent) => void; requestId?: string; offeredFixes?: string[]; drawingId?: string; signal?: AbortSignal } = {}):
   Promise<{ answer: string; usage: TokenUsage }> {
   if (await getProviderState(provider) !== "ready")
     throw new Error(`${provider} account is not verified. Verify its login first.`);
 
   // 1) CLI 실행 (명령 인자와 작업 폴더는 paletteWorkspace.ts 가 정한다)
-  const launch = await paletteLaunch(provider, options.tools === true, options.requestId, options.offeredFixes);
+  const launch = await paletteLaunch(provider, options.tools === true, options.requestId ?? randomUUID(), options.offeredFixes, options.drawingId);
   const onEvent = options.onEvent;
   const onLine = onEvent
     ? (line: string) => { const event = chatEvent(provider, line); if (event) onEvent(event); }
     : undefined;
-  const result = await runCli(provider, launch.args, prompt, 200000, launch.cwd, launch.env, onLine);
+  let result: CliResult;
+  try { result = await runCli(provider, launch.args, prompt, 200000, launch.cwd, launch.env, onLine, options.signal); }
+  finally {
+    // 요청별 폴더는 이 실행이 소유한다. 인증 파일은 여기 저장하지 않는다.
+    await rm(launch.cwd, { recursive: true, force: true }).catch(error => process.stderr.write(`Workspace cleanup failed: ${String(error)}\n`));
+  }
 
   // 2) 실패: CLI 옵션이나 MCP 서버 문제일 수도 있으니 마지막 오류 메시지를 붙인다.
   if (result.code !== 0) {

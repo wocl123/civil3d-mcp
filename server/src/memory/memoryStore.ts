@@ -15,6 +15,7 @@ const MAX_ANSWERS = 300;                         // 최대 개수(오래 안 쓴
 
 // 메모리에 올려 둔 파일 내용과, 쓰기 줄.
 let memory: PaletteMemory | undefined;
+let loading: Promise<PaletteMemory> | undefined;
 let writing: Promise<void> = Promise.resolve();
 
 function memoryFile(): string {
@@ -22,15 +23,20 @@ function memoryFile(): string {
   return join(dataDir(), "memory", "answers.json");
 }
 
-async function load(): Promise<PaletteMemory> {
+function load(): Promise<PaletteMemory> {
+  if (memory) return Promise.resolve(memory);
+  return loading ??= loadOnce().finally(() => { loading = undefined; });
+}
+
+async function loadOnce(): Promise<PaletteMemory> {
   if (memory) return memory;
   try {
     const parsed = JSON.parse(await readFile(memoryFile(), "utf8")) as Partial<PaletteMemory>;
-    memory = parsed.version === 1 && Array.isArray(parsed.answers)
-      ? { version: 1, answers: parsed.answers }
-      : { version: 1, answers: [] };
+    memory = parsed.version === 2 && Array.isArray(parsed.answers)
+      ? { version: 2, answers: parsed.answers }
+      : { version: 2, answers: [] };
   } catch {
-    memory = { version: 1, answers: [] };
+    memory = { version: 2, answers: [] };
   }
   return memory;
 }
@@ -45,10 +51,9 @@ function persist(data: PaletteMemory): Promise<void> {
   return writing;
 }
 
-// 띄어쓰기·대소문자·문장부호는 뜻을 바꾸지 않으므로 지운다.
-// "레이어 몇 개야?"와 "레이어 몇개야"가 같은 답을 쓴다.
+// 소수점·부호·객체 이름 기호는 의미가 있으므로 보존한다. 공백만 정리한다.
 export function normalizeQuestion(text: string): string {
-  return text.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[\s\p{P}\p{S}]+/gu, "");
+  return text.normalize("NFKC").trim().replace(/\s+/gu, " ");
 }
 
 export function hashKey(...parts: string[]): string {
@@ -59,11 +64,12 @@ export function hashKey(...parts: string[]): string {
 // AI마다 답이 다를 수 있고, 도면을 고치면 답이 낡기 때문이다.
 export async function findAnswer(kind: CachedAnswer["kind"], provider: CachedAnswer["provider"],
   key: string, scope: DrawingScope): Promise<CachedAnswer | undefined> {
+  if (!scope.drawingId || scope.state === "legacy") return undefined;
   const data = await load();
   const now = Date.now();
   const found = data.answers.find(answer =>
     answer.kind === kind && answer.provider === provider && answer.key === key &&
-    answer.scope === scope.key && answer.state === scope.state &&
+    answer.scope === scope.key && answer.state === scope.state && answer.drawingId === scope.drawingId &&
     now - answer.createdAt < ANSWER_TTL_MS);
 
   if (found) {
@@ -76,6 +82,7 @@ export async function findAnswer(kind: CachedAnswer["kind"], provider: CachedAns
 
 // 답을 저장한다. 같은 AI·질문·도면의 옛 답과 기간이 지난 답은 지우고, 최근 사용 순으로 300개까지.
 export async function saveAnswer(entry: Omit<CachedAnswer, "createdAt" | "lastUsedAt" | "hits">): Promise<void> {
+  if (!entry.drawingId || entry.state === "legacy") return;
   const data = await load();
   const now = Date.now();
   const others = data.answers.filter(answer =>
@@ -89,6 +96,6 @@ export async function saveAnswer(entry: Omit<CachedAnswer, "createdAt" | "lastUs
 }
 
 export async function clearMemory(): Promise<void> {
-  memory = { version: 1, answers: [] };
+  memory = { version: 2, answers: [] };
   await persist(memory);
 }

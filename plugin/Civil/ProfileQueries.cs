@@ -38,7 +38,7 @@ public static class ProfileQueries
     // (도면 파일, 종단 핸들)별 스냅숏. 리비전이 같으면 재사용, 50개가 넘으면 비운다.
     private static ProfileSnapshot Snapshot(Document document, Transaction transaction, Alignment alignment, Profile profile)
     {
-        string key = $"{document.Database.Filename}|{profile.Handle}";
+        string key = $"{DrawingRevisions.Id(document.Database)}|{profile.Handle}";
         string revision = DrawingRevisions.Of(document.Database);
         if (Snapshots.TryGetValue(key, out var cached) && cached.Revision == revision) return cached.Snapshot;
         ProfileSnapshot snapshot = ProfileSnapshot.Read(transaction, alignment, profile);
@@ -49,7 +49,7 @@ public static class ProfileQueries
 
     // 종단 찾기: 핸들로, 또는 이름으로(주어진 선형 안에서, 없으면 도면 전체에서).
     // 같은 이름이 여럿이면 핸들이나 선형을 달라고 한다.
-    private static (Alignment, Profile) Resolve(Transaction transaction, string key, string? alignmentKey)
+    internal static (Alignment, Profile) Resolve(Transaction transaction, string key, string? alignmentKey)
     {
         if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("A profile handle or name is required.");
         IEnumerable<Alignment> scope = alignmentKey is null

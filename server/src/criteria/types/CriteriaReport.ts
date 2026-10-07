@@ -8,6 +8,7 @@ export type CriteriaReport = {
   // 쓴 기준과, 기준표가 원문과 얼마나 대조되었는지
   criteria: { id: string; title: string; effective?: string; reviewed: boolean; verification: string };
 
+  assessment?: "pass" | "fail" | "review" | "incomplete" | "not_applicable";
   target: string;                                         // 검토 대상 (예: 선형 본선)
   conditions: Record<string, ConditionValue | string>;    // 적용한 조건과 출처
   missing: { name: string; options?: (string | number)[]; neededFor: string }[]; // 아직 필요한 조건

@@ -111,7 +111,7 @@ public static class PluginBridge
         }
     }
 
-    // 연결 하나: 요청 한 줄 읽기 → 처리 → 응답 한 줄 쓰기. 10분이 넘으면 끊는다.
+    // 요청 읽기에 10분 제한을 둔다. 실행 중인 CAD 편집은 응답 유실만으로 취소되었다고 단정할 수 없다.
     private static async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
     {
         using (client)
@@ -175,29 +175,31 @@ public static class PluginBridge
             if (requestObject["params"] is not null and not JsonObject)
                 throw new ArgumentException("params must be a JSON object.");
             JsonObject? parameters = requestObject["params"] as JsonObject;
+            JsonObject? context = requestObject["context"] as JsonObject;
+            Task<object> Read(Func<Document, object> query) => InDocumentContextAsync(query, context);
             object result = requestObject["method"]?.ToString() switch
             {
                 // ── 도면 조회
-                "drawing.status" => await InDocumentContextAsync(doc => DrawingQueries.GetStatus(doc)),
-                "drawing.objects" => await InDocumentContextAsync(doc => DrawingQueries.GetObjects(
+                "drawing.status" => await Read(doc => DrawingQueries.GetStatus(doc)),
+                "drawing.objects" => await Read(doc => DrawingQueries.GetObjects(
                     doc,
                     ReadInt(parameters?["offset"], 0),
                     ReadInt(parameters?["limit"], 20),
                     parameters?["layer"]?.ToString())),
-                "drawing.layers" => await InDocumentContextAsync(doc => DrawingQueries.GetLayers(
+                "drawing.layers" => await Read(doc => DrawingQueries.GetLayers(
                     doc,
                     ReadInt(parameters?["offset"], 0),
                     ReadInt(parameters?["limit"], 50))),
-                "drawing.object" => await InDocumentContextAsync(doc => DrawingQueries.GetObject(
+                "drawing.object" => await Read(doc => DrawingQueries.GetObject(
                     doc, ReadString(parameters?["handle"]))),
                 // ── 선형·종단 조회
-                "alignment.list" => await InDocumentContextAsync(doc => AlignmentQueries.ListAlignments(
+                "alignment.list" => await Read(doc => AlignmentQueries.ListAlignments(
                     doc,
                     ReadInt(parameters?["offset"], 0),
                     ReadInt(parameters?["limit"], 50))),
-                "alignment.get" => await InDocumentContextAsync(doc => AlignmentQueries.GetAlignment(
+                "alignment.get" => await Read(doc => AlignmentQueries.GetAlignment(
                     doc, ReadString(parameters?["alignment"]))),
-                "alignment.section" => await InDocumentContextAsync(doc => AlignmentQueries.GetAlignmentSection(
+                "alignment.section" => await Read(doc => AlignmentQueries.GetAlignmentSection(
                     doc,
                     ReadString(parameters?["alignment"]),
                     ReadString(parameters?["section"]),
@@ -205,28 +207,36 @@ public static class PluginBridge
                     ReadOptionalNumber(parameters?["toStation"]),
                     ReadInt(parameters?["offset"], 0),
                     ReadInt(parameters?["limit"], 50))),
-                "profile.get" => await InDocumentContextAsync(doc => ProfileQueries.GetProfile(
+                "drawing.delete_preview" => await Read(doc => DrawingDeletion.Preview(doc, parameters)),
+                "profile.get" => await Read(doc => ProfileQueries.GetProfile(
                     doc,
                     ReadString(parameters?["profile"]),
                     parameters?["alignment"]?.ToString())),
                 // ── 도면 편집
-                "change.apply" => await InDocumentEditAsync(doc => DesignChanges.Apply(doc, ReadChanges(parameters?["changes"]))),
-                "alignment.create" => await InDocumentEditAsync(doc => AlignmentCreation.Create(doc, ReadCreate(parameters))),
+                "change.apply" => await InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context,
+                    () => DesignChanges.Apply(doc, ReadChanges(parameters?["changes"])))),
+                "alignment.create" => await InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context,
+                    () => AlignmentCreation.Create(doc, ReadCreate(parameters)))),
+                "drawing.delete" => await InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context,
+                    () => DrawingDeletion.Delete(doc, DrawingDeletion.ReadTargets(parameters?["targets"])))),
+                "change.undo" => await InDocumentContextAsync(doc => DrawingOperations.Undo(doc, parameters)),
+                "change.cancel" => await InDocumentContextAsync(doc => DrawingOperations.Cancel(doc, parameters)),
+                "change.result" => await InDocumentContextAsync(doc => DrawingOperations.Result(doc, parameters)),
                 // ── 사용자에게 고르게 하기, 화면 캡처, 선택·요약, 그 밖의 조회
-                "drawing.pick_polyline" => await InDocumentContextAsync(doc => DrawingPicker.PickPolyline(
+                "drawing.pick_polyline" => await Read(doc => DrawingPicker.PickPolyline(
                     doc, parameters?["message"]?.ToString(), Math.Clamp(ReadInt(parameters?["timeoutSeconds"], 90), 10, 110))),
-                "drawing.capture" => await InDocumentContextAsync(doc => DrawingCapture.Capture(
+                "drawing.capture" => await Read(doc => DrawingCapture.Capture(
                     doc, ReadStrings(parameters?["handles"]),
                     Math.Clamp(ReadInt(parameters?["width"], 800), 200, 1600),
                     Math.Clamp(ReadInt(parameters?["height"], 600), 200, 1200))),
-                "drawing.selection" => await InDocumentContextAsync(doc => DrawingSelection.Get(doc)),
-                "drawing.summary" => await InDocumentContextAsync(doc => DrawingSummary.Read(doc)),
-                "drawing.polylines" => await InDocumentContextAsync(doc => DrawingQueries.GetPolylines(
+                "drawing.selection" => await Read(doc => DrawingSelection.Get(doc)),
+                "drawing.summary" => await Read(doc => DrawingSummary.Read(doc)),
+                "drawing.polylines" => await Read(doc => DrawingQueries.GetPolylines(
                     doc,
                     ReadInt(parameters?["offset"], 0),
                     ReadInt(parameters?["limit"], 20),
                     parameters?["layer"]?.ToString())),
-                "profile.section" => await InDocumentContextAsync(doc => ProfileQueries.GetProfileSection(
+                "profile.section" => await Read(doc => ProfileQueries.GetProfileSection(
                     doc,
                     ReadString(parameters?["profile"]),
                     parameters?["alignment"]?.ToString(),
@@ -241,6 +251,7 @@ public static class PluginBridge
             };
             return new { jsonrpc = "2.0", id, result };
         }
+        catch (BridgeFailure ex) { return new { jsonrpc = "2.0", id, error = new { code = -32002, message = ex.Message, kind = ex.Kind, drawingChanged = ex.DrawingChanged } }; }
         catch (MissingMethodException) { return Failure(id, -32601, "Method not found."); }
         catch (ArgumentException ex) { return Failure(id, -32602, ex.Message); }
         catch (System.Exception ex) { return Failure(id, -32603, ex.Message); }
@@ -308,7 +319,7 @@ public static class PluginBridge
     }
 
     // 조회: 명령 컨텍스트에서 도면을 잠그고 실행한다.
-    private static async Task<object> InDocumentContextAsync(Func<Document, object> query)
+    private static async Task<object> InDocumentContextAsync(Func<Document, object> query, JsonObject? context = null)
     {
         object? result = null;
         System.Exception? error = null;
@@ -323,37 +334,8 @@ public static class PluginBridge
                     Document document = App.DocumentManager.MdiActiveDocument
                         ?? throw new InvalidOperationException("No active drawing.");
                     using DocumentLock documentLock = document.LockDocument();
+                    DrawingOperations.Validate(document, context);
                     result = query(document);
-                }
-                catch (System.Exception ex) { error = ex; }
-                await Task.CompletedTask;
-            }, null);
-        }
-        finally { DrawingSelection.BridgeEnded(); }
-        if (error is not null) throw error;
-        return result!;
-    }
-
-    // 편집: InDocumentContextAsync와 같지만 편집을 UNDO 그룹 하나로 묶는다.
-    // Ctrl+Z 한 번(UNDO 1)으로 모두 되돌릴 수 있고, 편집이 실패해도 그룹은 닫는다.
-    private static async Task<object> InDocumentEditAsync(Func<Document, object> edit)
-    {
-        object? result = null;
-        System.Exception? error = null;
-        // 명령 컨텍스트에 들어가면 사용자의 그립이 지워진다. DrawingSelection이 선택을 기억해 둔다.
-        DrawingSelection.BridgeStarted();
-        try
-        {
-            await App.DocumentManager.ExecuteInCommandContextAsync(async _ =>
-            {
-                Document? document = App.DocumentManager.MdiActiveDocument;
-                try
-                {
-                    if (document is null) throw new InvalidOperationException("No active drawing.");
-                    using DocumentLock documentLock = document.LockDocument();
-                    document.Editor.Command("_.UNDO", "_BEgin");
-                    try { result = edit(document); }
-                    finally { document.Editor.Command("_.UNDO", "_End"); }
                 }
                 catch (System.Exception ex) { error = ex; }
                 await Task.CompletedTask;

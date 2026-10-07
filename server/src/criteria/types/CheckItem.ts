@@ -6,6 +6,7 @@ import type { FixOption } from "./FixOption.js";
 //   review: 표의 값에는 못 미치지만 단서가 허용하는 범위 안. 단서 적용 여부는 사람이 판단.
 //   n/a:    비교하지 못함. note에 이유.
 export type CheckItem = {
+  targetRef?: { objectHandle: string; kind: string; elementKey: string };
   check: string;          // 검토 이름 (예: 최소 평면곡선 반지름)
   article: string;        // 조문 (예: 제19조)
   target: string;         // 대상 (예: 곡선 2 (0+900.00~1+050.00))

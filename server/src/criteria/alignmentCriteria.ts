@@ -1,3 +1,4 @@
+import { withDrawing } from "../bridge/boundOperation.js";
 // 평면선형 설계기준 검토.
 // 선형의 곡선·완화곡선·편경사를 기준표(기본: 도로구조규칙 제8·19·20·21·23조)와 비교한다.
 // 비교는 모두 이 코드가 하고, AI는 결과를 설명만 한다.
@@ -49,7 +50,7 @@ const NOT_COVERED = [
 //   - 설계속도: 선형의 설계속도 목록
 //   - 기준·도로 구분·지역·최대 편경사: 선형을 만들 때 설명(Description)에 기록한 값
 //   - 최대 편경사: 그래도 없으면 지역별 기준표 값
-export async function checkAlignmentCriteria(given: AlignmentCriteriaInput): Promise<CriteriaReport> {
+async function checkAlignmentCriteriaInternal(given: AlignmentCriteriaInput): Promise<CriteriaReport> {
   await loadParameters();
 
   // 1) 선형 기본 정보와, 설명에 기록된 조건을 읽는다.
@@ -81,7 +82,7 @@ export async function checkAlignmentCriteria(given: AlignmentCriteriaInput): Pro
   if (notRoad) {
     const skipped = new ReportBuilder(set, `선형 ${overview.alignment.name}`);
     skipped.notes.push(notRoad);
-    return skipped.build();
+    return { ...skipped.build(), assessment: "not_applicable" };
   }
 
   // 3) 비교에 필요한 구간 정보를 한꺼번에 읽는다.
@@ -92,7 +93,7 @@ export async function checkAlignmentCriteria(given: AlignmentCriteriaInput): Pro
     readSection<AlignmentSuperelevation>("alignment.section", { alignment: key }, "superelevation")
   ]);
 
-  const report = new ReportBuilder(set, `선형 ${overview.alignment.name}`, NOT_COVERED);
+  const report = new ReportBuilder(set, `선형 ${overview.alignment.name}`, NOT_COVERED, key);
   const radius = table(set, "min_curve_radius");
   const length = table(set, "min_curve_length");
   const superTable = table(set, "max_superelevation");
@@ -244,4 +245,9 @@ function checkDesignSpeed(report: ReportBuilder, set: CriteriaSet, input: Alignm
   } catch (error) {
     report.notes.push(error instanceof Error ? error.message : String(error));
   }
+}
+
+// 공개 진입점은 계산 전체를 하나의 도면 문맥으로 묶는다.
+export async function checkAlignmentCriteria(given: AlignmentCriteriaInput) {
+  return withDrawing(() => checkAlignmentCriteriaInternal(given));
 }

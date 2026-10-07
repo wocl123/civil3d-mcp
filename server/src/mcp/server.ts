@@ -13,6 +13,7 @@ import { registerAlignmentTools } from "./tools/alignmentTools.js";
 import { registerCriteriaTools } from "./tools/criteriaTools.js";
 import { registerChangeTools } from "./tools/changeTools.js";
 import { registerDesignTools } from "./tools/designTools.js";
+import { registerDeleteTools } from "./tools/deleteTools.js";
 import { mcpProfile, paletteServer } from "./profile.js";
 import { loggedServer } from "./toolLog.js";
 import { guidedServer } from "./toolErrors.js";
@@ -24,6 +25,7 @@ registerDrawingTools(tools);
 registerAlignmentTools(tools);
 registerCriteriaTools(tools);
 registerDesignTools(tools);
+registerDeleteTools(tools);
 registerChangeTools(tools);
 registerKnowledgeTools(tools);
 

@@ -1,99 +1,133 @@
-// 사용자가 동의한 수정안 하나를 도면에 적용하고(apply_drawing_change 도구),
-// 같은 검토를 다시 돌려 대상이 이제 통과하는지 알려 준다.
-//
-// 안전장치:
-//   - 이 대화에서 앞서 보여 준 수정안만 받는다.
-//   - 플러그인이 적용 직전에 값이 수정안을 계산할 때 그대로인지 확인하고,
-//     모든 변경을 되돌리기(UNDO) 한 번으로 묶어 적용한다.
-
+import { inChangeRequest } from "./requestContext.js";
+// 변경의 커밋과 재검토는 서로 다른 결과다. 커밋 뒤의 오류가 "변경 없음"으로 전달되어서는 안 된다.
+import { randomUUID } from "node:crypto";
 import { callPlugin } from "../bridge/pluginClient.js";
+import { inDrawingContext } from "../bridge/drawingContext.js";
+import { currentDrawingScope } from "../memory/drawingScope.js";
+import { contentVersion } from "../knowledge/contentVersion.js";
+import { withFileLock } from "../files.js";
 import { checkAlignmentCriteria } from "../criteria/alignmentCriteria.js";
 import { checkProfileCriteria } from "../criteria/profileCriteria.js";
-import type { CheckItem } from "../criteria/types/CheckItem.js";
-import type { CriteriaReport } from "../criteria/types/CriteriaReport.js";
+import { assess, fullItems } from "../criteria/reportBuilder.js";
 import { loadFix, logChange, registerFixes } from "./changeStore.js";
-import { describe, describeCreate } from "./describe.js";
+import { fixLabels } from "./describe.js";
 import { failureGuide } from "../errors/failureGuide.js";
 import type { ChangeLogEntry } from "./types/ChangeLogEntry.js";
 import type { StoredFix } from "./types/StoredFix.js";
 import { trackApplied } from "../tracking/trackApplied.js";
+import { cancelledFix, readOperation, saveOperation, usedFix, usageFile, type Operation } from "./operations.js";
 
-// "곡선 2 (0+900.00~1+050.00)" → "곡선 2".
-// 반지름이 바뀌면 곡선 끝 측점이 움직이므로, 다시 검토할 때는 번호로 같은 곡선을 찾는다.
-const targetKey = (target: string) => /^(곡선|경사) \d+/.exec(target)?.[0] ?? target;
+const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export async function applyFix(fixId: string, offered: string[]) {
-  // 1) 적용해도 되는 수정안인지
-  if (!offered.includes(fixId))
-    throw new Error(`Fix ${fixId} was not offered to the user in this conversation. Show it and ask before applying.`);
-  const fix = await loadFix(fixId);
-  if (!fix.applicable) {
-    throw new Error(fix.status === "conflict"
+export async function applyFix(fixId: string, offered: string[], requestId = process.env.MY_CIVIL3D_REQUEST_ID ?? "none",
+  reapplyOperation?: string) {
+  if (!offered.includes(fixId)) throw new Error(`Fix ${fixId} was not offered to the user in this conversation. Show it and ask before applying.`);
+  return inChangeRequest(requestId, () => withFileLock(usageFile(fixId), async () => {
+    const fix = await loadFix(fixId);
+    if (!fix.binding) throw new Error("The stored fix has no drawing identity. Run the check again.");
+    if (!fix.applicable) throw new Error(fix.status === "conflict"
       ? `Fix ${fixId} cannot be applied: ${fix.reason ?? "it conflicts with neighbouring elements"}.`
       : `Fix ${fixId} has changes the plug-in cannot apply; the user must change the drawing by hand.`);
-  }
-
-  // 2) 플러그인에 적용 요청 (선형 생성 또는 값 변경)
-  const labels = fix.create ? [describeCreate(fix.create)] : fix.changes.map(describe);
-  let result: ChangeLogEntry["result"];
-  try {
-    if (fix.create) {
-      const created = await callPlugin("alignment.create", fix.create);
-      result = { created, revision: (created as { revision: string }).revision } as ChangeLogEntry["result"];
-    } else {
-      const changes = fix.changes.map(item => ({
-        kind: item.object.kind,
-        handle: item.object.handle,
-        at: item.object.at,
-        property: item.property,
-        from: item.from,
-        to: item.to
-      }));
-      result = await callPlugin("change.apply", { changes }) as ChangeLogEntry["result"];
+    if (await cancelledFix(fixId)) throw new Error(`Fix ${fixId} was cancelled by the user. Plan again if the user still wants it.`);
+    if (Date.parse(fix.binding.expiresAt) <= Date.now()) throw new Error(`Fix ${fixId} has expired. Run the check again.`);
+    if (fix.binding.criteriaVersion !== await contentVersion()) throw new Error("Criteria changed since the fix was calculated. Run the check again.");
+    const previous = await usedFix(fixId);
+    let expectedRevision = fix.binding.revision;
+    if (previous && previous.state !== "rejected") {
+      // 되돌리기 확인 영수증이 있을 때만 재적용을 허용한다. 아무 변경 뒤에 수정안을 재활용하지 않는다.
+      if (previous.state !== "undone" || previous.operationId !== reapplyOperation)
+        throw new Error("Fix already applied or its outcome is unknown. Check the operation before continuing.");
+      const receipt = await callPlugin("change.result", { operationId: previous.operationId }) as Operation;
+      if (receipt.state !== "undone") throw new Error("Undo result could not be verified.");
+      expectedRevision = receipt.revision;
     }
-  } catch (error) {
-    // 실패: 기록하고, 무슨 뜻인지·도면이 바뀌었는지 안내와 함께 돌려준다.
-    const message = error instanceof Error ? error.message : String(error);
-    await logChange({ fixId, state: "failed", title: fix.title, target: fix.target, check: fix.check, labels, error: message });
-    const guide = failureGuide(message);
-    return { applied: false, fix: fix.title, error: message, drawingChanged: guide.drawingChanged, guide };
-  }
-
-  // 3) 성공: 기록하고, 사람이 나중에 이 값을 고치는지 추적을 시작한다.
-  await logChange({ fixId, state: "applied", title: fix.title, target: fix.target, check: fix.check, labels, result });
-  await trackApplied(fix, result);
-
-  // 4) 같은 검토를 다시 돌린 결과와 함께 돌려준다.
-  return {
-    applied: true,
-    fix: fix.title,
-    ...(result?.created ? { created: result.created } : { changes: result?.changes }),
-    undo: "Ctrl+Z 한 번(또는 UNDO 1)으로 되돌릴 수 있음",
-    recheck: fix.source.check === "none" ? "용도에 도로가 없어 설계 기준 검토 없음" : await recheck(fix)
-  };
+    const scope = await currentDrawingScope();
+    if (scope.drawingId !== fix.binding.drawingId) throw new Error("Drawing changed since the fix was calculated.");
+    if (scope.state !== expectedRevision) throw new Error("Drawing changed since the fix was calculated. Run the check again.");
+    const operation: Operation = { operationId: randomUUID(), fixId, requestId, at: new Date().toISOString(), state: "running",
+      title: fix.title, target: fix.target, labels: fixLabels(fix), kind: fix.remove ? "delete" : fix.create ? "create" : "change",
+      drawingId: scope.drawingId!, revision: scope.state };
+    // 네트워크 요청 전에 실행 사실을 남긴다. 프로세스 종료 후 불명확한 작업을 다시 실행하지 않는다.
+    await saveOperation(operation);
+    let result: Record<string, unknown>;
+    try {
+      // 만들기 / 지우기 / 값 바꾸기
+      const [method, params] = fix.create ? ["alignment.create" as const, fix.create]
+        : fix.remove ? ["drawing.delete" as const, { targets: fix.remove.targets }]
+        : ["change.apply" as const, { changes: fix.changes.map(item => ({ kind: item.object.kind, handle: item.object.handle,
+            at: item.object.at, property: item.property, from: item.from, to: item.to })) }];
+      result = await inDrawingContext({ drawingId: scope.drawingId!, revision: scope.state }, () => callPlugin(
+        method, { ...params, operationId: operation.operationId })) as Record<string, unknown>;
+    } catch (error) {
+      const message = messageOf(error);
+      const details = error as { drawingChanged?: boolean | "unknown" };
+      const guide = { ...failureGuide(message), ...(details.drawingChanged !== undefined ? { drawingChanged: details.drawingChanged } : {}) };
+      operation.state = guide.drawingChanged === "unknown" ? "unknown" : "rejected";
+      await saveOperation(operation);
+      await logChange({ fixId, state: "failed", title: fix.title, target: fix.target, check: fix.check, labels: operation.labels, error: message });
+      return { applied: false, mutation: operation.state, operationId: operation.operationId,
+        drawingChanged: guide.drawingChanged, fix: fix.title, error: message, guide };
+    }
+    const revision = String(result.revision);
+    operation.state = "applied";
+    operation.revision = revision;
+    operation.result = result;
+    const warnings: string[] = [];
+    try { await saveOperation(operation); } catch (error) { warnings.push("적용 기록 저장 실패: " + messageOf(error)); }
+    const changeResult = { ...result, ...(fix.create ? { created: result } : {}), revision } as ChangeLogEntry["result"];
+    await logChange({ fixId, state: "applied", title: fix.title, target: fix.target, check: fix.check, labels: operation.labels, result: changeResult });
+    let recheckResult: Awaited<ReturnType<typeof recheck>> | { state: "failed"; error: string };
+    try {
+      recheckResult = await inDrawingContext({ drawingId: scope.drawingId!, revision, criteriaVersion: fix.binding!.criteriaVersion }, async () => {
+        await trackApplied(fix, changeResult);
+        return recheck(fix);
+      });
+    } catch (error) { recheckResult = { state: "failed", error: messageOf(error) }; }
+    operation.recheck = recheckResult;
+    operation.warnings = warnings;
+    try { await saveOperation(operation); } catch (error) { warnings.push("후속 결과 저장 실패: " + messageOf(error)); }
+    // 적용 성공은 재검토·추적·기록 실패와 무관하게 유지한다. 팔레트는 작업 ID로 되돌리기 버튼을 제공한다.
+    return { applied: true, mutation: "applied", drawingChanged: true, operationId: operation.operationId,
+      fix: fix.title, ...(fix.create ? { created: result } : fix.remove ? { deleted: result.deleted, profiles: result.profiles, profileViews: result.profileViews, corridors: result.corridors } : { changes: result.changes }),
+      undo: "팔레트의 되돌리기 버튼으로 취소할 수 있음", warnings, recheck: recheckResult };
+  }));
 }
 
-// 다시 검토: 새로 만든 선형은 선형 전체를, 수정안은 대상 곡선·경사만 본다.
 async function recheck(fix: StoredFix) {
-  if (fix.source.check === "none") return undefined;
-
-  const reports: CriteriaReport[] = fix.source.check === "alignment"
-    ? [await checkAlignmentCriteria(fix.source.input)]
-    : await checkProfileCriteria(fix.source.input);
-  const items = reports.flatMap(report => report.items);
-
-  // 다시 검토에서 나온 새 수정안도 저장해 둔다(아직 미달이면 다음 수정안을 제안할 수 있게).
+  if (fix.source.check === "none") return { state: "not_required" as const, assessment: "not_applicable" as const };
+  // 여러 종단의 동일 곡선 번호가 섞이지 않게 수정된 객체 핸들로 검토 대상을 한정한다.
+  const handle = fix.targetRef?.objectHandle || fix.changes[0]?.object.handle;
+  const input = fix.source.input;
+  const reports = fix.source.check === "alignment"
+    ? [await checkAlignmentCriteria({ ...input, alignment: handle || (input as { alignment: string }).alignment })]
+    : await checkProfileCriteria({ ...input, ...(handle ? { profile: handle } : {}) });
+  const items = reports.flatMap(fullItems);
   await registerFixes(items, fix.source);
+  const key = /^(곡선|경사) (\d+)/.exec(fix.target);
+  const sameTarget = fix.create ? items : items.filter(item => fix.targetRef
+    ? item.targetRef?.objectHandle === fix.targetRef.objectHandle && item.targetRef.kind === fix.targetRef.kind && item.targetRef.elementKey === fix.targetRef.elementKey
+    : !!key && /^(곡선|경사) (\d+)/.exec(item.target)?.[0] === key[0]);
+  const assessment = reports.every(report => report.assessment === "not_applicable") ? "not_applicable"
+    : assess(sameTarget, reports.some(report => report.missing.length > 0));
+  return { state: "completed" as const, assessment, target: fix.target, targetPassed: assessment === "pass",
+    targetItems: sameTarget, otherFailures: fix.create ? [] : items.filter(item => item.result === "fail" && !sameTarget.includes(item)),
+    summary: reports.map(report => ({ target: report.target, ...report.summary })) };
+}
 
-  const key = targetKey(fix.target);
-  const sameTarget = fix.create ? items : items.filter(item => targetKey(item.target) === key);
-  const failed = (list: CheckItem[]) => list.filter(item => item.result === "fail");
-
-  return {
-    target: fix.target,
-    targetPassed: failed(sameTarget).length === 0,
-    targetItems: sameTarget,
-    otherFailures: fix.create ? [] : failed(items).filter(item => targetKey(item.target) !== key),
-    summary: reports.map(report => ({ target: report.target, ...report.summary }))
-  };
+export async function undoOperation(operationId: string, offered: string[]) {
+  const operation = await readOperation(operationId);
+  if (!offered.includes(operation.fixId)) throw new Error("This operation does not belong to this conversation.");
+  return withFileLock(usageFile(operation.fixId), async () => {
+    // C#이 도면 ID와 마지막 편집 리비전을 검사한다. 현재 활성 도면에 무조건 UNDO를 보내지 않는다.
+    const result = await callPlugin("change.undo", { operationId }) as Operation & { restored?: number; skippedSteps?: string[] };
+    operation.state = result.state;
+    operation.revision = result.revision;
+    await saveOperation(operation);
+    // 플러그인은 작업 기록(시작~끝에 바뀐 객체)으로 이 작업의 UNDO 단계를 찾는다.
+    // 그 뒤에 쌓인 객체 변경 없는 단계(화면 확대·이동 등)를 함께 되돌렸으면 알린다.
+    const skipped = result.skippedSteps?.length ?? 0;
+    const message = `적용한 변경을 되돌렸습니다${result.restored ? ` (객체 ${result.restored}개 복원 확인)` : ""}.` +
+      (skipped ? ` 그 뒤의 객체 변경 없는 단계 ${skipped}개(화면 확대·이동 등)도 함께 되돌렸습니다.` : "");
+    return { ...operation, message };
+  });
 }

@@ -2,12 +2,13 @@
 // 사용자의 CLI 설정(플러그인, 다른 MCP 서버, 커넥터, 훅)은 넣지 않는다.
 // 요청을 작게 유지하고, 이 프로젝트의 도구만 쓰게 하려는 것이다.
 
-import { createHash } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dataDir } from "../paths.js";
 import { knowledgeDir } from "../knowledge/knowledgeStore.js";
+import { contentVersion } from "../knowledge/contentVersion.js";
 import { rulesPrompt } from "../knowledge/rulesStore.js";
 import { parameterSummary } from "../knowledge/parameters.js";
 import { connectionFile } from "../bridge/pluginClient.js";
@@ -101,7 +102,7 @@ ${rules}
 // 답변 재사용 키에 들어가므로, 예전 지시문이나 설정으로 만든 답은 다시 쓰지 않는다.
 export async function paletteVersion(provider: Provider): Promise<string> {
   const model = await paletteModel(provider);
-  const settings = JSON.stringify(await parameterSummary());
+  const settings = JSON.stringify(await parameterSummary()) + await contentVersion();
   const instructions = await paletteInstructions();
   return createHash("sha256").update(`${model.model}|${model.effort}|${settings}|${instructions}`).digest("hex").slice(0, 16);
 }
@@ -110,12 +111,14 @@ export async function paletteVersion(provider: Provider): Promise<string> {
 //   tools:        true면 이 프로젝트의 MCP 서버를 "palette" 프로필(읽기 전용 + 동의한 수정안 적용)로 붙인다.
 //   requestId:    MCP 서버로 전달돼, 계산한 수정안과 적용한 변경에 이 요청을 표시한다.
 //   offeredFixes: 이 요청에서 적용해도 되는 수정안 id(앞서 대화에서 사용자에게 보여 준 것).
-export async function paletteLaunch(provider: Provider, tools: boolean, requestId = "none", offeredFixes: string[] = []):
+export async function paletteLaunch(provider: Provider, tools: boolean, requestId = "none", offeredFixes: string[] = [], drawingId = ""):
   Promise<CliLaunch> {
   if (!/^[\w-]{1,64}$/.test(requestId)) throw new Error("Invalid request id.");
 
+  if (!/^[\w-]{0,64}$/.test(drawingId)) throw new Error("Invalid drawing id.");
   const offered = offeredFixes.filter(id => /^fx-[a-f\d]{10}$/.test(id)).join(",");
-  const cwd = workspaceDir();
+  // 요약과 새 질문이 설정 파일(허용 수정안 포함)을 덮어쓰지 않도록 실행별 격리.
+  const cwd = join(workspaceDir(), "requests", randomUUID());
   const skill = await paletteInstructions();
 
   // MCP 서버에 넘길 환경 변수.
@@ -125,7 +128,8 @@ export async function paletteLaunch(provider: Provider, tools: boolean, requestI
     MY_CIVIL3D_KNOWLEDGE_DIR: knowledgeDir(),
     MY_CIVIL3D_DATA_DIR: dataDir(),
     MY_CIVIL3D_REQUEST_ID: requestId,
-    MY_CIVIL3D_OFFERED_FIXES: offered
+    MY_CIVIL3D_OFFERED_FIXES: offered,
+    MY_CIVIL3D_DRAWING_ID: drawingId
   };
 
   // ── Claude: 지시문 파일과 MCP 설정 파일을 작업 폴더에 쓴다.
@@ -162,7 +166,7 @@ export async function paletteLaunch(provider: Provider, tools: boolean, requestI
     const envToml =
       `{MY_CIVIL3D_MCP_PROFILE='palette',MY_CIVIL3D_CONNECTION_FILE=${tomlPath(serverEnv.MY_CIVIL3D_CONNECTION_FILE)},` +
       `MY_CIVIL3D_KNOWLEDGE_DIR=${tomlPath(serverEnv.MY_CIVIL3D_KNOWLEDGE_DIR)},MY_CIVIL3D_DATA_DIR=${tomlPath(serverEnv.MY_CIVIL3D_DATA_DIR)},` +
-      `MY_CIVIL3D_REQUEST_ID='${requestId}',MY_CIVIL3D_OFFERED_FIXES='${offered}'}`;
+      `MY_CIVIL3D_REQUEST_ID='${requestId}',MY_CIVIL3D_OFFERED_FIXES='${offered}',MY_CIVIL3D_DRAWING_ID='${drawingId}'}`;
     return {
       cwd,
       env: {},

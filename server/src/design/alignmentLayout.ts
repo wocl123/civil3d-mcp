@@ -1,3 +1,4 @@
+import { withDrawing } from "../bridge/boundOperation.js";
 // 폴리라인으로 선형 배치를 계획한다 (plan_alignment_from_polyline 도구).
 //
 // 폴리라인의 꼭짓점이 IP가 된다. 도로 선형이면 IP마다 기준이 허용하는 가장 작은 곡선을 넣는다
@@ -80,7 +81,7 @@ type RoadDesign = {
 const NAME_PREFIX = "선형-";        // 이름을 안 주면 "선형-1", "선형-2", ...
 const MAX_SEARCH_RADIUS = 100000;   // 들어가는 최대 반지름을 찾을 때의 상한
 
-export async function planAlignmentLayout(input: AlignmentLayoutInput) {
+async function planAlignmentLayoutInternal(input: AlignmentLayoutInput) {
   await loadParameters();
 
   // 1) 폴리라인을 IP 경로로 읽는다.
@@ -491,4 +492,9 @@ async function alignmentNames(): Promise<Set<string>> {
     page.items.forEach(item => names.add(item.name));
     if (names.size >= page.totalCount || page.items.length === 0) return names;
   }
+}
+
+// 공개 진입점은 계산 전체를 하나의 도면 문맥으로 묶는다.
+export async function planAlignmentLayout(input: AlignmentLayoutInput) {
+  return withDrawing(() => planAlignmentLayoutInternal(input));
 }

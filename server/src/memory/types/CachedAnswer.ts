@@ -7,6 +7,7 @@ export type CachedAnswer = {
   provider: Provider;
   key: string;          // 질문 + 지시문 버전 + 앞 대화 + 선택의 해시
   question: string;
+  drawingId?: string;
   scope: string;        // 도면 경로
   state: string;        // 도면 리비전
   answer: string;

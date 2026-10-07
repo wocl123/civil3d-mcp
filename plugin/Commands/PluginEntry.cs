@@ -62,6 +62,21 @@ public sealed class PluginEntry : IExtensionApplication
     [CommandMethod("MYC3DSTATUS")]
     public void ShowStatus() => Run(document => DrawingQueries.GetStatus(document));
 
+    // 진단: 지금 리비전과 최근 객체 변경(무엇이 리비전을 올렸는지).
+    [CommandMethod("MYC3DREVISIONS")]
+    public void ShowRevisions()
+    {
+        Document? document = App.DocumentManager.MdiActiveDocument;
+        if (document is null) return;
+        Editor editor = document.Editor;
+        editor.WriteMessage($"\n리비전 {DrawingRevisions.Of(document.Database)} (도면 ID {DrawingRevisions.Id(document.Database)[..8]})");
+        editor.WriteMessage("\n최근 객체 변경 (센 것 = 리비전을 올림, 브리지 = AI 조회·변경 중):");
+        foreach (DrawingRevisions.Change change in DrawingRevisions.RecentChanges())
+            editor.WriteMessage($"\n  {change.At:HH:mm:ss} {change.Event} {change.Type} [{change.Handle}]" +
+                (change.Counted ? " 센 것" : "") + (change.DuringBridge ? " 브리지" : ""));
+        editor.WriteMessage("\n");
+    }
+
     [CommandMethod("MYC3DOBJECTS")]
     public void ShowObjects()
     {

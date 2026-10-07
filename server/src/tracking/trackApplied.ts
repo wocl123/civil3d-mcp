@@ -1,3 +1,4 @@
+import { drawingContext } from "../bridge/drawingContext.js";
 // 도면 변경이 적용된 직후: 무엇을 추적할지 정하고 추적을 시작한다.
 
 import { readRecord } from "../civil/alignmentRecord.js";
@@ -64,6 +65,9 @@ export async function trackApplied(fix: StoredFix, result: ChangeLogEntry["resul
   if (!result) return;
   try {
     const scope = await currentDrawingScope();
+    const expected = drawingContext();
+    if (expected && (scope.drawingId !== expected.drawingId || scope.state !== expected.revision))
+      throw new Error("Drawing changed before tracking was recorded.");
     const createdName = result.created && !/^선형-\d+$/.test(result.created.name) ? [result.created.name] : [];
     await addTerms([scope.label, ...createdName]);
     await track(scope, trackedItems(fix, result));

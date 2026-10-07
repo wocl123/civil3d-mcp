@@ -31,7 +31,7 @@ export function registerChangeTools(server: McpServer): void {
     const applied = await applyFix(fixId, offered);
 
     // 2) 다시 검토 결과의 수정안도 AI용 모습으로
-    const result = "recheck" in applied && typeof applied.recheck === "object" && applied.recheck
+    const result = "recheck" in applied && typeof applied.recheck === "object" && applied.recheck && "targetItems" in applied.recheck && applied.recheck.targetItems
       ? { ...applied, recheck: { ...applied.recheck, targetItems: itemsView(applied.recheck.targetItems) } }
       : applied;
 

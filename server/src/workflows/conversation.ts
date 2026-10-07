@@ -129,3 +129,7 @@ export function historyPrompt(id: string | undefined): string {
     ...lines
   ].join("\n");
 }
+
+export function conversationProvider(id: string): Provider {
+  return entry(id)?.turns.at(-1)?.provider ?? "codex";
+}

@@ -1,3 +1,4 @@
+import { fixCard, settleOperations } from "../changes/operations.js";
 // 팔레트 질문 하나에 답한다. 순서:
 //   1) 명령(/중앙, /검토, /설정값, /후보, /compact)이면 AI 없이 바로 답한다.
 //   2) 도면 상태·선택을 읽는다. 같은 AI·같은 질문·같은 도면 상태면 저장한 답을 쓴다.
@@ -39,7 +40,7 @@ const NO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0, cachedInputToken
 export type ChatProgress = { type: "progress"; text: string } | { type: "delta"; text: string };
 
 export async function answerChat(provider: Provider, message: string,
-  onProgress?: (event: ChatProgress) => void, conversation?: string) {
+  onProgress?: (event: ChatProgress) => void, conversation?: string, signal?: AbortSignal) {
   const question = message.trim();
   const started = Date.now();
   const requestId = randomUUID();
@@ -77,10 +78,12 @@ export async function answerChat(provider: Provider, message: string,
   void checkTracked(scope).catch(error => process.stderr.write(`MyCivil3DMcp tracking check failed: ${String(error)}\n`));
 
   // 앞 대화도 키에 들어간다: 이어지는 질문은 같은 대화 뒤에서만 재사용된다.
+  const knowledgeFacts = await readKnowledge(scope);
   const earlier = historyPrompt(conversation);
   const key = hashKey(
     normalizeQuestion(question),
     await paletteVersion(provider),
+    JSON.stringify(knowledgeFacts),
     ...(earlier ? [earlier] : []),
     ...(selection ? [selection] : [])
   );
@@ -99,7 +102,7 @@ export async function answerChat(provider: Provider, message: string,
   }
 
   // ── 3) 프롬프트 (AI가 읽는 문장은 영어로 둔다)
-  const [knowledge, outline] = await Promise.all([readKnowledge(scope).then(knowledgePrompt), drawingOutline()]);
+  const [knowledge, outline] = await Promise.all([Promise.resolve(knowledgePrompt(knowledgeFacts)), drawingOutline()]);
   const prompt = [
     ...(outline ? [outline, ""] : []),
     ...(selection ? [selection, ""] : []),
@@ -117,7 +120,7 @@ export async function answerChat(provider: Provider, message: string,
   try {
     result = await askProvider(provider, prompt, {
       tools: true,
-      requestId,
+      requestId, signal, drawingId: scope.drawingId,
       offeredFixes: offeredFixes(conversation),
       onEvent: event => {
         if (event.type === "tool") {
@@ -132,7 +135,8 @@ export async function answerChat(provider: Provider, message: string,
   } catch (error) {
     await log({ kind: "chat", drawing: scope.label, selected, tools, error: clip(error instanceof Error ? error.message : String(error), 1000) });
     syncSoon();
-    throw error;
+    await settleOperations(requestId);
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { applied: await appliedFor(requestId) });
   }
 
   // ── 4) 답 정리와 지식 저장
@@ -150,8 +154,9 @@ export async function answerChat(provider: Provider, message: string,
   // 수정안 id는 보이는 답에서는 빼지만 대화에는 함께 남겨, 사용자가 다음에 그중 하나에 동의할 수 있게 한다.
   // 도면을 바꾸었거나 수정안을 낸 답은 재사용하지 않는다(다시 보여 줘도 적용되지 않고 id도 없다).
   const [applied, fixes] = await Promise.all([appliedFor(requestId), fixesFor(requestId)]);
-  if (!applied.length && !fixes.length) {
-    await saveAnswer({ kind: "chat", provider, key, question, scope: scope.key, state: scope.state, answer, usage: result.usage });
+  const after = await currentDrawingScope();
+  if (!applied.length && !fixes.length && after.drawingId === scope.drawingId && after.state === scope.state) {
+    await saveAnswer({ kind: "chat", provider, key, question, scope: scope.key, state: scope.state, drawingId: scope.drawingId, answer, usage: result.usage });
   }
 
   // ── 5) 대화에 남기고, 요약·기록·동기화
@@ -159,7 +164,7 @@ export async function answerChat(provider: Provider, message: string,
     ? "\n[이 답의 수정안 id] " + fixes.map(fix => `${fix.id}: ${fix.target} · ${fix.title}${fix.applicable ? "" : " (자동 적용 불가)"}`).join("; ")
     : "";
   const appliedNote = applied.length
-    ? "\n[도면에 적용함] " + applied.map(entry => entry.labels.join(", ")).join("; ")
+    ? "\n[도면 변경 결과] " + applied.map(entry => `${entry.state === "applied" ? "적용됨" : "결과 확인 필요"}: ${entry.labels.join(", ")}`).join("; ")
     : "";
   remember(conversation, { provider, question, answer: answer + appliedNote + fixNote, fixIds: fixes.map(fix => fix.id) });
   void compactConversation(conversation, provider);
@@ -172,7 +177,8 @@ export async function answerChat(provider: Provider, message: string,
 
   return {
     provider, answer, usage: result.usage, totals, cached: false, recorded, candidates, conversation: status(conversation),
-    applied: applied.map(entry => ({ title: entry.title, target: entry.target, labels: entry.labels }))
+    fixes: fixes.map(fixCard),
+    applied: applied.map(entry => ({ operationId: entry.operationId, fixId: entry.fixId, state: entry.state, recheck: entry.recheck, warnings: entry.warnings, title: entry.title, target: entry.target, labels: entry.labels, kind: entry.kind }))
   };
 }
 

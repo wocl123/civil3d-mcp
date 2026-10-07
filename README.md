@@ -2,8 +2,8 @@
 
 Civil 3D 2025 plug-in with an in-app AI palette, a local Node service, and an MCP
 stdio entry point. The palette tests AI sign-in, chat about the open drawing,
-usage, drawing knowledge, and answer reuse. MCP exposes read-only drawing
-inspection. Tools that change the drawing will be added on this base.
+usage, drawing knowledge, and answer reuse. MCP exposes drawing inspection, design criteria checks, computed fixes, and
+alignment creation. The palette provides Apply and Undo buttons for proposed changes.
 
 ## Build
 
@@ -150,9 +150,8 @@ de-identified, sent to the central server, and deleted is specified in
 
 Palette chat questions reach the selected CLI with this project's MCP server in
 its read-only `palette` profile (`MY_CIVIL3D_MCP_PROFILE=palette`). That profile
-registers only tools annotated read-only and closed-world, so tools that change
-the drawing or read external files never reach the palette AI, including tools
-added later.
+registers closed-world read-only tools and the guarded `apply_drawing_change` tool.
+Other drawing writes and external-file tools are excluded.
 
 The palette rules live in one skill, `server/skills/civil3d-palette/SKILL.md`.
 The service writes it to `data\ai-workspace` in the form each
@@ -227,8 +226,8 @@ elements), `conflict` (does not; `reason` says why), or `unverified` (other
 elements change too). Fixes are computed one at a time; combining two fixes on
 the same curve is not checked.
 
-**Applying a fix.** The user agrees in the conversation (for example 1안으로 해줘);
-there is no separate button. The AI never sends values to the drawing:
+**Applying a fix.** The user can press **적용하기** on a proposal card or agree in the conversation
+(for example 1안으로 해줘). The AI never sends arbitrary values to the drawing:
 
 1. The check tools store every fix in `data\changes\fixes` with an id (`fx-…`),
    whether the plug-in can apply it (`applicable`), and the check that produced it.
@@ -240,12 +239,13 @@ there is no separate button. The AI never sends values to the drawing:
    ("반지름 500으로 바꿔줘") is not possible.
 3. The plug-in (`change.apply`, `plugin/Civil/DesignChanges.cs`) applies all
    values in one transaction inside one UNDO group, so one Ctrl+Z reverts them.
-   Each value must still equal the value the fix was computed from; otherwise
-   nothing changes.
+   The drawing instance and revision must still match the proposal, and each
+   value must still equal its original value; otherwise nothing changes.
 4. The same check then runs again, and the answer says whether the target now
    passes. If it still fails, the AI explains why and asks what to do next
-   (another fix, a change by hand, or undo). The palette shows a note with what
-   changed and how to undo it. Every attempt is logged in `data\logs\<date>\changes.jsonl`, and the values set
+   (another fix, a change by hand, or undo). The palette shows a card with **적용하기** and **되돌리기**. Undo is accepted only
+   when the operation is still the latest edit in that drawing; another user edit
+   causes refusal. A verified undo permits applying the proposal again. Every attempt is logged in `data\logs\<date>\changes.jsonl`, and the values set
    are tracked to see whether people change them later (`server/src/tracking`).
 
 `apply_drawing_change` is the only tool in the palette profile that is not
@@ -378,7 +378,7 @@ removed; de-identified copies go to the central server (see below).
 ### Answer reuse
 
 `data\memory\answers.json` keeps recent answers. The same
-question (ignoring spacing and punctuation) to the same AI on an unchanged
+question (normalizing whitespace while preserving numbers, signs, punctuation, and case) to the same AI on an unchanged
 drawing is answered from it without an AI request. Each AI keeps its own
 answers, because AIs can answer differently. The plug-in counts object
 additions, changes, and deletions in each open drawing, so any edit makes earlier
@@ -520,3 +520,35 @@ settings and equations.
 Object detail includes position for points, endpoints for lines, center and radius
 for circles, and up to 100 vertices for 2D polylines. Bounds are returned when
 Civil 3D provides them. Pagination limits each list request to 200 items.
+
+## Drawing safety and change buttons
+
+Every open database has an instance id and revision. Checks read one consistent
+instance/revision; stored proposals expire after two days and are also bound to
+criteria/rule/parameter content. Legacy proposals cannot be applied. Old cache
+files are ignored; existing knowledge remains readable. Unsaved drawings have an
+instance id but do not store persistent drawing knowledge.
+
+Proposal cards show **적용하기** and **되돌리기**. Applying and undoing through these
+buttons do not call an AI. Apply checks the conversation's proposal ids and the
+current drawing; undo checks the original drawing and the post-apply revision
+inside the Civil 3D command context. After a verified undo, Apply becomes available
+again. If another edit occurred, undo is refused so the user's work is preserved.
+
+Committed changes remain marked applied even if rechecking fails. Reports distinguish
+`pass`, `fail`, `review`, `incomplete`, and `not_applicable`; omitted pass rows are
+retained internally for assessment. Operation receipts prevent duplicate application
+and allow recovery after a lost response. Unknown outcomes are never automatically
+reapplied. Receipts are session scoped in the plug-in: after Civil 3D restarts, old
+operations cannot be undone through these cards. The normal CAD undo history remains
+available separately.
+
+The send button becomes **중지** during AI chat. Cancellation terminates the owned
+CLI/MCP process tree and reconciles pending CAD operation ids; committed edits keep
+their change cards. Each AI execution uses its own settings directory, including
+conversation summaries. Failed directory cleanup is reported to stderr.
+
+Run `npm run test:safety` from `server` for drawing identity/revision, guarded button
+APIs, undo/reapply, post-commit failures, uncertainty recovery, cache versions,
+UTF-8 streaming, request isolation, and process tree cleanup. Fake tests do not
+replace manual checks of WPF controls, CAD undo grouping, and API effects in Civil 3D.
