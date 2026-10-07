@@ -16,6 +16,7 @@ import { currentDrawingScope } from "../memory/drawingScope.js";
 import { checkTracked } from "../tracking/tracker.js";
 import { CentralError, getOfficial, sendCandidates, sendPackage } from "./centralClient.js";
 import { exportLogs, outboxDir } from "./exporter.js";
+import { joinFromInstaller } from "./installerJoin.js";
 import { blank, leak } from "./privacy.js";
 import { cleanUp } from "./retention.js";
 import { loadState, saveState, type SyncState } from "./syncState.js";
@@ -77,7 +78,8 @@ async function syncOnce(): Promise<SyncResult> {
   result.blocked = exported.blocked;
   await saveState(state);
 
-  // 3) 중앙 서버
+  // 3) 중앙 서버 (온라인 설치가 남긴 가입 요청이 있으면 먼저 등록한다)
+  await joinFromInstaller();
   const central = (await loadSettings()).central;
   if (!central?.enabled) return result;
   try {

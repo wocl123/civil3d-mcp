@@ -128,3 +128,47 @@ function Invoke-BundleInstall([string]$Source, [string]$DestinationRoot) {
     return [pscustomobject]@{ installed = $target; backup = $(if ($movedOld) { $backup } else { $null }) }
   } finally { Remove-OwnedDirectory $work $DestinationRoot }
 }
+
+# ── 온라인 설치: 설치.bat 옆에 server.json(중앙 서버 주소, 가입키)이 있으면 서버의 배포 버전을 확인해 받는다.
+function Read-ServerSettings([string]$File) {
+  $settings = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
+  if (-not ($settings.url -match '^https?://[^/\s?#@]+(/[^\s?#]*)?$') -or -not $settings.enrollKey) { throw 'server.json의 url 또는 enrollKey가 올바르지 않습니다.' }
+  return [pscustomobject]@{ url = ([string]$settings.url).TrimEnd('/'); enrollKey = [string]$settings.enrollKey }
+}
+function Get-InstalledVersion([string]$Bundle) {
+  $file = Join-Path $Bundle 'Contents/version.json'
+  if (-not (Test-Path -LiteralPath $file)) { return $null }
+  try { return [string](Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { return $null }
+}
+function Compare-ProductVersion([string]$A, [string]$B) { return ([version]$A).CompareTo([version]$B) }
+function Get-ServerRelease($Server) {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+  $release = Invoke-RestMethod -Uri "$($Server.url)/v1/release" -Headers @{ 'x-enroll-key' = $Server.enrollKey } -TimeoutSec 20 -UseBasicParsing
+  if ($release.PSObject.Properties['none']) { return $null }   # StrictMode: 없는 속성을 읽으면 오류
+  if (-not ($release.version -match '^\d+\.\d+\.\d+$') -or -not ($release.sha256 -match '^[a-f\d]{64}$')) { throw '서버의 배포 정보가 올바르지 않습니다.' }
+  return $release
+}
+# 받은 파일의 크기와 SHA-256이 서버가 알려 준 값과 같아야 한다. 다르면 지우고 멈춘다.
+function Save-ServerRelease($Server, $Release, [string]$Folder) {
+  $file = Join-Path $Folder ("MyCivil3DMcp-$($Release.version)-win-x64.zip")
+  $previous = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'   # 진행 표시가 다운로드를 크게 늦춘다(PowerShell 5.1)
+  try { Invoke-WebRequest -Uri "$($Server.url)/v1/release/download?version=$($Release.version)" -Headers @{ 'x-enroll-key' = $Server.enrollKey } -OutFile $file -TimeoutSec 600 -UseBasicParsing }
+  finally { $ProgressPreference = $previous }
+  $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ((Get-Item -LiteralPath $file).Length -ne [long]$Release.size -or $hash -ne $Release.sha256) {
+    Remove-Item -LiteralPath $file -Force
+    throw '받은 설치 파일이 서버의 정보와 다릅니다(손상 또는 변조). 다시 시도하세요.'
+  }
+  return $file
+}
+# 아직 중앙 서버에 연결하지 않은 PC면, 서비스가 다음에 켜질 때 이 가입키로 등록하도록 남긴다(등록 후 서비스가 지운다).
+function Save-CentralJoin($Server, [string]$DataDir) {
+  $settingsFile = Join-Path $DataDir 'settings.json'
+  if (Test-Path -LiteralPath $settingsFile) {
+    try { if ((Get-Content -LiteralPath $settingsFile -Raw -Encoding UTF8 | ConvertFrom-Json).central) { return $false } } catch { }
+  }
+  New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
+  $json = [pscustomobject]@{ url = $Server.url; enrollKey = $Server.enrollKey } | ConvertTo-Json
+  [IO.File]::WriteAllText((Join-Path $DataDir 'central-join.json'), $json, [Text.UTF8Encoding]::new($false))
+  return $true
+}

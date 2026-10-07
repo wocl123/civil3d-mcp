@@ -12,13 +12,18 @@
 //   GET  /v1/review                검토 목록                     (설치 토큰 + 검토자 키)
 //   POST /v1/review/decide         승인 / 반려 / 철회            (설치 토큰 + 검토자 키)
 //   GET  /v1/report                보고                          (설치 토큰 + 검토자 키)
+//   GET  /v1/release               배포 중인 버전·SHA-256·크기   (가입키 또는 설치 토큰)
+//   GET  /v1/release/download      배포 zip                       (가입키 또는 설치 토큰)
+//   배포 버전은 release.ts 명령으로 받아 두고 지정한다(releases.ts).
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { dataDir, host, loadConfig, port, settingsFile } from "./config.js";
 import { decide, groupKey, report, ReviewError, reviewItems } from "./review.js";
+import { current, releaseFile } from "./releases.js";
 import { Store } from "./store.js";
 import { Invalid, validCandidates, validPackage } from "./validate.js";
 
@@ -108,6 +113,32 @@ const server = createServer(async (request, response) => {
       };
       store.saveInstalls();
       return json(response, 200, { token });
+    }
+
+    // ── 배포본: 설치 프로그램은 가입키(아직 설치 토큰이 없다), 팔레트는 설치 토큰으로 묻는다
+    if (route === "GET /v1/release" || route === "GET /v1/release/download") {
+      const key = request.headers["x-enroll-key"];
+      const allowed = (typeof key === "string" && same(sha(key), sha(config.enrollKey))) || installOf(request) !== undefined;
+      if (!allowed) return json(response, 403, { error: "가입키가 맞지 않습니다." });
+      if (limited(`release:${request.socket.remoteAddress}`)) return json(response, 429, { error: "잠시 뒤 다시 시도해 주세요." });
+      const live = current();
+      if (route === "GET /v1/release") {
+        if (!live) return json(response, 200, { none: true });
+        const { version, sha256, size, file } = live.release;
+        return json(response, 200, { version, sha256, size, file, publishedAt: live.publishedAt, ...(live.minVersion ? { minVersion: live.minVersion } : {}) });
+      }
+      // 받는 도중 배포 버전이 바뀌어도 요청한 버전과 다르면 거절한다(해시가 어긋나지 않게).
+      if (!live || url.searchParams.get("version") !== live.release.version)
+        return json(response, 409, { error: "배포 버전이 바뀌었습니다. 다시 확인해 주세요." });
+      response.writeHead(200, {
+        "Content-Type": "application/zip",
+        "Content-Length": String(live.release.size),
+        "Content-Disposition": `attachment; filename="${live.release.file}"`,
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"
+      });
+      createReadStream(releaseFile(live.release)).on("error", () => response.destroy()).pipe(response);
+      return;
     }
 
     // ── 여기부터는 설치 토큰이 필요하다

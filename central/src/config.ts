@@ -22,6 +22,8 @@ export type Config = {
   minCases: number;      // 설정값 제안에 필요한 수정 건수
   minShare: number;      // 해당 수정 중 같은 방향인 비율
   reportDays: number;    // /검토 보고 기간(일)
+  githubRepo?: string;   // 배포본을 받을 GitHub 저장소 "owner/repo" (release.ts fetch)
+  githubToken?: string;  // 비공개 저장소면 읽기 전용 토큰(Contents: read). 환경 변수 GITHUB_TOKEN이 우선
 };
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");

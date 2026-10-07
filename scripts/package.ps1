@@ -88,6 +88,8 @@ try {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $zip = Join-Path $work "MyCivil3DMcp-$($package.version)-win-x64.zip"
   [IO.Compression.ZipFile]::CreateFromDirectory($release,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
+  # 만든 zip으로 온라인 설치(중앙 서버 배포 → server.json만 있는 폴더에서 설치)를 끝까지 확인한다.
+  Run $node @((Join-Path $repo 'server/scripts/online-install.mjs'),$zip)
   # 모든 검사 후 결과를 공개한다. 이전 dist는 새 산출물 확인 전 삭제하지 않는다.
   # dist에는 전달할 zip과 해시만 둔다. 번들과 설치 파일은 zip 안에 있다(예전 빌드가 풀어 둔 사본은 지운다).
   $destination = Join-Path $dist 'MyCivil3DMcp.bundle'
