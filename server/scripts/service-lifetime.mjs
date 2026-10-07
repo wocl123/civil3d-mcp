@@ -12,7 +12,9 @@ const temporary = await mkdtemp(join(tmpdir(), 'my-civil3d-life-'));
 const connection = join(temporary, 'connection.json');
 const token = 'b'.repeat(64);
 await writeFile(connection, JSON.stringify({ port: 1, token }));
-const port = 49500 + Math.floor(Math.random() * 400);
+// 운영체제가 내준 빈 포트. 고정 범위의 무작위 포트는 Windows가 예약한 범위(Hyper-V 등)에 걸리면 열리지 않는다.
+const freePort = async () => { const probe = (await import('node:net')).createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const { port } = probe.address(); await new Promise(r => probe.close(r)); return port; };
+const port = await freePort();
 const entry = fileURLToPath(new URL('../build/localService.js', import.meta.url));
 const exited = child => new Promise(resolve => child.once('exit', () => resolve(true)));
 const within = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(false), ms))]);

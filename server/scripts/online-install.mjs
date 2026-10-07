@@ -24,7 +24,9 @@ const kit = join(temporary, '설치 폴더');            // 한글·공백 경�
 const plugins = join(temporary, 'plugins');
 const data = join(temporary, 'data');
 await mkdir(kit, { recursive: true });
-const port = 49600 + Math.floor(Math.random() * 300);
+// 운영체제가 내준 빈 포트. 고정 범위의 무작위 포트는 Windows가 예약한 범위(Hyper-V 등)에 걸리면 열리지 않는다.
+const freePort = async () => { const probe = (await import('node:net')).createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const { port } = probe.address(); await new Promise(r => probe.close(r)); return port; };
+const port = await freePort();
 const centralEnv = { ...process.env, CENTRAL_DATA_DIR: centralData, CENTRAL_PORT: String(port) };
 const releaseCli = join(repo, 'central', 'build', 'release.js');
 const cli = (...args) => execFileSync(process.execPath, [releaseCli, ...args], { env: centralEnv, encoding: 'utf8' });
@@ -47,9 +49,11 @@ try {
   cli('add', zip);
   cli('publish', version);
   central = spawn(process.execPath, [join(repo, 'central', 'build', 'server.js')], { env: centralEnv, stdio: ['ignore', 'ignore', 'pipe'] });
+  let centralOutput = '';
   await new Promise((done, fail) => {
-    central.stderr.on('data', chunk => { if (String(chunk).includes('central server:')) done(); });
-    central.on('exit', code => fail(new Error(`central exited ${code}`)));
+    central.stderr.on('data', chunk => { centralOutput += chunk; if (centralOutput.includes('central server:')) done(); });
+    central.on('exit', code => fail(new Error(`central exited ${code}
+${centralOutput}`)));
   });
   const { enrollKey } = JSON.parse(await readFile(join(centralData, 'config.json'), 'utf8'));
   const url = `http://127.0.0.1:${port}`;

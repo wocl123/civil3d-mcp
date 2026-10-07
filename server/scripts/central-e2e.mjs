@@ -15,7 +15,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const temporary = await mkdtemp(join(tmpdir(), 'my-civil3d-central-'));
 const dirs = { central: join(temporary, 'central'), a: join(temporary, 'install-a'), b: join(temporary, 'install-b') };
 for (const dir of Object.values(dirs)) await mkdir(dir, { recursive: true });
-const port = 49000 + Math.floor(Math.random() * 900);
+// 운영체제가 내준 빈 포트. 고정 범위의 무작위 포트는 Windows가 예약한 범위(Hyper-V 등)에 걸리면 열리지 않는다.
+const freePort = async () => { const probe = (await import('node:net')).createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const { port } = probe.address(); await new Promise(r => probe.close(r)); return port; };
+const port = await freePort();
 const url = `http://127.0.0.1:${port}`;
 
 const { leak, blank } = await import('../build/sync/privacy.js');
