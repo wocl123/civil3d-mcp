@@ -22,17 +22,25 @@ function service(parent) {
   const child = spawn(process.execPath, [entry], { env: { ...process.env, MY_CIVIL3D_CONNECTION_FILE: connection,
     MY_CIVIL3D_SERVICE_PORT: String(port), MY_CIVIL3D_DATA_DIR: join(temporary, 'data'), MY_CIVIL3D_SYNC: 'off',
     MY_CIVIL3D_PARENT_PID: String(parent.pid) }, stdio: ['ignore', 'ignore', 'pipe'] });
-  child.ready = new Promise(resolve => child.stderr.on('data', chunk => { if (String(chunk).includes('local service:')) resolve(true); }));
+  // 서비스가 남긴 글을 모아 실패 메시지에 붙인다(CI에서 원인을 볼 수 있게).
+  child.output = '';
+  child.ready = new Promise(resolve => child.stderr.on('data', chunk => {
+    child.output += String(chunk);
+    if (/local service: 127\.0\.0\.1:/.test(child.output)) resolve(true);
+  }));
   return child;
 }
 
 const first = civil3d(), second = civil3d();
 try {
   const old = service(first);
-  assert.ok(await within(old.ready, 10000), 'first service starts');
+  // 첫 서비스는 모듈을 처음 읽으므로 느린 CI 러너에서 10초를 넘길 수 있다.
+  assert.ok(await within(old.ready, 30000), `first service starts
+${old.output}`);
   const fresh = service(second);
   assert.ok(await within(exited(old), 10000), 'the leftover service is asked to stop');
-  assert.ok(await within(fresh.ready, 10000), 'the new service takes the port');
+  assert.ok(await within(fresh.ready, 30000), `the new service takes the port
+${fresh.output}`);
   const response = await fetch(`http://127.0.0.1:${port}/api/providers`, { headers: { 'x-my-civil3d-token': token } });
   assert.equal(response.status, 200, 'the new service answers');
 
