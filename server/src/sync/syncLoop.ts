@@ -31,6 +31,7 @@ export type SyncResult = {
   candidates: number;  // 보낸(가져온) 후보 수
   official?: number;   // 승인 지식 버전
   members?: number;    // 관리자 PC: 가져온 사용자 폴더 수
+  linkFailures?: number; // 관리자 PC: 공유 링크로 받지 못해 zip을 따로 넣어 준 사용자 수
   problems?: string[]; // 관리자 PC: 받지 않은 파일 등
   error?: string;
 };
@@ -97,7 +98,7 @@ async function syncOnce(): Promise<SyncResult> {
   try {
     if (drive.admin) {
       const done = await adminSync(drive, state);
-      Object.assign(result, { sent: done.sent, candidates: done.candidates, official: done.official, members: done.members, problems: done.problems });
+      Object.assign(result, { sent: done.sent, candidates: done.candidates, official: done.official, members: done.members, linkFailures: done.linkFailures, problems: done.problems });
     } else {
       Object.assign(result, await memberSync(drive, state));
     }

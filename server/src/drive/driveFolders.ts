@@ -10,6 +10,10 @@
 //     admin/received.json    관리자가 가져간 묶음·후보 id (사용자 PC가 보고 지운다) ← 관리자
 //     admin/official.json    승인 지식과 설정값 ← 관리자
 //     admin/release.json + MyCivil3DMcp-<버전>-win-x64.zip   배포 버전 ← 관리자
+//     status.json            설치 파일을 링크로 받지 못했다는 알림 ← 사용자(관리자는 그 폴더에만 zip을 따로 넣는다)
+// 관리자 내 드라이브의 공용 배포 폴더(링크 공유: "링크가 있는 모든 사용자 · 보기"):
+//   MyCivil3DMcp-release/MyCivil3DMcp-latest-win-x64.zip   새 버전마다 같은 파일에 덮어쓴다(파일 ID·링크 유지)
+//   사용자 PC는 admin/release.json의 downloadId로 이 파일을 직접 내려받는다. 그래서 zip은 드라이브에 한 부만 있다.
 // 이름은 영문으로만 둔다(드라이브 동기화와 인코딩 문제를 피한다).
 
 import { existsSync } from "node:fs";
@@ -19,6 +23,12 @@ import { join } from "node:path";
 import { writeAtomic } from "../files.js";
 
 export const MEMBER_FILE = "member.json";
+export const STATUS_FILE = "status.json";
+export const RELEASE_FOLDER = "MyCivil3DMcp-release";
+export const LATEST_ZIP = "MyCivil3DMcp-latest-win-x64.zip";
+// 링크 공유한 파일을 내려받는 주소. MY_CIVIL3D_DOWNLOAD_BASE는 테스트용.
+export const downloadUrl = (id: string) =>
+  `${process.env.MY_CIVIL3D_DOWNLOAD_BASE ?? "https://drive.usercontent.google.com/download"}?id=${encodeURIComponent(id)}&export=download&confirm=t`;
 export const memberFolderName = (installId: string) => `MyCivil3DMcp-${installId}`;
 export type MemberFolder = { path: string; name: string; installId: string };
 

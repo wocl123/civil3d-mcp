@@ -8,6 +8,7 @@
 //   /중앙 관리자                   이 PC를 관리자로(공유받은 사용자 폴더에서 가져오고, 승인 지식·배포본을 넣어 준다)
 //   /중앙 사용자 [<번호> 차단|해제]  사용자 폴더 목록 / 차단
 //   /중앙 배포 [<버전> [필수]]      GitHub 릴리스를 받아 배포(필수: 그보다 낮은 버전은 업데이트 필수) · /중앙 배포 지우기 <버전>
+//   /중앙 배포 링크 <공유 링크>|지우기   공용 배포 파일의 공유 링크(정하면 사용자 폴더마다 zip을 넣지 않는다)
 //   /검토, 이어서 "1 승인" / "2 반려 사유", /검토 보고
 //   /검토 사례 [할일|완료] · /검토 사례 <번호> [처리 <지식|코드|AI|기타> 메모 | 버림 메모 | 완료 버전 메모 | 취소]
 //   /검토 사례 내보내기 [new|todo|done|all]   AI에게 넘길 수정 요청서(.md)
@@ -19,11 +20,11 @@ import { join } from "node:path";
 import { install } from "../data/install.js";
 import { driveSettings, loadSettings, saveSettings, validEmail, type DriveSettings } from "../data/settings.js";
 import { PARAMETERS, isParameterKey, parameterSummary } from "../knowledge/parameters.js";
-import { adminDir, loadAdminConfig } from "../admin/adminConfig.js";
+import { adminDir, driveFileId, loadAdminConfig, saveAdminConfig } from "../admin/adminConfig.js";
 import { adminStore } from "../admin/adminStore.js";
 import { current, fetchRelease, listReleases, publish, readRelease, ReleaseError, removeRelease } from "../admin/releases.js";
 import { type CaseStatus, casesMarkdown, cleanupContent, decide, decideCase, problemCases as findCases, report as buildReport, ReviewError, reviewItems, type ReviewItem } from "../admin/review.js";
-import { ensureMemberFolder, findDriveRoot, findMemberFolders } from "../drive/driveFolders.js";
+import { ensureMemberFolder, findDriveRoot, findMemberFolders, LATEST_ZIP, RELEASE_FOLDER } from "../drive/driveFolders.js";
 import { memberStatus, NO_DRIVE } from "../drive/memberSync.js";
 import { runSync, syncStatus, watch } from "../sync/syncLoop.js";
 import { lastShown, parseDecision, pick, setShown } from "./shownLists.js";
@@ -134,6 +135,7 @@ async function central(rest: string, conversation?: string): Promise<string> {
     if (result.error) return `동기화 중 문제가 있었습니다. ${result.error}`;
     if (drive.admin) return [
       `동기화했습니다. 사용자 ${result.members ?? 0}명, 가져온 묶음 ${result.sent}개, 후보 ${result.candidates}개, 중앙 지식 v${result.official ?? 0}.`,
+      ...(result.linkFailures ? [`공유 링크로 설치 파일을 받지 못한 PC ${result.linkFailures}곳에는 따로 넣어 주었습니다. 링크가 바뀌었으면 /중앙 배포 링크 <새 링크>.`] : []),
       ...(result.problems?.length ? ["", "받지 않은 것:", ...result.problems.slice(0, 10).map(line => `- ${line}`)] : [])
     ].join("\n");
     return `동기화했습니다. 드라이브로 보낸 묶음 ${result.sent}개, 후보 ${result.candidates}개, 중앙 지식 v${result.official ?? 0}.`;
@@ -235,9 +237,17 @@ async function members(args: string[], conversation: string | undefined, drive: 
     : `${row.folder}: 차단을 풀었습니다.`;
 }
 
-// /중앙 배포 [<버전> [필수]] · /중앙 배포 지우기 <버전>
+// 공용 배포 파일의 공유 링크를 정하는 방법.
+const linkSteps = () => [
+  `관리자 용량 아끼기(한 번만): 드라이브 웹에서 **${RELEASE_FOLDER}** 폴더의 **${LATEST_ZIP}** 우클릭 → 공유 →`,
+  "일반 액세스를 **링크가 있는 모든 사용자(뷰어)** 로 → 링크 복사 → /중앙 배포 링크 <붙여넣기>",
+  "(이 파일은 배포할 때마다 같은 파일에 덮어써서 링크가 그대로입니다. 배포를 한 번 한 뒤에 파일이 생깁니다.)"
+].join("\n");
+
+// /중앙 배포 [<버전> [필수]] · /중앙 배포 지우기 <버전> · /중앙 배포 링크 <링크>
 async function releases(args: string[]): Promise<string> {
   try {
+    const config = loadAdminConfig();
     if (!args.length) {
       const live = current();
       const list = listReleases();
@@ -245,9 +255,30 @@ async function releases(args: string[]): Promise<string> {
         "### 배포",
         `- 지금 배포 중: ${live ? `${live.release.version}${live.minVersion ? ` (최소 지원 ${live.minVersion})` : ""}, ${when(live.publishedAt)}` : "없음"}`,
         ...list.map(item => `- 받아 둠: ${item.version} · ${(item.size / 1048576).toFixed(1)} MB${item.tag ? ` · ${item.tag}` : ""}`),
+        `- 공유 링크: ${config.downloadId ? "정함 (사용자 폴더에는 설치 파일을 넣지 않음)" : "없음 (사용자 폴더마다 설치 파일을 넣음)"}`,
         "",
         "새 버전 배포: 새버전내기.bat → GitHub 빌드가 끝나면 /중앙 배포 <버전> (예: /중앙 배포 0.1.3)",
-        "사용자 PC는 6시간 안에(또는 Civil 3D를 다시 켤 때) 받아 두었다가 Civil 3D를 끄면 설치합니다."
+        "사용자 PC는 6시간 안에(또는 Civil 3D를 다시 켤 때) 받아 두었다가 Civil 3D를 끄면 설치합니다.",
+        ...(config.downloadId ? [] : ["", linkSteps()])
+      ].join("\n");
+    }
+    // 공용 배포 파일의 공유 링크: 정하면 사용자 폴더마다 zip을 넣지 않는다(관리자 드라이브 용량 절약).
+    if (args[0] === "링크") {
+      if (args[1] === "지우기") {
+        delete config.downloadId;
+        saveAdminConfig(config);
+        void runSync();
+        return "공유 링크를 지웠습니다. 다음 동기화부터 사용자 폴더마다 설치 파일을 넣습니다.";
+      }
+      const id = driveFileId(args.slice(1).join(" "));
+      if (!id) return `형식: /중앙 배포 링크 <공유 링크>\n${linkSteps()}`;
+      config.downloadId = id;
+      saveAdminConfig(config);
+      const result = await runSync();
+      return [
+        "공유 링크를 정했습니다. 이제 사용자 PC는 이 링크로 설치 파일을 받고, 사용자 폴더의 설치 파일은 지웁니다.",
+        `사용자 폴더 ${result.members ?? 0}곳에 반영했습니다.`,
+        "링크로 받지 못한 PC가 있으면 그 PC 폴더에만 자동으로 따로 넣고 /중앙 배포 에 알려 드립니다."
       ].join("\n");
     }
     if (args[0] === "지우기") {
@@ -258,13 +289,17 @@ async function releases(args: string[]): Promise<string> {
     }
     const version = args[0].replace(/^v/, "");
     const required = args[1] === "필수";
-    const release = readRelease(version) ?? await fetchRelease(loadAdminConfig().githubRepo, version);
+    const release = readRelease(version) ?? await fetchRelease(config.githubRepo, version);
     publish(version, required ? version : undefined);
     const result = await runSync();
     return [
       `${release.version}을(를) 배포했습니다${required ? "(필수 업데이트)" : ""}. 서명과 SHA-256을 확인했습니다.`,
-      `사용자 폴더 ${result.members ?? 0}곳에 넣었습니다. 각 PC는 6시간 안에 받아 두었다가 Civil 3D를 끄면 설치합니다.`,
-      ...(result.error ? [`문제: ${result.error}`] : [])
+      config.downloadId
+        ? `공용 배포 파일을 바꾸고 사용자 폴더 ${result.members ?? 0}곳에 알렸습니다(공유 링크로 받음).`
+        : `사용자 폴더 ${result.members ?? 0}곳에 설치 파일을 넣었습니다.`,
+      "각 PC는 6시간 안에 받아 두었다가 Civil 3D를 끄면 설치합니다.",
+      ...(result.error ? [`문제: ${result.error}`] : []),
+      ...(config.downloadId ? [] : ["", linkSteps()])
     ].join("\n");
   } catch (error) {
     return `배포하지 못했습니다. ${failure(error)}`;

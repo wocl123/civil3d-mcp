@@ -238,6 +238,24 @@ try {
   assert.equal(JSON.parse(await readFile(join(folderC, 'admin', 'release.json'), 'utf8')).version, '0.0.3', 'a blocked folder gets nothing new');
   assert.equal(JSON.parse(await readFile(join(folderB, 'admin', 'release.json'), 'utf8')).version, '0.0.4');
 
+  // Share link: one copy in the admin's release folder; member folders get only the link, unless the link failed for them.
+  const latest = join(dirs.drive, 'MyCivil3DMcp-release', 'MyCivil3DMcp-latest-win-x64.zip');
+  assert.deepEqual(await readFile(latest), await readFile(join(releases, 'MyCivil3DMcp-0.0.4-win-x64.zip')), 'the shared release file holds the published zip');
+  const [linked] = await run(dirs.a, [{ op: 'command', text: '/중앙 배포 링크 https://drive.google.com/file/d/FAKEID1234567890/view?usp=sharing' }]);
+  assert.match(linked, /공유 링크를 정했습니다/, linked);
+  const linkedRelease = JSON.parse(await readFile(join(folderB, 'admin', 'release.json'), 'utf8'));
+  assert.equal(linkedRelease.downloadId, 'FAKEID1234567890');
+  assert.deepEqual((await readdir(join(folderB, 'admin'))).filter(name => name.endsWith('.zip')), [], 'with a link, member folders hold no zip');
+  await writeFile(join(folderB, 'status.json'), JSON.stringify({ linkFailed: '0.0.4' }));
+  const [fallback] = await run(dirs.a, [{ op: 'command', text: '/중앙 동기화' }]);
+  assert.match(fallback, /공유 링크로 설치 파일을 받지 못한 PC 1곳/, fallback);
+  assert.ok(existsSync(join(folderB, 'admin', 'MyCivil3DMcp-0.0.4-win-x64.zip')), 'a member whose link failed gets the zip');
+  assert.equal(JSON.parse(await readFile(join(folderB, 'admin', 'release.json'), 'utf8')).downloadId, undefined);
+  await fakeRelease('0.0.5');
+  await run(dirs.a, [{ op: 'command', text: '/중앙 배포 0.0.5' }]);
+  assert.deepEqual(await readFile(latest), await readFile(join(releases, 'MyCivil3DMcp-0.0.5-win-x64.zip')), 'the same shared file is overwritten');
+  assert.equal(JSON.parse(await readFile(join(folderB, 'admin', 'release.json'), 'utf8')).downloadId, 'FAKEID1234567890', 'a new version goes back to the link');
+
   // A non-admin cannot review.
   const [notAdmin] = await run(dirs.b, [{ op: 'command', text: '/검토' }]);
   assert.match(notAdmin, /관리자 PC가 아닙니다/);

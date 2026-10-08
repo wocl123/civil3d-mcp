@@ -156,24 +156,50 @@ try {
   await copyFile(join(repo, 'scripts', 'update.ps1'), join(helperSource, 'update.ps1'));
   const autoRoot = join(temporary, 'plugins-auto');
   const fakeCivil = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
+  // 관리자의 공용 배포 파일 대신 이 테스트의 HTTP 서버(공유 링크 다운로드 흉내). served: 지금 내줄 내용
+  let served = Buffer.from('not the release');
+  const linkServer = (await import('node:http')).createServer((request, response) => {
+    if (!/[?&]id=SHAREDFILE12345(&|$)/.test(request.url ?? '')) { response.writeHead(404); response.end(); return; }
+    response.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+    response.end(served);
+  });
+  await new Promise(done => linkServer.listen(0, '127.0.0.1', done));
   const updateEnv = { ...process.env, MY_CIVIL3D_DATA_DIR: data, MY_CIVIL3D_DRIVE_DIR: drive, MY_CIVIL3D_PRODUCT_VERSION: '0.0.1', MY_CIVIL3D_INSTALLER_DIR: helperSource,
-    MY_CIVIL3D_INSTALL_ROOT: autoRoot, MY_CIVIL3D_PARENT_PID: String(fakeCivil.pid) };
+    MY_CIVIL3D_INSTALL_ROOT: autoRoot, MY_CIVIL3D_PARENT_PID: String(fakeCivil.pid), MY_CIVIL3D_DOWNLOAD_BASE: `http://127.0.0.1:${linkServer.address().port}/download` };
   const updateModule = pathToFileURL(join(repo, 'server', 'build', 'update', 'autoUpdate.js')).href;
-  const check = () => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
-    `const { checkForUpdate } = await import(${JSON.stringify(updateModule)}); console.log(JSON.stringify(await checkForUpdate()));`],
-    { env: updateEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  // 이 프로세스의 HTTP 서버가 응답할 수 있게 비동기로 돌린다.
+  const check = () => new Promise((done, fail) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e',
+      `const { checkForUpdate } = await import(${JSON.stringify(updateModule)}); console.log(JSON.stringify(await checkForUpdate()));`],
+      { env: updateEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', chunk => { out += chunk; });
+    child.on('exit', () => { try { done(JSON.parse(out)); } catch (error) { fail(error); } });
+  });
   // 관리자가 아직 배포 버전을 넣지 않았으면 아무것도 하지 않는다
-  assert.equal(check().state, 'offline');
+  assert.equal((await check()).state, 'offline');
   // 배포 정보와 다른 파일(아직 동기화 중이거나 손상)은 받지 않는다
   await writeFile(join(shared, 'release.json'), JSON.stringify({ ...releaseInfo, sha256: '0'.repeat(64) }));
-  const mismatch = check();
+  const mismatch = await check();
   assert.equal(mismatch.state, 'failed', JSON.stringify(mismatch));
   assert.match(mismatch.message, /배포 정보와 다릅니다/);
   assert.ok(!existsSync(join(data, 'updates', basename(zip))), 'a mismatching file is not kept');
-  await writeFile(join(shared, 'release.json'), JSON.stringify(releaseInfo));
-  const checked = check();
+  // 공유 링크: 보내기 폴더에 zip이 없고 링크만 있다. 배포한 지 오래됐는데 링크의 파일이 다르면 status.json으로 알린다
+  await rm(join(shared, basename(zip)));
+  const statusFile = join(drive, `MyCivil3DMcp-${installId}`, 'status.json');
+  const linkInfo = { ...releaseInfo, downloadId: 'SHAREDFILE12345' };
+  await writeFile(join(shared, 'release.json'), JSON.stringify({ ...linkInfo, publishedAt: new Date().toISOString() }));
+  const fresh = await check();
+  assert.match(fresh.message ?? '', /링크로 받은 설치 파일이 배포 정보와 다릅니다/, JSON.stringify(fresh));
+  assert.ok(!existsSync(statusFile), 'right after publishing, a stale link is not reported (the file may still be uploading)');
+  await writeFile(join(shared, 'release.json'), JSON.stringify({ ...linkInfo, publishedAt: new Date(Date.now() - 2 * 3600000).toISOString() }));
+  assert.equal((await check()).state, 'failed');
+  assert.equal(JSON.parse(await readFile(statusFile, 'utf8')).linkFailed, version, 'a link that keeps failing is reported to the admin');
+  served = bytes;
+  const checked = await check();
+  linkServer.close();
   assert.deepEqual([checked.state, checked.current, checked.latest], ['scheduled', '0.0.1', version], JSON.stringify(checked));
-  assert.ok(existsSync(join(data, 'updates', basename(zip))), 'the new version is copied from the drive and kept');
+  assert.ok(existsSync(join(data, 'updates', basename(zip))), 'the new version is downloaded by the share link and kept');
   await new Promise(done => setTimeout(done, 3000));
   assert.ok(!existsSync(join(autoRoot, 'MyCivil3DMcp.bundle')), 'nothing is installed while Civil 3D is running');
   fakeCivil.kill();   // Civil 3D 종료
@@ -184,7 +210,7 @@ try {
   for (let i = 0; i < 20 && !/완료/.test(await updateLog()); i++) await new Promise(done => setTimeout(done, 500));
   assert.match(await updateLog(), new RegExp(`업데이트 ${version.replace(/\./g, '\\.')} 완료`));
 
-  console.log(`Release install passed: ${version} from the unpacked zip (inner bundle zip, team mail to the data folder, bad team file skipped); bundle folder install checks signature and version (unsigned and other-key bundles refused, same/newer skipped, reinstall); stale work and old backups removed; missing files explained; automatic update from the drive folder (nothing published → nothing, hash mismatch refused, download kept, waits for Civil 3D to exit, signed install).`);
+  console.log(`Release install passed: ${version} from the unpacked zip (inner bundle zip, team mail to the data folder, bad team file skipped); bundle folder install checks signature and version (unsigned and other-key bundles refused, same/newer skipped, reinstall); stale work and old backups removed; missing files explained; automatic update from the drive folder and the share link (nothing published → nothing, hash mismatch refused, a stale link reported after the grace hour, download kept, waits for Civil 3D to exit, signed install).`);
 } finally {
   await rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }

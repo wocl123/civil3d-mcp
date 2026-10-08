@@ -12,6 +12,7 @@ export type AdminConfig = {
   minShare: number;      // 해당 수정 중 같은 방향인 비율
   reportDays: number;    // /검토 보고 기간(일)
   githubRepo: string;    // 배포본을 받을 GitHub 저장소 "owner/repo" (/중앙 배포, gh CLI)
+  downloadId?: string;   // 공용 배포 파일(MyCivil3DMcp-release/…latest….zip)의 구글 드라이브 파일 ID(/중앙 배포 링크). 링크 공유: 보기
 };
 
 const DEFAULTS: AdminConfig = { schema: 1, minInstalls: 2, minCases: 5, minShare: 0.8, reportDays: 30, githubRepo: "wocl123/civil3d-mcp" };
@@ -29,4 +30,16 @@ export function loadAdminConfig(): AdminConfig {
   }
   writeFileSync(file, JSON.stringify(DEFAULTS, null, 1), "utf8");
   return { ...DEFAULTS };
+}
+
+export function saveAdminConfig(config: AdminConfig): void {
+  mkdirSync(adminDir(), { recursive: true });
+  writeFileSync(join(adminDir(), "config.json"), JSON.stringify(config, null, 1), "utf8");
+}
+
+// 구글 드라이브 공유 링크(또는 파일 ID)에서 파일 ID를 꺼낸다.
+//   https://drive.google.com/file/d/<ID>/view?usp=sharing, …?id=<ID>, 또는 ID 그대로
+export function driveFileId(text: string): string | undefined {
+  const id = /\/d\/([\w-]+)/.exec(text)?.[1] ?? /[?&]id=([\w-]+)/.exec(text)?.[1] ?? text.trim();
+  return /^[\w-]{10,200}$/.test(id) ? id : undefined;
 }

@@ -2,11 +2,13 @@
 //   1) 이 PC의 기록·후보는 바로 보관함으로 가져온다.
 //   2) 내 드라이브에서 사용자 보내기 폴더(공유받아 바로가기를 추가한 것)를 찾아
 //      묶음·후보를 검사해 가져오고(admin/received.json에 적으면 사용자 PC가 지운다),
-//      승인 지식과 배포 버전을 그 폴더의 admin/ 에 넣어 준다.
+//      승인 지식과 배포 버전을 그 폴더의 admin/ 에 넣어 준다. 설치 파일은 공용 배포 폴더(링크 공유)에 한 부만 둔다.
 //   3) 이 PC에도 승인 지식을 적용한다.
 // 검사(validate.ts): 아는 항목만 남기고, 경로·파일 이름·메일이 남은 것은 받지 않는다.
 
-import { copyFile, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
 import { join } from "node:path";
 import { install } from "../data/install.js";
 import type { DriveSettings } from "../data/settings.js";
@@ -14,17 +16,19 @@ import { privateTerms } from "../data/terms.js";
 import { writeAtomic } from "../files.js";
 import { applyOfficial } from "../knowledge/centralKnowledge.js";
 import { markSubmitted, unsentCandidates } from "../knowledge/candidateStore.js";
-import { findDriveRoot, findMemberFolders, jsonFiles, type MemberFolder } from "../drive/driveFolders.js";
+import { findDriveRoot, findMemberFolders, jsonFiles, LATEST_ZIP, RELEASE_FOLDER, STATUS_FILE, type MemberFolder } from "../drive/driveFolders.js";
 import { DriveError, NO_DRIVE } from "../drive/memberSync.js";
 import { outboxDir } from "../sync/exporter.js";
 import { blank, leak } from "../sync/privacy.js";
 import type { SyncState } from "../sync/syncState.js";
+import { loadAdminConfig } from "./adminConfig.js";
 import { adminStore, type AdminStore } from "./adminStore.js";
 import { current, releaseFile } from "./releases.js";
 import { groupKey } from "./review.js";
 import { Invalid, validCandidates, validPackage, type CandidateIn } from "./validate.js";
 
-export type AdminResult = { sent: number; candidates: number; official: number; members: number; refused: number; problems: string[] };
+// linkFailures: 링크로 설치 파일을 받지 못해 zip을 따로 넣어 준 사용자 수(링크가 바뀌었을 수 있다)
+export type AdminResult = { sent: number; candidates: number; official: number; members: number; refused: number; linkFailures: number; problems: string[] };
 
 const readJson = async <T>(file: string): Promise<T | undefined> => {
   try { return JSON.parse((await readFile(file, "utf8")).replace(/^﻿/, "")) as T; } catch { return undefined; }
@@ -40,7 +44,7 @@ function addCandidate(store: AdminStore, installId: string, item: CandidateIn): 
 
 export async function adminSync(drive: DriveSettings, state: SyncState): Promise<AdminResult> {
   const store = adminStore();
-  const result: AdminResult = { sent: 0, candidates: 0, official: store.official.version, members: 0, refused: 0, problems: [] };
+  const result: AdminResult = { sent: 0, candidates: 0, official: store.official.version, members: 0, refused: 0, linkFailures: 0, problems: [] };
   const own = (await install()).installId;
 
   // 1) 이 PC의 기록과 후보
@@ -73,6 +77,14 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
   const root = findDriveRoot(drive.root);
   if (!root) throw new DriveError(NO_DRIVE);
   const live = current();
+  const { downloadId } = loadAdminConfig();
+  if (live) {
+    try {
+      await updateSharedRelease(root, live);
+    } catch (error) {
+      result.problems.push(`공용 배포 폴더: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   for (const folder of await findMemberFolders(root)) {
     if (folder.installId === own) continue;
     const known = store.members[folder.installId];
@@ -84,7 +96,7 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
     result.members++;
     try {
       const taken = await importFolder(store, folder, result);
-      await shareBack(folder, store, live, taken);
+      await shareBack(folder, store, live, downloadId, taken, result);
     } catch (error) {
       result.problems.push(`${folder.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -136,8 +148,26 @@ async function importFolder(store: AdminStore, folder: MemberFolder, result: Adm
   return taken;
 }
 
+// 공용 배포 폴더(링크 공유)의 파일을 배포 버전으로 맞춘다. 같은 파일에 덮어써서 파일 ID(링크)가 바뀌지 않게 한다.
+async function updateSharedRelease(root: string, live: NonNullable<ReturnType<typeof current>>): Promise<void> {
+  const dir = join(root, RELEASE_FOLDER);
+  await mkdir(dir, { recursive: true });
+  const info = await readJson<{ version?: string; sha256?: string }>(join(dir, "release.json"));
+  const zip = join(dir, LATEST_ZIP);
+  if (info?.version === live.release.version && info.sha256 === live.release.sha256 && (await stat(zip).catch(() => undefined))?.size === live.release.size) return;
+  await pipeline(createReadStream(releaseFile(live.release)), createWriteStream(zip, { flags: "w" }));
+  await writeAtomic(join(dir, "release.json"), JSON.stringify({ version: live.release.version, sha256: live.release.sha256, size: live.release.size }, null, 1));
+}
+
+// 링크로 받지 못했다고 알린 사용자(status.json의 linkFailed가 지금 배포 버전)인지.
+async function linkFailed(folder: MemberFolder, version: string): Promise<boolean> {
+  return (await readJson<{ linkFailed?: unknown }>(join(folder.path, STATUS_FILE)))?.linkFailed === version;
+}
+
 // 사용자 폴더의 admin/ 에 가져간 목록, 승인 지식, 배포 버전을 넣는다(바뀐 것만 쓴다).
-async function shareBack(folder: MemberFolder, store: AdminStore, live: ReturnType<typeof current>, taken: { packages: string[]; candidates: string[] }): Promise<void> {
+// 배포 버전: 링크(downloadId)가 있으면 작은 release.json만 넣는다. 링크가 없거나 그 사용자가 링크로 받지 못했으면 zip을 따로 넣는다.
+async function shareBack(folder: MemberFolder, store: AdminStore, live: ReturnType<typeof current>, downloadId: string | undefined,
+  taken: { packages: string[]; candidates: string[] }, result: AdminResult): Promise<void> {
   const dir = join(folder.path, "admin");
   const write = async (name: string, value: unknown) => {
     const text = JSON.stringify(value, null, 1);
@@ -146,21 +176,27 @@ async function shareBack(folder: MemberFolder, store: AdminStore, live: ReturnTy
   await write("received.json", taken);
   if (store.official.version > 0) await write("official.json", store.official);
 
-  // 배포 버전: zip을 먼저 다 쓴 뒤 release.json을 바꾼다(사용자 PC가 반쯤 쓴 파일을 받지 않게). 다른 버전 zip은 지운다.
-  const existing = await readJson<{ version?: string; sha256?: string; minVersion?: string }>(join(dir, "release.json"));
+  let keepZip: string | undefined;
   if (!live) {
-    if (existing) await rm(join(dir, "release.json"), { force: true });
-  } else if (existing?.version !== live.release.version || existing.sha256 !== live.release.sha256 || existing.minVersion !== live.minVersion) {
-    const target = join(dir, live.release.file);
-    if ((await stat(target).catch(() => undefined))?.size !== live.release.size) {
-      await copyFile(releaseFile(live.release), target + ".part");
-      await rename(target + ".part", target);
+    await rm(join(dir, "release.json"), { force: true });
+  } else {
+    const copy = !downloadId || await linkFailed(folder, live.release.version);
+    if (copy) {
+      // zip을 먼저 다 쓴 뒤 release.json을 바꾼다(사용자 PC가 반쯤 쓴 파일을 받지 않게).
+      keepZip = live.release.file;
+      const target = join(dir, live.release.file);
+      if ((await stat(target).catch(() => undefined))?.size !== live.release.size) {
+        await copyFile(releaseFile(live.release), target + ".part");
+        await rename(target + ".part", target);
+      }
+      if (downloadId) result.linkFailures++;
     }
     const { version, sha256, size, file } = live.release;
-    await write("release.json", { version, sha256, size, file, publishedAt: live.publishedAt, ...(live.minVersion ? { minVersion: live.minVersion } : {}) });
+    await write("release.json", { version, sha256, size, file, publishedAt: live.publishedAt, ...(live.minVersion ? { minVersion: live.minVersion } : {}),
+      ...(downloadId && !copy ? { downloadId } : {}) });
   }
   for (const name of await readdir(dir).catch(() => [] as string[]))
-    if (/^MyCivil3DMcp-.*\.zip(\.part)?$/.test(name) && name !== live?.release.file) await rm(join(dir, name), { force: true });
+    if (/^MyCivil3DMcp-.*\.zip(\.part)?$/.test(name) && name !== keepZip) await rm(join(dir, name), { force: true });
 }
 
 // 팔레트 아래 줄: 아직 /중앙 사용자 로 보지 않은 새 사용자 폴더 수(차단한 것은 빼고).
