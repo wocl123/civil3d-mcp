@@ -28,11 +28,11 @@ internal sealed class ChatPanel : UserControl
     private readonly TextBlock _usage = new() { TextWrapping = TextWrapping.Wrap };
     // 아래 줄 오른쪽의 작은 버전 표시. 업데이트가 준비되면 "v0.1.0 → 0.1.1"만 보이고 설명은 툴팁에 둔다.
     private readonly TextBlock _version = new() { FontSize = 10.5, Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
-    // 검토자 PC: 대기 중인 가입 신청이 있으면 "가입 신청 2"(누르면 /중앙 가입). 1분마다 새로 읽는다.
-    private readonly TextBlock _joins = new() { FontSize = 10.5, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
-        Cursor = Cursors.Hand, Visibility = Visibility.Collapsed, ToolTip = "가입 신청한 PC가 있습니다. 눌러서 목록을 봅니다." };
+    // 관리자 PC: 아직 보지 않은 사용자 폴더가 있으면 "새 사용자 2"(누르면 /중앙 사용자). 1분마다 새로 읽는다.
+    private readonly TextBlock _members = new() { FontSize = 10.5, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+        Cursor = Cursors.Hand, Visibility = Visibility.Collapsed, ToolTip = "보내기 폴더를 공유한 새 사용자가 있습니다. 눌러서 목록을 봅니다." };
     private readonly DispatcherTimer _statusClock = new() { Interval = TimeSpan.FromMinutes(1) };
-    private int _joinCount;
+    private int _memberCount;
     private readonly Dictionary<string, Button> _chips = new();
     private readonly Dictionary<string, string> _states = Providers.ToDictionary(name => name, _ => "unchecked");
     // 준비된 AI마다 세션이 끝나는 시각과 세션 길이(서비스가 알려 줌).
@@ -135,7 +135,7 @@ internal sealed class ChatPanel : UserControl
         ShowSharingNoticeOnce();
     }
 
-    // 처음 한 번만: 질문·답이 회사 중앙 서버로 간다는 안내(모르는 채로 보내지 않게).
+    // 처음 한 번만: 질문·답이 관리자에게 간다는 안내(모르는 채로 보내지 않게).
     private void ShowSharingNoticeOnce()
     {
         try
@@ -143,14 +143,14 @@ internal sealed class ChatPanel : UserControl
             string flag = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "MyCivil3DMcp", "data", "state", "sharing-notice-shown");
             if (System.IO.File.Exists(flag)) return;
-            AddNotice("안내: 질문과 답변은 결과 품질 개선을 위해 회사 중앙 서버로 전송됩니다. 도면 파일 이름·경로·사용자 이름은 가려서 보냅니다.");
+            AddNotice("안내: 질문과 답변은 결과 품질 개선을 위해 내 구글 드라이브의 보내기 폴더를 거쳐 관리자에게 전송됩니다(폴더를 관리자와 공유했을 때). 도면 파일 이름·경로·사용자 이름은 가려서 보냅니다.");
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(flag)!);
             System.IO.File.WriteAllText(flag, DateTime.Now.ToString("o"));
         }
         catch (System.Exception) { }
     }
 
-    // 프로그램 버전과 자동 업데이트 상태(서비스가 중앙 서버에 묻고, 새 버전을 받아 두면 Civil 3D를 끌 때 설치한다).
+    // 프로그램 버전과 자동 업데이트 상태(서비스가 드라이브의 배포 버전을 보고, 새 버전을 받아 두면 Civil 3D를 끌 때 설치한다).
     private async Task RefreshVersionAsync()
     {
         try
@@ -160,18 +160,18 @@ internal sealed class ChatPanel : UserControl
             string? latest = data["latest"]?.ToString();
             string state = data["state"]?.ToString() ?? "";
             bool required = data["required"]?.GetValue<bool>() == true;
-            int joins = data["joins"]?.GetValue<int>() ?? 0;
-            _joins.Text = $"가입 신청 {joins}";
-            _joins.Visibility = joins > 0 ? Visibility.Visible : Visibility.Collapsed;
-            if (joins > _joinCount) AddNotice($"가입 신청이 {joins}건 있습니다. 아래 줄의 '가입 신청'을 누르거나 /중앙 가입 을 입력하세요.");
-            _joinCount = joins;
+            int members = data["newMembers"]?.GetValue<int>() ?? 0;
+            _members.Text = $"새 사용자 {members}";
+            _members.Visibility = members > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (members > _memberCount) AddNotice($"새 사용자 폴더가 {members}개 있습니다. 아래 줄의 '새 사용자'를 누르거나 /중앙 사용자 를 입력하세요.");
+            _memberCount = members;
             _version.Text = current == "dev" ? "개발판" : state == "scheduled" && latest is not null ? $"v{current} → {latest}" : $"v{current}";
             _version.Foreground = state == "scheduled" ? _theme.Ready : _theme.Muted;
             _version.ToolTip = state switch
             {
                 "scheduled" => $"새 버전 {latest}을 받아 두었습니다. Civil 3D를 끄면 자동으로 설치됩니다." + (required ? " 이 버전은 꼭 필요한 업데이트입니다." : ""),
                 "latest" => "최신 버전입니다.",
-                "offline" => "중앙 서버에 연결되지 않아 업데이트를 확인하지 않습니다.",
+                "offline" => "구글 드라이브를 쓰지 않거나 관리자가 아직 배포 버전을 넣지 않아 업데이트를 확인하지 않습니다.",
                 "failed" => "업데이트 확인 실패: " + (data["message"]?.ToString() ?? ""),
                 _ => "개발 폴더에서 실행 중입니다(자동 업데이트 없음)."
             };
@@ -284,16 +284,16 @@ internal sealed class ChatPanel : UserControl
         _version.Foreground = _theme.Muted;
         DockPanel.SetDock(_version, Dock.Right);
         footer.Children.Add(_version);
-        _joins.Foreground = _theme.Ready;
-        _joins.MouseLeftButtonUp += async (_, _) =>
+        _members.Foreground = _theme.Ready;
+        _members.MouseLeftButtonUp += async (_, _) =>
         {
             if (_busy) return;
-            if (_selected is null) { AddNotice("AI를 하나 고른 뒤 /중앙 가입 을 입력하세요."); return; }
-            _input.Text = "/중앙 가입";
+            if (_selected is null) { AddNotice("AI를 하나 고른 뒤 /중앙 사용자 를 입력하세요."); return; }
+            _input.Text = "/중앙 사용자";
             await SendAsync();
         };
-        DockPanel.SetDock(_joins, Dock.Right);
-        footer.Children.Add(_joins);
+        DockPanel.SetDock(_members, Dock.Right);
+        footer.Children.Add(_members);
         _usage.Foreground = _theme.Muted;
         _usage.FontSize = 11.5;
         _usage.VerticalAlignment = VerticalAlignment.Center;
@@ -543,7 +543,7 @@ internal sealed class ChatPanel : UserControl
         return (bubble, line, copy);
     }
 
-    // 답 아래 작은 👎: 누르면 한 줄 의견 칸이 열리고, 보내면 중앙 서버의 문제 사례로 간다(/검토 사례).
+    // 답 아래 작은 👎: 누르면 한 줄 의견 칸이 열리고, 보내면 관리자의 문제 사례로 간다(/검토 사례).
     private UIElement FeedbackButton(string requestId)
     {
         StackPanel host = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 0, 0) };

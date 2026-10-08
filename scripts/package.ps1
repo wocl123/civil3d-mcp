@@ -41,9 +41,7 @@ try {
   try {
     Run $node @($npm,'ci','--no-audit','--no-fund')
     Run $node @($npm,'run','build')
-    Run $node @($npm,'--prefix','../central','ci','--no-audit','--no-fund')
-    Run $node @($npm,'--prefix','../central','run','build')
-    foreach ($test in @('smoke','design-regression','tool-contract','safety-regression','delete-scenario','edit-scenario','reconnect-scenario','service-smoke','service-lifetime','memory-smoke','knowledge-smoke','usage-smoke','cli-missing-scenario','central-e2e')) {
+    foreach ($test in @('smoke','design-regression','tool-contract','safety-regression','delete-scenario','edit-scenario','reconnect-scenario','service-smoke','service-lifetime','memory-smoke','knowledge-smoke','usage-smoke','cli-missing-scenario','drive-e2e')) {
       Run $node @("scripts/$test.mjs")
     }
   } finally { Pop-Location }
@@ -79,16 +77,13 @@ try {
 "@ | Set-Content -LiteralPath (Join-Path $bundle 'PackageContents.xml') -Encoding UTF8
   foreach ($name in @('install.ps1','installer-ui.ps1','uninstall.ps1','package-common.ps1','release-public-key.xml','설치.bat','삭제.bat','먼저읽어주세요.txt')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $release }
   Copy-Item -LiteralPath (Join-Path $repo 'docs/배포_설치.md') -Destination (Join-Path $release 'README-install.md')
-  # 중앙 서버 주소와 인증서 지문(GitHub 저장소 Variables CENTRAL_URL, CENTRAL_CERT_SHA256 / 중앙 서버 PC에서 npm run release -- github-vars).
-  # 비밀이 아니다(가입키는 넣지 않는다). 이 zip으로 설치한 PC는 Civil 3D를 켜면 가입을 신청하고, 검토자가 승인하면 연결된다.
-  if ($env:MY_CIVIL3D_CENTRAL_URL) {
-    $serverInfo = [ordered]@{ url = $env:MY_CIVIL3D_CENTRAL_URL }
-    if ($env:MY_CIVIL3D_CENTRAL_CERT_SHA256) { $serverInfo.certSha256 = $env:MY_CIVIL3D_CENTRAL_CERT_SHA256 }
-    $serverFile = Join-Path $release 'server.json'
-    [IO.File]::WriteAllText($serverFile, ([pscustomobject]$serverInfo | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
-    [void](Read-ServerSettings $serverFile)   # 형식 확인(HTTPS면 인증서 지문 필수)
-    Write-Host "중앙 서버 주소를 넣었습니다: $($env:MY_CIVIL3D_CENTRAL_URL) (가입은 관리자 승인)"
-  } else { Write-Host '알림: 중앙 서버 주소(CENTRAL_URL)가 없어 server.json 없이 만듭니다(설치 후 /중앙 신청 또는 설치 묶음 필요).' }
+  # 팀 정보: 관리자 메일(GitHub 저장소 Variables ADMIN_EMAIL). 비밀이 아니다. 이 zip으로 설치한 PC는
+  # 구글 드라이브에 보내기 폴더를 만들고, 그 폴더를 이 메일과 공유하라고 안내한다(공유 = 가입 신청).
+  if ($env:MY_CIVIL3D_ADMIN_EMAIL) {
+    if ($env:MY_CIVIL3D_ADMIN_EMAIL -notmatch '^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$') { throw 'ADMIN_EMAIL 형식이 맞지 않습니다.' }
+    [IO.File]::WriteAllText((Join-Path $release 'team.json'), ([pscustomobject]@{ adminEmail = $env:MY_CIVIL3D_ADMIN_EMAIL } | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+    Write-Host "관리자 메일을 넣었습니다: $($env:MY_CIVIL3D_ADMIN_EMAIL)"
+  } else { Write-Host '알림: 관리자 메일(ADMIN_EMAIL)이 없어 team.json 없이 만듭니다(설치 후 /중앙 신청 <관리자 메일> 필요).' }
   # 자동 업데이트 도우미: 설치된 번들이 다음 버전을 설치할 때 쓰는 스크립트와 공개 키(서명 대상에 포함된다).
   $installer = Join-Path $contents 'installer'
   New-Item -ItemType Directory -Path $installer -Force | Out-Null
@@ -113,8 +108,8 @@ try {
   $zip = Join-Path $work "MyCivil3DMcp-$($package.version)-win-x64.zip"
   # 안의 번들 zip은 이미 압축되어 있으므로 바깥은 압축하지 않는다(만들기·풀기 모두 빠르다).
   [IO.Compression.ZipFile]::CreateFromDirectory($release,$zip,[IO.Compression.CompressionLevel]::NoCompression,$false)
-  # 만든 zip으로 온라인 설치(중앙 서버 배포 → server.json만 있는 폴더에서 설치)를 끝까지 확인한다.
-  Run $node @((Join-Path $repo 'server/scripts/online-install.mjs'),$zip)
+  # 만든 zip으로 설치(zip을 그대로 푼 폴더 → 설치, 서명·버전 확인)와 드라이브 자동 업데이트를 끝까지 확인한다.
+  Run $node @((Join-Path $repo 'server/scripts/release-install.mjs'),$zip)
   # 모든 검사 후 결과를 공개한다. 이전 dist는 새 산출물 확인 전 삭제하지 않는다.
   # dist에는 전달할 zip과 해시만 둔다. 번들과 설치 파일은 zip 안에 있다(예전 빌드가 풀어 둔 사본은 지운다).
   $destination = Join-Path $dist 'MyCivil3DMcp.bundle'

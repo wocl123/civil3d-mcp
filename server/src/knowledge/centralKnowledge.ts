@@ -1,4 +1,4 @@
-// 중앙 서버에서 받은 승인 지식을 이 PC에 둔다.
+// 관리자가 승인한 지식(중앙 지식)을 이 PC에 둔다. 사용자 PC는 드라이브 폴더에서, 관리자 PC는 자기 보관함에서 받는다.
 //   - 규칙 파일 하나: rules/중앙_지식.md (always, 매 요청에 들어감)
 //   - 설정값: knowledge/central-parameters.json
 // 둘 다 바뀔 때마다 통째로 바뀌므로 여기서 고치는 파일이 아니다.
@@ -7,9 +7,16 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { writeAtomic } from "../files.js";
-import type { Official } from "../sync/centralClient.js";
 import { writeCentralParameters } from "./parameters.js";
 import { rulesDir } from "./rulesStore.js";
+
+// 중앙 지식: 승인된 항목과 설정값(관리자 PC의 admin/official.json과 같은 모양).
+export type Official = {
+  version: number;
+  publishedAt?: string;
+  items: { id: string; content: string; approvedAt: string; parameter?: { key: string; value: number } }[];
+  parameters: Record<string, number>;
+};
 
 export const CENTRAL_RULE = "중앙_지식";
 
@@ -22,7 +29,7 @@ export async function applyOfficial(official: Official): Promise<void> {
     await rm(rule, { force: true });
   } else {
     await writeAtomic(rule, `---
-description: 중앙 서버에서 검토자가 승인한 공통 작업 관행. 매 요청에 함께 들어간다.
+description: 관리자(검토자)가 승인한 공통 작업 관행. 매 요청에 함께 들어간다.
 always: true
 ---
 # 중앙 지식 (v${official.version})

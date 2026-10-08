@@ -1,7 +1,7 @@
 // 대화마다 마지막으로 보여 준 번호 목록(/후보 또는 /검토)을 기억한다.
 // 그래서 "1, 3 승인"이 앞서 보여 준 다른 목록이 아니라 그 목록의 항목을 가리킨다.
 
-export type ListKind = "candidates" | "review" | "cases" | "joins";
+export type ListKind = "candidates" | "review" | "cases" | "members";
 
 const shown = new Map<string, { kind: ListKind; ids: string[] }>();
 const MAX = 100;   // 기억하는 대화 수

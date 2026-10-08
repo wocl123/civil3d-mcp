@@ -10,7 +10,7 @@ import { track, type TrackConditions, type Tracked } from "./tracker.js";
 
 type NewItem = Omit<Tracked, "id" | "lastValue" | "createdAt">;
 
-// 적용된 수정안이나 만든 선형에서 지켜볼 값과, 그 값을 정한 설계 조건(중앙 서버가 조건별로 비교한다).
+// 적용된 수정안이나 만든 선형에서 지켜볼 값과, 그 값을 정한 설계 조건(관리자 PC가 조건별로 비교한다).
 export function trackedItems(fix: StoredFix, result: NonNullable<ChangeLogEntry["result"]>): NewItem[] {
   // ── 만든 선형: 곡선마다 반지름과(있으면) 완화곡선 길이.
   if (fix.create && result.created) {

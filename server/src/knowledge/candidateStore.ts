@@ -8,7 +8,7 @@
 // 그래서 대화 하나의 오해가 저절로 모든 도면에 퍼지지 않는다.
 //
 // 설정값(parameter)이 붙은 후보는 승인하면 이 PC의 설정값도 바꾼다.
-// 대기 중인 후보는 비식별 처리해 중앙 서버에도 보낸다(sync/syncLoop.ts). 보낸 시각은 submittedAt.
+// 대기 중인 후보는 비식별 처리해 관리자에게도 보낸다(drive/memberSync.ts). 보낸 시각은 submittedAt.
 // 보내기 전에 이 PC에서 반려한 후보는 보내지 않는다.
 
 import { readFile } from "node:fs/promises";
@@ -30,7 +30,7 @@ export type Candidate = {
   parameter?: { key: ParameterKey; value: number };
   status: "pending" | "approved" | "rejected";
   decidedAt?: string;
-  submittedAt?: string;  // 중앙 서버에 보낸 시각
+  submittedAt?: string;  // 관리자에게 보낸 시각
 };
 
 const file = () => join(knowledgeDir(), "candidates.json");
@@ -136,12 +136,12 @@ export async function decideCandidates(ids: string[], decision: "approved" | "re
   return decided;
 }
 
-// 아직 중앙 서버에 보내지 않은 후보(반려한 것은 빼고).
+// 아직 관리자에게 보내지 않은 후보(반려한 것은 빼고).
 export async function unsentCandidates(): Promise<Candidate[]> {
   return (await load()).filter(item => !item.submittedAt && item.status !== "rejected");
 }
 
-// 중앙 서버에 보냈다고 표시한다.
+// 보냈다고 표시한다.
 export async function markSubmitted(ids: string[]): Promise<void> {
   writing = writing.then(async () => {
     const list = await load();

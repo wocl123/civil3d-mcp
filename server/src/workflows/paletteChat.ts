@@ -45,8 +45,8 @@ export async function answerChat(provider: Provider, message: string,
   const started = Date.now();
   const requestId = randomUUID();
 
-  // /중앙 연결, /중앙 검토자 에 들어간 키는 작업 기록에 남기지 않는다.
-  const logged = /^\/중앙\s+(연결|검토자)/.test(question) ? question.replace(/^(\/중앙\s+\S+).*$/s, "$1 <가림>") : question;
+  // /중앙 신청 의 메일, /중앙 드라이브 의 경로는 작업 기록에 남기지 않는다(보낼 묶음이 검사에 막히지 않게).
+  const logged = /^\/중앙\s+(신청|드라이브)/.test(question) ? question.replace(/^(\/중앙\s+\S+).*$/s, "$1 <가림>") : question;
   const log = (entry: Record<string, unknown>) => logTurn({
     requestId, conversation, provider, question: clip(logged, 2000), ms: Date.now() - started, ...entry
   });

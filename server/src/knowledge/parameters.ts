@@ -13,7 +13,7 @@ import { knowledgeDir } from "./knowledgeStore.js";
 //   label:   사람이 읽는 이름
 //   allowed: 허용 값
 //   unset:   정하지 않았을 때 코드가 쓰는 값(설명용)
-//   observe: 중앙 서버가 사람의 수정 기록에서 이 설정값을 제안할 때 보는 속성
+//   observe: 관리자 PC가 사람의 수정 기록에서 이 설정값을 제안할 때 보는 속성
 export const PARAMETERS = {
   "alignment.radiusStep": {
     label: "평면곡선 반지름 올림 단위(m)",

@@ -100,9 +100,8 @@ if ($LASTEXITCODE -eq 0) {
   Write-Host "빌드 성공. Release $tag 가 게시되었습니다." -ForegroundColor Green
   & gh release view $tag --json assets --jq '.assets[].name'
   Write-Host ''
-  Write-Host '다음(중앙 서버 PC, central 폴더):'
-  Write-Host "  npm run release -- fetch $tag"
-  Write-Host "  npm run release -- publish $Version"
+  Write-Host '다음(관리자 PC의 Civil 3D 팔레트):'
+  Write-Host "  /중앙 배포 $Version"
 } else {
   Write-Host ''
   Write-Host '빌드가 실패했습니다. 운영_매뉴얼 9-5를 참고하세요. 실패 내용:' -ForegroundColor Red

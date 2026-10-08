@@ -18,8 +18,7 @@ if not exist "%~dp0package-common.ps1" (
   pause
   exit /b 1
 )
-rem server.json(중앙 서버 주소)이 있으면 번들은 서버에서 받으므로 없어도 됩니다.
-if not exist "%~dp0MyCivil3DMcp.bundle\Contents\manifest.json" if not exist "%~dp0MyCivil3DMcp.bundle.zip" if not exist "%~dp0server.json" (
+if not exist "%~dp0MyCivil3DMcp.bundle\Contents\manifest.json" if not exist "%~dp0MyCivil3DMcp.bundle.zip" (
   echo [오류] 설치 파일(MyCivil3DMcp.bundle.zip)이 없습니다. ZIP 전체를 새 폴더에 압축 해제해 주세요.
   pause
   exit /b 1

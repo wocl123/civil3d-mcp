@@ -6,7 +6,7 @@
 //   node scripts/release-signing.mjs public-xml <비밀 키>          테스트용: 공개 키를 PowerShell용 XML로 출력
 // 비밀 키는 환경 변수 MY_CIVIL3D_SIGNING_KEY(PEM 내용) 또는 MY_CIVIL3D_SIGNING_KEY_FILE(경로)로 받는다.
 // 방식: RSA-3072, PKCS#1 v1.5, SHA-256 (Windows PowerShell 5.1의 RSACryptoServiceProvider가 확인할 수 있다).
-// 공개 키 두 곳: scripts/release-public-key.xml (설치 프로그램), central/src/releaseKey.ts (중앙 서버)
+// 공개 키 두 곳: scripts/release-public-key.xml (설치 프로그램), server/src/admin/releaseKey.ts (관리자 PC의 /중앙 배포)
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -36,7 +36,7 @@ function writePublicFiles(key) {
   const publicKey = asPublic(key);
   writeFileSync(join(repo, 'scripts', 'release-public-key.xml'), publicXml(publicKey) + NL);
   const pem = publicKey.export({ type: 'spki', format: 'pem' });
-  writeFileSync(join(repo, 'central', 'src', 'releaseKey.ts'),
+  writeFileSync(join(repo, 'server', 'src', 'admin', 'releaseKey.ts'),
     '// 릴리스 서명 공개 키 (scripts/release-signing.mjs 가 쓴다. 손으로 고치지 않는다).' + NL +
     `export const RELEASE_PUBLIC_KEY = ${JSON.stringify(pem)};` + NL);
 }
@@ -48,10 +48,10 @@ if (command === 'keygen') {
   const { privateKey: key, publicKey } = generateKeyPairSync('rsa', { modulusLength: 3072 });
   writeFileSync(target, key.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600, flag: 'wx' });   // 있으면 덮어쓰지 않는다
   writePublicFiles(publicKey);
-  console.log(`비밀 키: ${target}` + NL + '공개 키: scripts/release-public-key.xml, central/src/releaseKey.ts');
+  console.log(`비밀 키: ${target}` + NL + '공개 키: scripts/release-public-key.xml, server/src/admin/releaseKey.ts');
 } else if (command === 'export-public') {
   writePublicFiles(createPrivateKey(readFileSync(target, 'utf8')));
-  console.log('공개 키: scripts/release-public-key.xml, central/src/releaseKey.ts');
+  console.log('공개 키: scripts/release-public-key.xml, server/src/admin/releaseKey.ts');
 } else if (command === 'sign-manifest') {
   const contents = join(resolve(target), 'Contents');
   writeFileSync(join(contents, 'manifest.sig'), signBytes(readFileSync(join(contents, 'manifest.json')), privateKey()) + NL, 'ascii');

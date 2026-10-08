@@ -7,7 +7,7 @@ import { currentDrawingScope } from "../memory/drawingScope.js";
 //   - 사람이 바꾼 값은 AI가 어떻게 했어야 했는지 알려 주는 가장 분명한 신호다 → "modified"
 //   - 14일 동안 그대로면 → "kept"
 //   - 객체가 없어졌으면 → "deleted", 곡선 개수가 달라져 비교할 수 없으면 → "restructured"
-// 결과는 data/logs/<날짜>/events.jsonl 에 "modification"으로 남고, 비식별 처리해 중앙 서버로 보낸다.
+// 결과는 data/logs/<날짜>/events.jsonl 에 "modification"으로 남고, 비식별 처리해 관리자에게 보낸다.
 //
 // 알 수 없는 것: 사람이 고친 뒤 저장하지 않고 닫은 경우.
 

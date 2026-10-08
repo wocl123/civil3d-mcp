@@ -2,8 +2,8 @@
   [string]$BundlePath = (Join-Path $PSScriptRoot 'MyCivil3DMcp.bundle'),
   [string]$Archive,
   [string]$DestinationRoot = (Join-Path $env:APPDATA 'Autodesk\ApplicationPlugins'),
-  # server.json이 있으면 중앙 서버의 배포 버전을 확인해 더 새 것을 받아 설치한다(온라인 설치).
-  [string]$ServerFile = (Join-Path $PSScriptRoot 'server.json'),
+  # team.json(관리자 메일)이 있으면 데이터 폴더로 복사한다. 서비스가 구글 드라이브 보내기 폴더 안내에 쓴다.
+  [string]$TeamFile = (Join-Path $PSScriptRoot 'team.json'),
   [string]$DataDir = (Join-Path $env:LOCALAPPDATA 'MyCivil3DMcp\data'),
   # 같은 버전이어도 다시 설치한다(설치 창의 [다시 설치]). 더 오래된 버전으로 내리는 것도 이때만 한다.
   [switch]$Reinstall,
@@ -19,7 +19,6 @@ $target = Join-Path $DestinationRoot 'MyCivil3DMcp.bundle'
 # 배포 zip은 번들을 zip 하나(MyCivil3DMcp.bundle.zip)로 담는다. 파일 수천 개를 탐색기로 푸는 대신 여기서 한 번에 푼다.
 $payload = Join-Path $PSScriptRoot 'MyCivil3DMcp.bundle.zip'
 $hasBundleFolder = Test-Path -LiteralPath (Join-Path $BundlePath 'Contents/manifest.json')
-$hasLocalBundle = $hasBundleFolder -or (Test-Path -LiteralPath $payload)
 Write-Host '실행 중인 프로그램을 확인하고 있습니다...'
 if (-not $SkipRunningCheck) { Assert-BundleStopped $target }
 Write-Host '설치를 진행할 수 있습니다. 파일 검증과 복사 중에는 창을 닫지 마세요.'
@@ -36,36 +35,11 @@ function Test-NeedsInstall([string]$Version) {
 }
 
 $unpack = $null
-$download = $null
-$server = $null
 try {
-  if (-not $Archive -and (Test-Path -LiteralPath $ServerFile)) {
-    $server = Read-ServerSettings $ServerFile
+  if (-not $Archive -and -not $hasBundleFolder) {
+    if (-not (Test-Path -LiteralPath $payload)) { throw '이 폴더에 설치 파일(MyCivil3DMcp.bundle.zip)이 없습니다. ZIP 전체를 새 폴더에 압축 해제해 주세요.' }
+    $Archive = $payload
   }
-  # 가입키가 없는 server.json(GitHub 릴리스 zip): 서버의 배포 버전은 물어볼 수 없으니 이 폴더의 번들로 설치하고,
-  # 설치 후 Civil 3D를 켜면 가입을 신청한다(검토자가 승인하면 연결되고, 그다음부터는 자동 업데이트).
-  if ($server -and -not $server.enrollKey) {
-    if (-not $hasLocalBundle) { throw '이 폴더에 설치 파일(MyCivil3DMcp.bundle.zip)이 없습니다. ZIP 전체를 새 폴더에 압축 해제해 주세요.' }
-    Write-Host '이 폴더의 설치 파일로 설치합니다. Civil 3D를 켜면 중앙 서버에 가입을 신청합니다(관리자 승인 후 연결).'
-  } elseif ($server) {
-    Write-Host '[1/4] 서버에서 최신 버전을 확인하고 있습니다...'
-    $release = $null; $failure = $null
-    try { $release = Get-ServerRelease $server } catch { $failure = $_.Exception.Message }
-    if ($release) {
-      # 받기 전에 판단한다(이미 최신이면 내려받지 않는다).
-      if (-not (Test-NeedsInstall $release.version)) { return }
-      Write-Host "[1/4] 최신 버전 $($release.version)을 받고 있습니다$(if ($installed) { " (지금 $installed)" })..."
-      $download = Join-Path ([IO.Path]::GetTempPath()) ('mycivil3d-download-' + [guid]::NewGuid().ToString('N'))
-      New-Item -ItemType Directory -Path $download | Out-Null
-      $Archive = Save-ServerRelease $server $release $download
-    } elseif ($hasLocalBundle) {
-      # 서버에 연결하지 못했거나 배포 중인 버전이 없으면, 이 폴더의 설치 파일로 설치한다.
-      Write-Host "서버에서 받지 못해 이 폴더의 설치 파일로 설치합니다. ($(if ($failure) { $failure } else { '배포 중인 버전 없음' }))"
-    } else {
-      throw "서버에서 설치 파일을 받지 못했습니다. $(if ($failure) { "($failure) " })네트워크와 server.json의 주소를 확인하세요."
-    }
-  }
-  if (-not $Archive -and -not $hasBundleFolder -and (Test-Path -LiteralPath $payload)) { $Archive = $payload }
   if ($Archive) {
     Write-Host '[1/4] 설치 파일의 압축을 풀고 있습니다...'
     New-Item -ItemType Directory -Path $DestinationRoot -Force | Out-Null
@@ -83,17 +57,14 @@ try {
   }
   # 어디서 온 번들이든 서명을 확인한다. 서명이 맞아야 manifest의 SHA-256 목록을 믿을 수 있다.
   if ($AllowUnsigned) { Write-Host '서명 확인을 건너뜁니다(개발용 빌드).' } else { Assert-BundleSignature $BundlePath $TrustedKeyFile }
-  # 서버에서 받은 것은 서버가 알려 준 그 버전이어야 한다(서명된 옛 버전으로 되돌리는 공격을 막는다).
-  if ($download -and (Get-InstalledVersion $BundlePath) -ne $release.version) { throw '받은 설치 파일의 버전이 서버 정보와 다릅니다. 설치하지 않습니다.' }
-  # 폴더나 zip의 번들도 설치된 버전과 비교한다(서버에서 받은 것은 위에서 이미 비교했다).
-  if (-not $download -and -not (Test-NeedsInstall (Get-InstalledVersion $BundlePath))) { return }
+  # 설치된 버전과 비교한다(같거나 더 새 버전이 있으면 [다시 설치]일 때만).
+  if (-not (Test-NeedsInstall (Get-InstalledVersion $BundlePath))) { return }
   $result = Invoke-BundleInstall $BundlePath $DestinationRoot
   Write-Host "설치했습니다: $($result.installed) ($(Get-InstalledVersion $result.installed))"
   if ($result.backup) { Write-Host "이전 버전 보관: $($result.backup)" }
   Remove-OldBackups $DestinationRoot $result.backup
   Write-Host 'Civil 3D 2025를 실행하세요. 처음 질문할 때 선택한 AI를 설치하고 로그인합니다.'
 } finally {
-  if ($server -and (Save-CentralJoin $server $DataDir)) { Write-Host '중앙 서버 연결은 Civil 3D를 켜면 자동으로 진행됩니다.' }
+  if (-not $Archive -or $Archive -eq $payload) { Save-TeamInfo $TeamFile $DataDir }
   if ($unpack) { Remove-OwnedDirectory $unpack $DestinationRoot }
-  if ($download) { Remove-OwnedDirectory $download ([IO.Path]::GetTempPath()) }
 }

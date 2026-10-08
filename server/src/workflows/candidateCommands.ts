@@ -51,7 +51,7 @@ function listText(pending: Candidate[]): string {
   if (!pending.length) return "검토할 지식 후보가 없습니다. 대화 중에 사용자가 말한 일반적인 작업 관행이 후보로 모입니다.";
   return [
     `### 지식 후보 ${pending.length}개`,
-    "승인하면 이 PC의 공통 규칙에 들어가 모든 도면의 질문에 적용됩니다. 중앙 서버에 연결되어 있으면 검토자에게도 자동으로 올라갑니다.",
+    "승인하면 이 PC의 공통 규칙에 들어가 모든 도면의 질문에 적용됩니다. 보내기 폴더를 관리자와 공유했으면 관리자(검토자)에게도 자동으로 올라갑니다.",
     "",
     ...pending.map((item, index) => [
       `${index + 1}. **${item.content}**`,

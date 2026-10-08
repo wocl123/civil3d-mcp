@@ -1,6 +1,6 @@
 // PC 밖으로 나가기 직전의 마지막 검사와, 자유 글 가리기.
 // 보내는 기록은 처음부터 허용한 항목만으로 만든다(records.ts). 여기서는 그래도 빠져나간 것을 잡는다.
-// 중앙 서버도 받을 때 같은 규칙으로 다시 검사한다(central/src/validate.ts).
+// 관리자 PC도 가져올 때 같은 규칙으로 다시 검사한다(admin/validate.ts).
 
 // [찾는 모양, 이유]
 const PATTERNS: [RegExp, string][] = [

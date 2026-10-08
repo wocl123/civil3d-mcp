@@ -38,7 +38,7 @@ import { getQuota } from "../ai/quota.js";
 import { answerChat } from "../workflows/paletteChat.js";
 import { clearMemory } from "../memory/memoryStore.js";
 import { forget, isConversationId } from "../workflows/conversation.js";
-import { pendingJoinRequests, startSyncLoop, syncSoon } from "../sync/syncLoop.js";
+import { newMemberFolders, startSyncLoop, syncSoon } from "../sync/syncLoop.js";
 import { logFeedback } from "../logs/workLog.js";
 import { checkForUpdate, startUpdateLoop, updateState } from "../update/autoUpdate.js";
 
@@ -110,8 +110,8 @@ export const httpServer = createServer(async (request, response) => {
     const route = `${request.method} ${url.pathname}`;
 
     // ── AI 상태
-    // joins: 검토자 PC에서 대기 중인 가입 신청 수(팔레트 아래 줄에 "가입 신청 n")
-    if (route === "GET /api/version") return json(response, 200, { ...updateState(), joins: pendingJoinRequests() });
+    // newMembers: 관리자 PC에서 아직 보지 않은 새 사용자 폴더 수(팔레트 아래 줄에 "새 사용자 n")
+    if (route === "GET /api/version") return json(response, 200, { ...updateState(), newMembers: newMemberFolders() });
     if (route === "POST /api/update/check") return json(response, 200, await checkForUpdate());
     if (route === "POST /api/feedback") {
       const input = await body(request) as { requestId?: unknown; reason?: unknown; rating?: unknown };

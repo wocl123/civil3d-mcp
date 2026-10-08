@@ -1,12 +1,13 @@
 // 검토자가 결정할 것 (docs/데이터관리_설계.md §6).
 //   G-…  같은 관행을 여러(또는 한) 설치가 후보로 보낸 묶음. 몇 곳에서 보냈는지 함께.
 //   P-…  여러 설치의 수정 추적 결과가 가리키는 설정값 ("통계 제안").
-// 검토자가 승인하기 전에는 아무것도 설치로 가지 않는다. 승인·철회할 때마다 중앙 지식의 새 버전이 발행된다.
+// 검토자(관리자)가 승인하기 전에는 아무것도 설치로 가지 않는다. 승인·철회할 때마다 중앙 지식의 새 버전이 발행되고,
+// 다음 동기화 때 사용자 드라이브 폴더로 나간다.
 
 import { createHash } from "node:crypto";
-import type { Config } from "./config.js";
-import { PARAMETERS, validParameter } from "./parameters.js";
-import type { CandidateRow, CaseCategory, CaseTriage, Official, Store } from "./store.js";
+import type { AdminConfig as Config } from "./adminConfig.js";
+import { PARAMETERS, validParameter } from "../knowledge/parameters.js";
+import type { AdminStore as Store, CandidateRow, CaseCategory, CaseTriage, Official } from "./adminStore.js";
 
 export type ReviewItem = {
   id: string;
@@ -304,4 +305,31 @@ export function decideCase(store: Store, input: { key: string; action: string; c
 export function cleanupContent(store: Store): { scrubbed: number; kept: number } {
   const keep = new Set([...problemCases(store, "new", Number.MAX_SAFE_INTEGER), ...problemCases(store, "todo", Number.MAX_SAFE_INTEGER)].map(item => item.key));
   return { scrubbed: store.scrubWhere(key => !keep.has(key)), kept: keep.size };
+}
+
+// 수정 요청서(.md): AI(Claude Code 등)에게 바로 넘기는 문서. 저장소의 /fix-cases 명령이 이 파일을 읽는다.
+export function casesMarkdown(cases: ProblemCase[], status: CaseStatus): string {
+  const name: Record<string, string> = { knowledge: "지식", code: "코드", ai: "AI", other: "기타" };
+  const lines = [
+    `# 수정 요청: 문제 사례 ${cases.length}건 (${new Date().toISOString().slice(0, 10)}, 상태 ${status})`,
+    "",
+    "사용자가 👎를 누르거나, 적용한 변경을 되돌렸거나, 실패한 질문들이다. 검토자가 분류하고 메모를 남겼다.",
+    "질문·답의 <이름>, <파일>, <경로>는 가림 처리된 것이다(원래 도면 이름·경로).",
+    "",
+    "각 사례마다: 원인을 찾는다 → 코드나 지식(knowledge-defaults)을 고친다 → 같은 문제가 다시 나오지 않게 회귀 시험을 더한다",
+    "(설계 계산은 server/scripts/design-regression.mjs, 도구 동작은 해당 시나리오) → 시험을 모두 돌린다.",
+    "고칠 수 없거나 사용자 착오로 보이면 이유를 적는다. 끝나면 사례 번호별 결과를 표로 정리한다.",
+    ""
+  ];
+  cases.forEach((item, index) => {
+    lines.push(`## 사례 ${index + 1} · ${name[item.triage?.category ?? ""] ?? "분류 없음"} · ${item.signals.join(", ")}`);
+    lines.push("", `- 키: \`${item.key}\``, `- 시각: ${item.at}, 버전 ${item.appVersion ?? "?"}, ${item.provider ?? "?"} ${item.model ?? ""}${item.errorKind ? `, 실패 ${item.errorKind}` : ""}`);
+    if (item.triage?.note) lines.push(`- 검토자 메모: ${item.triage.note}`);
+    if (item.tools.length) lines.push(`- 사용한 도구: ${[...new Set(item.tools)].join(", ")}`);
+    lines.push("", "**질문**", "", "```text", item.question ?? "(내용 없음)", "```", "", "**답**", "", "```text", item.answer ?? "(내용 없음)", "```");
+    if (item.feedback.length) lines.push("", "**사용자 의견**", "", ...item.feedback.map(text => `- ${text}`));
+    if (item.changes.length) lines.push("", "**도면 변경**", "", ...item.changes.map(change => `- ${change.state}: ${change.title ?? ""} ${change.labels ?? ""}`));
+    lines.push("");
+  });
+  return lines.join("\n");
 }

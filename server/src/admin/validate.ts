@@ -1,8 +1,8 @@
-// 서버가 받는 것 (docs/데이터관리_설계.md §3).
-// 설치는 이미 허용한 항목만 보낸다. 서버는 한 번 더 검사하고, 아는 항목만 남기며,
+// 관리자 PC가 드라이브에서 가져오는 것 (docs/데이터관리_설계.md §3).
+// 설치는 이미 허용한 항목만 보낸다. 관리자 PC는 한 번 더 검사하고, 아는 항목만 남기며,
 // 글에 경로·파일 이름·메일 주소가 남아 있는 묶음이나 후보는 받지 않는다.
 
-import { validParameter } from "./parameters.js";
+import { validParameter } from "../knowledge/parameters.js";
 
 // [찾는 모양, 이유] (설치 쪽 server/src/sync/privacy.ts 와 같은 규칙)
 const PATTERNS: [RegExp, string][] = [

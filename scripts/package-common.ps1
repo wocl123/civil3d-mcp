@@ -163,86 +163,22 @@ function Invoke-BundleInstall([string]$Source, [string]$DestinationRoot) {
   } finally { Remove-OwnedDirectory $work $DestinationRoot }
 }
 
-# ── 온라인 설치: 설치.bat 옆에 server.json(중앙 서버 주소, 가입키)이 있으면 서버의 배포 버전을 확인해 받는다.
-# enrollKey(가입키)는 관리자가 만든 설치 묶음(kit)에만 있다. GitHub 릴리스 zip의 server.json에는 주소와 지문만 있고,
-# 그 PC는 설치 후 가입을 신청해 검토자의 승인을 받는다.
-function Read-ServerSettings([string]$File) {
-  $settings = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
-  if (-not ($settings.url -match '^https?://[^/\s?#@]+(/[^\s?#]*)?$')) { throw 'server.json의 url이 올바르지 않습니다.' }
-  $url = ([string]$settings.url).TrimEnd('/')
-  $uri = [Uri]$url
-  $pin = if ($settings.PSObject.Properties['certSha256']) { ([string]$settings.certSha256).Replace(':', '').ToLowerInvariant() } else { '' }
-  # 다른 PC의 서버는 HTTPS + 인증서 지문으로만 연결한다. HTTP는 이 PC 안(127.0.0.1, localhost)만.
-  if ($uri.Scheme -eq 'https' -and $pin -notmatch '^[a-f0-9]{64}$') { throw 'server.json에 서버 인증서 지문(certSha256)이 없습니다. 관리자에게 새 설치 묶음을 받으세요.' }
-  if ($uri.Scheme -eq 'http' -and -not $uri.IsLoopback) { throw '다른 PC의 중앙 서버는 HTTPS로만 연결합니다. 관리자에게 새 설치 묶음을 받으세요.' }
-  $key = if ($settings.PSObject.Properties['enrollKey']) { [string]$settings.enrollKey } else { '' }
-  return [pscustomobject]@{ url = $url; enrollKey = $key; certSha256 = $pin }
-}
-# HTTPS 서버 인증서를 지문으로 고정한다(공용 인증기관 대신). 이 설치 과정의 모든 요청에 적용된다.
-function Enable-CertificatePin([string]$Pin) {
-  if (-not $Pin) { return }
-  if (-not ('MyCivil3DCertificatePin' -as [type])) {
-    Add-Type -TypeDefinition @'
-using System;
-using System.Net;
-using System.Net.Security;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
-public static class MyCivil3DCertificatePin {
-  static string expected;
-  public static void Install(string pin) { expected = pin; ServicePointManager.ServerCertificateValidationCallback = Check; }
-  static bool Check(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors errors) {
-    if (certificate == null || expected == null) return false;
-    using (SHA256 sha = SHA256.Create()) {
-      string actual = BitConverter.ToString(sha.ComputeHash(certificate.GetRawCertData())).Replace("-", "").ToLowerInvariant();
-      return actual == expected;
-    }
-  }
-}
-'@
-  }
-  [MyCivil3DCertificatePin]::Install($Pin)
-}
 function Get-InstalledVersion([string]$Bundle) {
   $file = Join-Path $Bundle 'Contents/version.json'
   if (-not (Test-Path -LiteralPath $file)) { return $null }
   try { return [string](Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { return $null }
 }
 function Compare-ProductVersion([string]$A, [string]$B) { return ([version]$A).CompareTo([version]$B) }
-function Get-ServerRelease($Server) {
-  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-  Enable-CertificatePin $Server.certSha256
-  $release = Invoke-RestMethod -Uri "$($Server.url)/v1/release" -Headers @{ 'x-enroll-key' = $Server.enrollKey } -TimeoutSec 20 -UseBasicParsing
-  if ($release.PSObject.Properties['none']) { return $null }   # StrictMode: 없는 속성을 읽으면 오류
-  if (-not ($release.version -match '^\d+\.\d+\.\d+$') -or -not ($release.sha256 -match '^[a-f\d]{64}$')) { throw '서버의 배포 정보가 올바르지 않습니다.' }
-  return $release
-}
-# 받은 파일의 크기와 SHA-256이 서버가 알려 준 값과 같아야 한다. 다르면 지우고 멈춘다.
-function Save-ServerRelease($Server, $Release, [string]$Folder) {
-  $file = Join-Path $Folder ("MyCivil3DMcp-$($Release.version)-win-x64.zip")
-  $previous = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'   # 진행 표시가 다운로드를 크게 늦춘다(PowerShell 5.1)
-  try { Invoke-WebRequest -Uri "$($Server.url)/v1/release/download?version=$($Release.version)" -Headers @{ 'x-enroll-key' = $Server.enrollKey } -OutFile $file -TimeoutSec 600 -UseBasicParsing }
-  finally { $ProgressPreference = $previous }
-  $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
-  if ((Get-Item -LiteralPath $file).Length -ne [long]$Release.size -or $hash -ne $Release.sha256) {
-    Remove-Item -LiteralPath $file -Force
-    throw '받은 설치 파일이 서버의 정보와 다릅니다(손상 또는 변조). 다시 시도하세요.'
-  }
-  return $file
-}
-# 아직 중앙 서버에 연결하지 않은 PC면, 서비스가 다음에 켜질 때 이 가입키로 등록하도록 남긴다(등록 후 서비스가 지운다).
-function Save-CentralJoin($Server, [string]$DataDir) {
-  $settingsFile = Join-Path $DataDir 'settings.json'
-  if (Test-Path -LiteralPath $settingsFile) {
-    try { if ((Get-Content -LiteralPath $settingsFile -Raw -Encoding UTF8 | ConvertFrom-Json).central) { return $false } } catch { }
-  }
+# ── 팀 정보: 설치.bat 옆의 team.json(관리자 메일, GitHub 릴리스 zip에 들어 있다)을 데이터 폴더로 복사한다.
+# 서비스는 이것을 보고 구글 드라이브에 보내기 폴더를 만들고, 관리자와 공유하라고 안내한다. 비밀이 아니다.
+function Save-TeamInfo([string]$File, [string]$DataDir) {
+  if (-not (Test-Path -LiteralPath $File)) { return }
+  try { $team = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Write-Host 'team.json을 읽지 못해 건너뜁니다.'; return }
+  $email = if ($team.PSObject.Properties['adminEmail']) { [string]$team.adminEmail } else { '' }
+  if ($email -notmatch '^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$') { Write-Host 'team.json의 관리자 메일 형식이 맞지 않아 건너뜁니다.'; return }
   New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
-  $join = [ordered]@{ url = $Server.url }
-  if ($Server.enrollKey) { $join.enrollKey = $Server.enrollKey }
-  if ($Server.certSha256) { $join.certSha256 = $Server.certSha256 }
-  $json = [pscustomobject]$join | ConvertTo-Json
-  [IO.File]::WriteAllText((Join-Path $DataDir 'central-join.json'), $json, [Text.UTF8Encoding]::new($false))
-  return $true
+  [IO.File]::WriteAllText((Join-Path $DataDir 'team.json'), ([pscustomobject]@{ adminEmail = $email } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+  Write-Host "Civil 3D를 켜면 구글 드라이브에 보내기 폴더를 만듭니다. 그 폴더를 관리자($email)와 공유하세요(팔레트 /중앙 에 방법이 나옵니다)."
 }
 
 # ── 설치 폴더 정리: 끊긴 설치가 남긴 작업 폴더와 쌓인 이전 버전 백업(각 120MB 남짓)

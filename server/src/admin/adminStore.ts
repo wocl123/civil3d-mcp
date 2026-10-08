@@ -1,22 +1,22 @@
-// 중앙 서버가 보관하는 모든 것. 데이터 폴더의 평범한 파일이고, 시작할 때 메모리로 읽는다.
-// 작은 팀은 한 달에 기록 수천 건을 보낸다. 커지면 이 파일만 DB로 바꾸면 된다.
-//   installs.json            등록된 설치 (토큰은 해시만)
-//   join-requests.json       가입 신청(가입키 없이 설치한 PC, 검토자가 승인) joins.ts
+// 관리자 PC가 보관하는 모든 것 (data/admin). 평범한 파일이고, 처음 쓸 때 메모리로 읽는다.
+// 사용자들이 구글 드라이브로 보낸 기록·후보를 여기로 가져온다(adminSync.ts). 작은 팀은 한 달에 기록 수천 건이다.
+//   members.json             사용자(드라이브 폴더) 목록: 설치 ID, 폴더 이름, 처음·마지막으로 본 날, 차단 여부
 //   packages.txt             이미 받은 묶음 id, 한 줄에 하나
 //   records/<YYYY-MM>.jsonl  모든 기록 (설치·묶음과 함께)
 //   candidates.json          지식 후보와 검토 상태
-//   official.json            지금 적용 중인 승인 지식
+//   official.json            지금 적용 중인 승인 지식(사용자 폴더로 나눠 준다)
 //   history/v<n>.json        발행한 모든 버전
 //   decisions.jsonl          모든 검토 결정
+//   cases.json               문제 사례 분류
 
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir } from "./config.js";
+import { adminDir } from "./adminConfig.js";
 
-export type InstallRow = { installId: string; tokenHash: string; enrolledAt: string; lastSeen: string };
-// 가입 신청. computer·user는 대기 중일 때만 있다(승인·거절하면 지운다).
-export type JoinRow = { installId: string; secretHash: string; computer?: string; user?: string; requestedAt: string;
-  status: "pending" | "approved" | "rejected"; decidedAt?: string };
+// 사용자 하나 = 그 사람이 관리자와 공유한 드라이브 폴더 하나.
+//   seen: 관리자가 /중앙 사용자 로 본 적 있음(팔레트 아래 줄의 "새 사용자 n"에서 빠진다)
+//   blocked: 관리자가 차단함(그 폴더에서 더 가져오지도, 나눠 주지도 않는다)
+export type MemberRow = { installId: string; folder: string; firstSeen: string; lastSeen: string; seen: boolean; blocked?: boolean };
 
 export type StoredRecord = { installId: string; packageId: string; receivedAt: string; record: Record<string, unknown> };
 
@@ -57,8 +57,7 @@ const CONTENT_FIELDS = ["question", "answer", "input", "title", "labels", "reaso
 
 export type Decision = { at: string; id: string; decision: string; reason?: string; content?: string; version: number };
 
-const path = (...parts: string[]) => join(dataDir, ...parts);
-const stamp = (file: string) => { try { return statSync(path(file)).mtimeMs; } catch { return 0; } };
+const path = (...parts: string[]) => join(adminDir(), ...parts);
 
 function readJson<T>(file: string, fallback: T): T {
   try {
@@ -87,9 +86,8 @@ function readLines<T>(file: string): T[] {
   });
 }
 
-export class Store {
-  installs: Record<string, InstallRow>;
-  joins: Record<string, JoinRow>;
+export class AdminStore {
+  members: Record<string, MemberRow>;
   packages: Set<string>;
   records: StoredRecord[];
   candidates: CandidateRow[];
@@ -97,12 +95,10 @@ export class Store {
   decisions: Decision[];
   cases: Record<string, CaseTriage>;
 
-  // 시작할 때 모두 읽는다.
   constructor() {
     mkdirSync(path("records"), { recursive: true });
     mkdirSync(path("history"), { recursive: true });
-    this.installs = readJson("installs.json", {});
-    this.joins = readJson("join-requests.json", {});
+    this.members = readJson("members.json", {});
     this.packages = new Set(existsSync(path("packages.txt"))
       ? readFileSync(path("packages.txt"), "utf8").split("\n").filter(Boolean)
       : []);
@@ -116,31 +112,8 @@ export class Store {
     this.cases = readJson("cases.json", {});
   }
 
-  saveInstalls(): void {
-    writeJson("installs.json", this.installs);
-    this.installsStamp = stamp("installs.json");
-  }
-
-  // 관리 명령(admin.ts revoke)이 installs.json을 바꾸면 다시 읽는다(서버를 다시 켜지 않아도 차단이 바로 적용된다).
-  private installsStamp = stamp("installs.json");
-  refreshInstalls(): void {
-    const now = stamp("installs.json");
-    if (now !== this.installsStamp) {
-      this.installs = readJson("installs.json", {});
-      this.installsStamp = now;
-    }
-    const joins = stamp("join-requests.json");
-    if (joins !== this.joinsStamp) {
-      this.joins = readJson("join-requests.json", {});
-      this.joinsStamp = joins;
-    }
-  }
-
-  // 가입 신청(관리 명령 admin.ts approve/reject도 이 파일을 쓴다. 서버는 refreshInstalls에서 다시 읽는다).
-  private joinsStamp = stamp("join-requests.json");
-  saveJoins(): void {
-    writeJson("join-requests.json", this.joins);
-    this.joinsStamp = stamp("join-requests.json");
+  saveMembers(): void {
+    writeJson("members.json", this.members);
   }
 
   // 묶음 하나를 받는다: 기록은 달별 파일에 붙이고, 묶음 id를 남긴다.
@@ -170,7 +143,6 @@ export class Store {
     this.decide(decision);
   }
 
-  // 검토 결정 하나를 기록한다.
   saveCases(): void {
     writeJson("cases.json", this.cases);
   }
@@ -206,9 +178,14 @@ export class Store {
     return scrubbed;
   }
 
+  // 검토 결정 하나를 기록한다.
   decide(decision: Omit<Decision, "at" | "version">): void {
     const row: Decision = { at: new Date().toISOString(), ...decision, version: this.official.version };
     appendFileSync(path("decisions.jsonl"), JSON.stringify(row) + "\n", "utf8");
     this.decisions.push(row);
   }
 }
+
+// 서비스 안에서 하나만 쓴다(동기화와 팔레트 명령이 같은 것을 본다).
+let shared: AdminStore | undefined;
+export const adminStore = (): AdminStore => shared ??= new AdminStore();
