@@ -214,7 +214,8 @@ async function checkOne(set: CriteriaSet, profile: ProfileSummary, input: Profil
         continue;
       }
 
-      const row = findRow(grade, { designSpeed: speed.value, roadFunction: input.roadFunction!, terrain: input.terrain! });
+      const condition = { designSpeed: speed.value, roadFunction: input.roadFunction!, terrain: input.terrain! };
+      const row = findRow(grade, condition);
       if (!row || typeof row.value !== "number") {
         report.skip(grade, target, `표에 없는 조건 (설계속도 ${speed.value}, ${input.roadFunction}, ${input.terrain})`);
         continue;

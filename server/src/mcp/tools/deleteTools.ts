@@ -15,8 +15,15 @@ import { toolResult } from "../toolResult.js";
 // 플러그인 미리 보기 결과 (DrawingDeletion.cs)
 type CorridorLink = { name: string; handle: string; alignments: string[]; surfaces: string[] };
 type PreviewItem = {
-  kind: "alignment" | "profile" | "corridor"; name: string; handle: string; alignment?: string;
-  profiles: string[]; profileViews: number; sampleLineGroups: string[]; offsetAlignments: string[]; corridors: CorridorLink[];
+  kind: "alignment" | "profile" | "corridor";
+  name: string;
+  handle: string;
+  alignment?: string;
+  profiles: string[];           // 함께 지워지는 종단
+  profileViews: number;         // 함께 지워지는 종단 뷰 수
+  sampleLineGroups: string[];   // 영향받는 샘플 라인 그룹
+  offsetAlignments: string[];   // 영향받는 오프셋 선형
+  corridors: CorridorLink[];    // 함께 지워지는 코리더
 };
 type Preview = { items: PreviewItem[]; notFound: string[] };
 
@@ -109,10 +116,23 @@ export function registerDeleteTools(server: McpServer): void {
     const summary = `${what} 삭제${along ? ` (${along}도 함께)` : ""}`;
 
     const lines = items.map(item => detail(item, deletedAlignments));
-    const details = lines.length > MAX_DETAILS ? [...lines.slice(0, MAX_DETAILS), `외 ${lines.length - MAX_DETAILS}개`] : lines;
-    const effects = [...new Set(items.flatMap(item => item.corridors.length || item.sampleLineGroups.length || item.offsetAlignments.length
-      ? [detail(item, deletedAlignments)] : []))].slice(0, MAX_DETAILS);
-    const fix: FixOption = { title: summary, changes: [], remove: { targets: [...targets.values()], summary, details }, status: "feasible", effects };
+    const details = lines.length > MAX_DETAILS
+      ? [...lines.slice(0, MAX_DETAILS), `외 ${lines.length - MAX_DETAILS}개`]
+      : lines;
+
+    // 다른 객체에 영향이 있는 대상만 따로 모은다(코리더·샘플 라인 그룹·오프셋 선형).
+    const affectsOthers = (item: PreviewItem) =>
+      item.corridors.length || item.sampleLineGroups.length || item.offsetAlignments.length;
+    const effects = [...new Set(items.filter(affectsOthers).map(item => detail(item, deletedAlignments)))]
+      .slice(0, MAX_DETAILS);
+
+    const fix: FixOption = {
+      title: summary,
+      changes: [],
+      remove: { targets: [...targets.values()], summary, details },
+      status: "feasible",
+      effects
+    };
     await storeFix(fix, what, "삭제", { check: "none" });
 
     return toolResult({

@@ -150,8 +150,10 @@ export async function checkAllAlignments(input: BulkInput) {
   }));
 
   // 3) 합계: 평면·종단 개수, 미달 선형 수, 조건별로 빠진 선형 수
-  const plan = results.reduce<Summary>((sum, row) => row.planSummary ? add(sum, row.planSummary as Summary) : sum, empty());
-  const profile = results.reduce<Summary>((sum, row) => row.profileSummary ? add(sum, row.profileSummary as Summary) : sum, empty());
+  const sum = (summaries: unknown[]): Summary =>
+    summaries.reduce<Summary>((total, summary) => summary ? add(total, summary as Summary) : total, empty());
+  const plan = sum(results.map(row => row.planSummary));
+  const profile = sum(results.map(row => row.profileSummary));
   const missing: Record<string, number> = {};
   for (const row of results) {
     for (const name of (row.missing as string[] | undefined) ?? []) {

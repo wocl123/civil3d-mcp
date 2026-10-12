@@ -209,7 +209,13 @@ Promise<CliLaunch> {
   await writeIfChanged(join(cwd, "GEMINI.md"), skill);
   await writeIfChanged(join(cwd, ".gemini", "settings.json"), JSON.stringify({
     mcpServers: {
-      [SERVER_NAME]: { command: process.execPath, args: [mcpEntry], env: serverEnv, trust: true, timeout: TOOL_TIMEOUT_SECONDS * 1000 }
+      [SERVER_NAME]: {
+        command: process.execPath,
+        args: [mcpEntry],
+        env: serverEnv,
+        trust: true,
+        timeout: TOOL_TIMEOUT_SECONDS * 1000
+      }
     }
   }, null, 2));
   return {

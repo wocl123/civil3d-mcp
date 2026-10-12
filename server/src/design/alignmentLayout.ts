@@ -114,7 +114,12 @@ async function planAlignmentLayoutInternal(input: AlignmentLayoutInput) {
     ips.reduce((sum, planned) => sum + (planned.curveLength ?? 0) - 2 * planned.tangent, 0);
 
   const result = {
-    polyline: { handle: path.object.handle, layer: path.object.layer, vertexCount: path.vertexCount, ipCount: ips.length },
+    polyline: {
+      handle: path.object.handle,
+      layer: path.object.layer,
+      vertexCount: path.vertexCount,
+      ipCount: ips.length
+    },
     direction: input.reverse ? "폴리라인 끝점 → 시작점" : "폴리라인 시작점 → 끝점",
     uses,
     alignmentType: road ? "Centerline (도로 중심선)" : "Utility (기타)",
@@ -389,7 +394,8 @@ function planCurves(path: Path, road: boolean, design: RoadDesign, radii: { ip: 
       planned.tangent = round(curveTangent(curve, deltaRad));
       planned.curveLength = round(curveLength(curve, deltaRad));
       if (curve.spiral) {
-        Object.assign(planned, { spiralLength: curve.spiral, spiralA: round(Math.sqrt(curve.radius * curve.spiral), 1) });
+        const spiralA = round(Math.sqrt(curve.radius * curve.spiral), 1);
+        Object.assign(planned, { spiralLength: curve.spiral, spiralA });
       }
     }
 
@@ -496,7 +502,14 @@ async function createOption(input: AlignmentLayoutInput, path: Path, uses: Align
     type: road ? "Centerline" : "Utility",
     polyline: { handle: path.object.handle, vertices: path.vertices },
     points: path.points.map(({ x, y }) => ({ x, y })),
-    curves: curves.map(curve => curve ? { radius: curve.radius, ...(curve.spiral ? { spiralLength: curve.spiral } : {}) } : {}),
+    // IP마다 곡선 하나. 곡선을 넣지 않는 IP는 빈 객체.
+    curves: curves.map(curve => {
+      if (!curve) {
+        return {};
+      }
+
+      return { radius: curve.radius, ...(curve.spiral ? { spiralLength: curve.spiral } : {}) };
+    }),
     ...(limits ? { designSpeed: limits.speed } : {}),
     description: writeRecord({
       uses,

@@ -145,7 +145,9 @@ function smallerGradeChange(context: VerticalCurveContext, change: number): FixO
 }
 
 // 종단경사가 기준보다 급하다 → 경사 양 끝 VIP의 표고 차를 줄여야 한다.
-export function gradeFixes(profile: ProfileSummary, tangent: ProfileTangent, pvis: ProfilePvi[], limit: number): FixOption[] {
+export function gradeFixes(
+  profile: ProfileSummary, tangent: ProfileTangent, pvis: ProfilePvi[], limit: number
+): FixOption[] {
   if (tangent.gradePercent === undefined) {
     return [];
   }

@@ -72,7 +72,10 @@ const failure = (error: unknown) => error instanceof ReviewError || error instan
 // 설정을 바꿔 저장한다(팀 정보로 켜진 PC도 이때 settings.json에 남는다).
 async function updateDrive(change: (drive: DriveSettings) => void): Promise<DriveSettings> {
   const settings = await loadSettings();
-  const drive: DriveSettings = { ...(await driveSettings() ?? { enabled: true }), since: settings.drive?.since || new Date().toISOString() };
+  const drive: DriveSettings = {
+    ...(await driveSettings() ?? { enabled: true }),
+    since: settings.drive?.since || new Date().toISOString()
+  };
   change(drive);
   settings.drive = drive;
   await saveSettings(settings);
@@ -234,7 +237,9 @@ const when = (iso?: string) => iso ? new Date(iso).toLocaleString("ko-KR") : "�
 
 // /중앙 : 연결 상태.
 async function statusText(): Promise<string> {
-  const [drive, { installId }, { state, pending, blocked }, team] = await Promise.all([driveSettings(), install(), syncStatus(), loadTeam()]);
+  const [drive, { installId }, { state, pending, blocked }, team] = await Promise.all([
+    driveSettings(), install(), syncStatus(), loadTeam()
+  ]);
   const footer = [
     "",
     "보내는 것: 질문과 답, 도구 입력, 도면 변경 내용(적용·되돌림), 👎 의견, 시간·토큰·실패 종류, 사람이 AI 값을 고쳤는지, 지식 후보, 프로그램 버전.",
@@ -306,7 +311,13 @@ async function members(args: string[], conversation: string | undefined, drive: 
       }
 
       const today = new Date().toISOString().slice(0, 10);
-      store.members[folder.installId] = { installId: folder.installId, folder: folder.name, firstSeen: today, lastSeen: today, seen: false };
+      store.members[folder.installId] = {
+        installId: folder.installId,
+        folder: folder.name,
+        firstSeen: today,
+        lastSeen: today,
+        seen: false
+      };
     }
 
     const rows = Object.values(store.members).sort((a, b) => a.firstSeen.localeCompare(b.firstSeen));
@@ -490,7 +501,9 @@ async function reviewList(conversation?: string): Promise<string> {
 }
 
 // "1 승인" / "2 반려 사유" 처리. 반려에는 사유가 필요하다.
-async function reviewDecide(reply: NonNullable<ReturnType<typeof parseDecision>>, listed: string[], conversation?: string): Promise<string> {
+async function reviewDecide(
+  reply: NonNullable<ReturnType<typeof parseDecision>>, listed: string[], conversation?: string
+): Promise<string> {
   if (!await isAdmin()) {
     return NOT_ADMIN;
   }

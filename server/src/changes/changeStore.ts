@@ -56,21 +56,32 @@ export async function registerFixes(items: CheckItem[], source: FixSource): Prom
 }
 
 // 수정안(또는 선형 생성 계획) 하나를 저장하고, id와 자동 적용 가능 여부를 채운다.
-export async function storeFix(fix: FixOption, target: string, check: string, source: FixSource, targetRef?: StoredFix["targetRef"]): Promise<void> {
+export async function storeFix(
+  fix: FixOption, target: string, check: string, source: FixSource, targetRef?: StoredFix["targetRef"]
+): Promise<void> {
+  // 수정안을 계산한 도면(요청 문맥이 없으면 지금 도면).
   const scope = await currentDrawingScope();
-  const context = drawingContext() ?? (scope.drawingId ? { drawingId: scope.drawingId, revision: scope.state } : undefined);
+  let context = drawingContext();
+  if (!context && scope.drawingId) {
+    context = { drawingId: scope.drawingId, revision: scope.state };
+  }
+
   const version = context?.criteriaVersion ?? await contentVersion();
   await removeOld(dir("fixes"));
   await mkdir(dir("fixes"), { recursive: true });
 
   // id에 요청을 넣는다: 같은 수정안을 나중 답변에서 다시 계산해도 새 id가 생겨,
   // 한 답변에서 보여 준 id를 다른 답변이 가로채지 않는다.
-  const hash = createHash("sha256").update(requestId() + JSON.stringify(context) + version + JSON.stringify(fix.create ?? fix.remove ?? fix.edit ?? fix.changes)).digest("hex");
+  const plan = JSON.stringify(fix.create ?? fix.remove ?? fix.edit ?? fix.changes);
+  const hash = createHash("sha256")
+    .update(requestId() + JSON.stringify(context) + version + plan)
+    .digest("hex");
   fix.id = "fx-" + hash.slice(0, 10);
 
   // 자동 적용 가능: conflict가 아니고, 생성·삭제·속성 편집 계획이거나 모든 변경을 플러그인이 지원할 때.
-  fix.applicable = !!context && fix.status !== "conflict" &&
-    (fix.create !== undefined || fix.remove !== undefined || fix.edit !== undefined || (fix.changes.length > 0 && fix.changes.every(supported)));
+  const isPlan = fix.create !== undefined || fix.remove !== undefined || fix.edit !== undefined;
+  const allSupported = fix.changes.length > 0 && fix.changes.every(supported);
+  fix.applicable = !!context && fix.status !== "conflict" && (isPlan || allSupported);
 
   const stored: StoredFix = {
     ...fix,
@@ -80,11 +91,14 @@ export async function storeFix(fix: FixOption, target: string, check: string, so
     check,
     createdAt: new Date().toISOString(),
     requestId: requestId(),
-    source, targetRef,
-    ...(context ? { binding: { ...context, criteriaVersion: version, expiresAt: new Date(Date.now() + KEEP_MS).toISOString() } } : {})
+    source,
+    targetRef,
+    ...(context ? { binding: { ...context, criteriaVersion: version, expiresAt: expiresAt() } } : {})
   };
   await writeAtomic(dir("fixes", `${fix.id}.json`), JSON.stringify(stored, null, 1));
 }
+
+const expiresAt = () => new Date(Date.now() + KEEP_MS).toISOString();
 
 // id로 수정안을 읽는다. 없거나 기간이 지났으면 다시 검토하라고 알린다.
 export async function loadFix(id: string): Promise<StoredFix> {

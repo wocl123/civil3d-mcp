@@ -57,7 +57,12 @@ const windowsDir = join(process.env.SystemRoot ?? "C:\\Windows", "System32");
 async function searchDirs(provider: Provider): Promise<string[]> {
   const only = onlyDirs();
   if (only) {
-    return process.env.MY_CIVIL3D_NODE_EXE ? [cliPrefix(provider), runtimeDir(), ...only, windowsDir] : [...only, windowsDir];
+    // 동봉 Node로 실행 중이면 그 Node 옆에 설치한 CLI도 본다.
+    if (process.env.MY_CIVIL3D_NODE_EXE) {
+      return [cliPrefix(provider), runtimeDir(), ...only, windowsDir];
+    }
+
+    return [...only, windowsDir];
   }
 
   const [user, machine] = await Promise.all([

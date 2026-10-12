@@ -24,10 +24,17 @@ export default [
         { blankLine: "always", prev: "block-like", next: "*" }
       ],
 
-      // 한 줄은 120자까지. 긴 글(문자열·주석)은 억지로 쪼개지 않는다.
+      // 한 줄은 120자까지. 긴 글(문자열·주석)과 정규식은 억지로 쪼개지 않는다.
       "@stylistic/max-len": [
         "warn",
-        { code: 120, ignoreStrings: true, ignoreTemplateLiterals: true, ignoreComments: true, ignoreUrls: true }
+        {
+          code: 120,
+          ignoreStrings: true,
+          ignoreTemplateLiterals: true,
+          ignoreComments: true,
+          ignoreUrls: true,
+          ignoreRegExpLiterals: true
+        }
       ]
     }
   }

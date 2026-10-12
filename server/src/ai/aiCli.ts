@@ -66,8 +66,16 @@ export function isProvider(value: unknown): value is Provider {
 // CLI 하나를 실행한다.
 //   - 명령 인자는 모두 이 모듈이 정한다. 사용자 글은 stdin으로만 보낸다(cmd.exe 인자 해석을 거치지 않게).
 //   - onLine: 출력 한 줄마다 부른다(진행 상황 표시용).
-async function runCli(provider: Provider, args: string[], input = "", timeoutMs = 15000,
-  cwd = tmpdir(), extraEnv: Record<string, string> = {}, onLine?: (line: string) => void, signal?: AbortSignal): Promise<CliResult> {
+async function runCli(
+  provider: Provider,
+  args: string[],
+  input = "",
+  timeoutMs = 15000,
+  cwd = tmpdir(),
+  extraEnv: Record<string, string> = {},
+  onLine?: (line: string) => void,
+  signal?: AbortSignal
+): Promise<CliResult> {
   const windows = process.platform === "win32";
   const executable = windows ? "cmd.exe" : provider;
   const commandArgs = windows ? ["/d", "/s", "/c", provider, ...args] : args;
@@ -310,15 +318,29 @@ function chatEvent(provider: Provider, line: string): ChatEvent | undefined {
 
 // 팔레트 질문 하나를 AI에게 보내고 답과 토큰 사용량을 받는다.
 //   tools: true면 이 프로젝트의 MCP 도구로 도면을 볼 수 있다. false면 프롬프트만으로 답한다.
-export async function askProvider(provider: Provider, prompt: string,
-  options: { tools?: boolean; onEvent?: (event: ChatEvent) => void; requestId?: string; offeredFixes?: string[]; drawingId?: string; signal?: AbortSignal } = {}):
-  Promise<{ answer: string; usage: TokenUsage }> {
+// Codex JSON 출력의 이벤트 한 줄.
+type CodexEvent = { type?: string; item?: { type?: string; text?: string }; usage?: unknown };
+
+export type AskOptions = {
+  tools?: boolean;
+  onEvent?: (event: ChatEvent) => void;
+  requestId?: string;
+  offeredFixes?: string[];
+  drawingId?: string;
+  signal?: AbortSignal;
+};
+
+export async function askProvider(
+  provider: Provider, prompt: string, options: AskOptions = {}
+): Promise<{ answer: string; usage: TokenUsage }> {
   if (await getProviderState(provider) !== "ready") {
     throw new Error(`${provider} account is not verified. Verify its login first.`);
   }
 
   // 1) CLI 실행 (명령 인자와 작업 폴더는 paletteWorkspace.ts 가 정한다)
-  const launch = await paletteLaunch(provider, options.tools === true, options.requestId ?? randomUUID(), options.offeredFixes, options.drawingId);
+  const requestId = options.requestId ?? randomUUID();
+  const launch = await paletteLaunch(
+    provider, options.tools === true, requestId, options.offeredFixes, options.drawingId);
   const onEvent = options.onEvent;
   const onLine = onEvent
     ? (line: string) => {
@@ -351,7 +373,10 @@ export async function askProvider(provider: Provider, prompt: string,
   // 3) 답 꺼내기 (CLI마다 출력 형식이 다르다)
   if (provider === "claude") {
     // 스트림의 마지막 "result" 이벤트가 일반 JSON 출력과 같은 모양이다.
-    const last = result.stdout.trim().split(/\r?\n/).reverse().find(line => /"type"\s*:\s*"result"/.test(line)) ?? result.stdout;
+    const last = result.stdout.trim()
+      .split(/\r?\n/)
+      .reverse()
+      .find(line => /"type"\s*:\s*"result"/.test(line)) ?? result.stdout;
     const parsed = JSON.parse(last) as { result?: string; is_error?: boolean };
     if (parsed.is_error || typeof parsed.result !== "string") {
       throw new Error("Claude returned no answer.");
@@ -376,7 +401,7 @@ export async function askProvider(provider: Provider, prompt: string,
   let foundUsage = false;
   for (let index = events.length - 1; index >= 0; index--) {
     try {
-      const event = JSON.parse(events[index]) as { type?: string; item?: { type?: string; text?: string }; usage?: unknown };
+      const event = JSON.parse(events[index]) as CodexEvent;
       if (event.type === "turn.completed" && !foundUsage) {
         usage = parseUsage(provider, event);
         foundUsage = true;

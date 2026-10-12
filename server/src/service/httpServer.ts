@@ -334,7 +334,8 @@ export const httpServer = createServer(async (request, response) => {
         });
         const send = (event: Record<string, unknown>) => response.write(JSON.stringify(event) + "\n");
         try {
-          const result = await answerChat(input.provider, input.message, event => send(event), conversation, controller.signal);
+          const result = await answerChat(
+            input.provider, input.message, event => send(event), conversation, controller.signal);
           touchProvider(input.provider);
           send({ type: "done", ...result, session: sessionInfo(input.provider) });
         } catch (error) {
@@ -375,7 +376,9 @@ export const httpServer = createServer(async (request, response) => {
 
     json(response, 404, { error: "Not found." });
   } catch (error) {
-    json(response, 503, { error: paletteMessage(error instanceof Error ? error.message : String(error)), applied: (error as { applied?: unknown }).applied });
+    // 답하다 실패해도 그 전에 적용한 변경(applied)은 알려 준다. 팔레트가 되돌리기 카드를 잃지 않게.
+    const message = error instanceof Error ? error.message : String(error);
+    json(response, 503, { error: paletteMessage(message), applied: (error as { applied?: unknown }).applied });
   }
 });
 

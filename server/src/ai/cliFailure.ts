@@ -116,14 +116,52 @@ export function parseCliFailure(provider: Provider, result: CliResult, now = Dat
   }
 
   const detail = parts.filter(Boolean).join(" ").slice(0, 8000);
-  const kind: CliFailure["kind"] =
-    /authentication[_ -]?(?:failed|error)|unauthenticated|unauthorized|not logged in|login required|please (?:run \/login|log[ -]?in)|(?:access |oauth )?token (?:has )?expired|invalid[_ -]?api[_ -]?key|(?:invalid|expired) (?:access |oauth )?(?:token|credentials)|\b401\b/i.test(detail) ? "auth"
-    : /insufficient_quota|billing[_ -]?error|insufficient credits|credit balance|payment required|credits_required|\b402\b/i.test(detail) ? "billing"
-    : denied || /usage[_ -]?limit|rate[_ -]?limit|quota(?:[_ -]?(?:exceeded|error))?|resource[_ -]?exhausted|too many requests|hit (?:your |the )?limit|\b429\b/i.test(detail) ? "limit"
-    : /ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|network error|fetch failed|overloaded|server[_ -]?error|\b50[234]\b/i.test(detail) ? "network" : "execution";
-  const resetHint = /\b(?:resets?|try again (?:at|in)|retry (?:after|in))\b[^\r\n]{1,120}/i.exec(detail)?.[0];
-  return { kind, detail, exhausted: denied || /usage[_ -]?limit|hit (?:your |the )?limit|quota[_ -]?exceeded/i.test(detail),
-    resetsAt: [...new Set(resetsAt)], ...(resetHint ? { resetHint } : {}), ...(window ? { window } : {}) };
+  const resetHint = RESET_HINT.exec(detail)?.[0];
+
+  return {
+    kind: failureKind(detail, denied),
+    detail,
+    exhausted: denied || EXHAUSTED.test(detail),
+    resetsAt: [...new Set(resetsAt)],
+    ...(resetHint ? { resetHint } : {}),
+    ...(window ? { window } : {})
+  };
+}
+
+// ── 오류 글로 실패 종류 가리기(위에서부터 먼저 맞는 것)
+const AUTH_ERROR =
+  /authentication[_ -]?(?:failed|error)|unauthenticated|unauthorized|not logged in|login required|please (?:run \/login|log[ -]?in)|(?:access |oauth )?token (?:has )?expired|invalid[_ -]?api[_ -]?key|(?:invalid|expired) (?:access |oauth )?(?:token|credentials)|\b401\b/i;
+const BILLING_ERROR =
+  /insufficient_quota|billing[_ -]?error|insufficient credits|credit balance|payment required|credits_required|\b402\b/i;
+const LIMIT_ERROR =
+  /usage[_ -]?limit|rate[_ -]?limit|quota(?:[_ -]?(?:exceeded|error))?|resource[_ -]?exhausted|too many requests|hit (?:your |the )?limit|\b429\b/i;
+const NETWORK_ERROR =
+  /ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|network error|fetch failed|overloaded|server[_ -]?error|\b50[234]\b/i;
+
+// 한도를 다 쓴 경우(잠깐의 요청 제한과 구별).
+const EXHAUSTED = /usage[_ -]?limit|hit (?:your |the )?limit|quota[_ -]?exceeded/i;
+
+// "resets at ...", "try again in ..." 같은 복구 안내 한 줄.
+const RESET_HINT = /\b(?:resets?|try again (?:at|in)|retry (?:after|in))\b[^\r\n]{1,120}/i;
+
+function failureKind(detail: string, denied: boolean): CliFailure["kind"] {
+  if (AUTH_ERROR.test(detail)) {
+    return "auth";
+  }
+
+  if (BILLING_ERROR.test(detail)) {
+    return "billing";
+  }
+
+  if (denied || LIMIT_ERROR.test(detail)) {
+    return "limit";
+  }
+
+  if (NETWORK_ERROR.test(detail)) {
+    return "network";
+  }
+
+  return "execution";
 }
 
 export function resetText(value: string, now = Date.now()): string {
@@ -157,9 +195,10 @@ export function formatCliFailure(provider: Provider, failure: CliFailure, quota?
     return name + " 실행에 실패했습니다. " + (failure.detail ? failure.detail.slice(0, 400) : "CLI 오류 정보를 받지 못했습니다. 프로그램과 CLI 설정을 확인해 주세요.");
   }
 
-  const exhausted = (quota?.status === "available" ? quota.windows : []).filter(w => w.remainingPercent <= 0
-    && (!w.resetsAt || Date.parse(w.resetsAt) > now));
-  const dates = [...failure.resetsAt, ...exhausted.flatMap(w => w.resetsAt ? [w.resetsAt] : [])].filter(d => Date.parse(d) > now);
+  // 남은 한도가 0이고 아직 복구되지 않은 창들, 그리고 앞으로 올 복구 시각들.
+  const exhausted = (quota?.status === "available" ? quota.windows : [])
+    .filter(w => w.remainingPercent <= 0 && (!w.resetsAt || Date.parse(w.resetsAt) > now));
+  const dates = [...failure.resetsAt, ...resetTimes(exhausted)].filter(d => Date.parse(d) > now);
   const zero = failure.exhausted || exhausted.length > 0;
   const lines = [name + (zero ? " 사용 한도를 모두 사용했습니다(남은 한도 0%)." : " 요청 한도에 도달했습니다.")];
   for (const w of exhausted) {
@@ -182,23 +221,41 @@ export function formatCliFailure(provider: Provider, failure: CliFailure, quota?
 // Preserve provider rejection evidence for the footer. It never blocks a new request.
 // A successful request, the reported reset, or a short expiry removes this evidence.
 const rejected = new Map<Provider, { until: number; quota: QuotaInfo }>();
-export function rememberLimit(provider: Provider, failure: CliFailure, message: string, quota?: QuotaInfo, now = Date.now()): void {
+export function rememberLimit(
+  provider: Provider, failure: CliFailure, message: string, quota?: QuotaInfo, now = Date.now()
+): void {
   if (failure.kind !== "limit") {
     return;
   }
 
-  const known = [...failure.resetsAt, ...(quota?.windows.filter(w => w.remainingPercent <= 0).flatMap(w => w.resetsAt ? [w.resetsAt] : []) ?? [])]
-    .filter(d => Date.parse(d) > now).sort((a, b) => Date.parse(b) - Date.parse(a));
+  // 앞으로 올 복구 시각 중 가장 늦은 것.
+  const exhaustedWindows = quota?.windows.filter(w => w.remainingPercent <= 0) ?? [];
+  const known = [...failure.resetsAt, ...resetTimes(exhaustedWindows)]
+    .filter(d => Date.parse(d) > now)
+    .sort((a, b) => Date.parse(b) - Date.parse(a));
   const reset = known[0] ?? null;
   let windows: QuotaWindow[] = quota?.status === "available" ? quota.windows : [];
   if (!windows.length && failure.exhausted) {
     windows = [{ label: failure.window ?? "사용 한도", usedPercent: 100, remainingPercent: 0, resetsAt: reset }];
   }
 
-  rejected.set(provider, { until: Math.min(now + (reset ? 15 : 1) * 60000, reset ? Date.parse(reset) : Infinity),
-    quota: { status: windows.length ? "available" : "unavailable", windows, ordinaryUsageAllowed: false, message,
-      limit: { resetsAt: reset, message } } });
+  // 기억하는 시간: 복구 시각을 알면 15분(또는 복구 시각까지), 모르면 1분.
+  const until = Math.min(now + (reset ? 15 : 1) * 60000, reset ? Date.parse(reset) : Infinity);
+
+  rejected.set(provider, {
+    until,
+    quota: {
+      status: windows.length ? "available" : "unavailable",
+      windows,
+      ordinaryUsageAllowed: false,
+      message,
+      limit: { resetsAt: reset, message }
+    }
+  });
 }
+
+// 창마다 복구 시각(있는 것만).
+const resetTimes = (windows: QuotaWindow[]): string[] => windows.flatMap(w => w.resetsAt ? [w.resetsAt] : []);
 
 export function observedQuota(provider: Provider, now = Date.now()): QuotaInfo | undefined {
   const entry = rejected.get(provider);

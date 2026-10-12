@@ -109,7 +109,9 @@ const publicKey = () => process.env.MY_CIVIL3D_RELEASE_PUBLIC_KEY_FILE
   ? readFileSync(process.env.MY_CIVIL3D_RELEASE_PUBLIC_KEY_FILE, "utf8") : RELEASE_PUBLIC_KEY;
 
 // zip 하나를 확인하고 보관한다: 서명(.sig, base64)과 SHA-256(.sha256)이 맞아야 한다.
-export async function addRelease(zip: string, signature: string, expectedSha256: string, tag?: string): Promise<Release> {
+export async function addRelease(
+  zip: string, signature: string, expectedSha256: string, tag?: string
+): Promise<Release> {
   const version = zipVersion(zip);
   if (!version) {
     throw new ReleaseError("버전을 알 수 없습니다. 파일 이름이 MyCivil3DMcp-<버전>-win-x64.zip 이어야 합니다.");
@@ -130,7 +132,14 @@ export async function addRelease(zip: string, signature: string, expectedSha256:
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging, { recursive: true });
   await copyFile(zip, join(staging, file));
-  const release: Release = { version, file, sha256, size: statSync(zip).size, ...(tag ? { tag } : {}), addedAt: new Date().toISOString() };
+  const release: Release = {
+    version,
+    file,
+    sha256,
+    size: statSync(zip).size,
+    ...(tag ? { tag } : {}),
+    addedAt: new Date().toISOString()
+  };
   writeJson(join(staging, "release.json"), release);
   rmSync(target, { recursive: true, force: true });
   renameSync(staging, target);

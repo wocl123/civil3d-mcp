@@ -123,8 +123,12 @@ async function fetchBytes(url: string, maxBytes: number, absent = false): Promis
   throw new Error("GitHub 다운로드 이동 횟수 초과");
 }
 
+// 받을 수 있는 주소: github.com/<계정>/<저장소>/releases/download/v<버전>/MyCivil3DMcp-<버전>-win-x64.exe
+const ASSET_URL =
+  /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\/v\d+\.\d+\.\d+\/MyCivil3DMcp-\d+\.\d+\.\d+-win-x64\.exe$/;
+
 export async function downloadGitHubAsset(url: string, maxBytes: number): Promise<Buffer> {
-  if (!/^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\/v\d+\.\d+\.\d+\/MyCivil3DMcp-\d+\.\d+\.\d+-win-x64\.exe$/.test(url)) {
+  if (!ASSET_URL.test(url)) {
     throw new Error("GitHub 설치파일 주소 형식 오류");
   }
 

@@ -8,7 +8,13 @@ export type RemoveRequest = { targets: RemoveTarget[]; summary: string; details?
 // 선형 속성 편집(이름·설명·스타일·레이어·라벨 세트·설계속도). handle·name은 미리 볼 때의 값이라, 그 뒤 바뀌었으면 적용하지 않는다.
 // 값이 없는 속성은 그대로 둔다.
 export type AlignmentEdit = {
-  handle: string; name: string; newName?: string; description?: string; style?: string; layer?: string; labelSet?: string;
+  handle: string;
+  name: string;
+  newName?: string;
+  description?: string;
+  style?: string;
+  layer?: string;
+  labelSet?: string;
   designSpeeds?: { station: number; speed: number }[];
 };
 export type EditRequest = { edits: AlignmentEdit[]; summary: string; details: string[] };

@@ -137,7 +137,9 @@ export async function writeCentralParameters(values: Record<string, number>, ver
 }
 
 // 지금 적용되는 모든 설정값과 출처(/설정값 표시와 답변 재사용 키에 쓴다).
-export async function parameterSummary(): Promise<{ key: ParameterKey; label: string; value: string; source: string }[]> {
+export type ParameterRow = { key: ParameterKey; label: string; value: string; source: string };
+
+export async function parameterSummary(): Promise<ParameterRow[]> {
   await loadParameters();
   return (Object.keys(PARAMETERS) as ParameterKey[]).map(key => {
     const found = param(key);

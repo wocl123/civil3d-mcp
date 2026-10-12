@@ -36,7 +36,11 @@ export function registerDrawingTools(server: McpServer): void {
   server.registerTool("list_drawing_objects", {
     title: "List Model Space objects",
     description: "Read handles, types, and layers of Model Space objects, optionally filtered by exact layer name. Use a handle with get_drawing_object for details. Results are paged.",
-    inputSchema: { offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(200).default(20), layer: z.string().min(1).max(255).optional() },
+    inputSchema: {
+      offset: z.number().int().min(0).default(0),
+      limit: z.number().int().min(1).max(200).default(20),
+      layer: z.string().min(1).max(255).optional()
+    },
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async args => toolResult(await callPlugin("drawing.objects", args)));
 

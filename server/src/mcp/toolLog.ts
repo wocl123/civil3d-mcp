@@ -33,7 +33,14 @@ export function loggedServer(server: McpServer): McpServer {
           const input = clip(JSON.stringify(args[0] ?? {}), 500);
           try {
             const result = await callback(...args);
-            await logTool({ requestId, tool: name, input, ms: Date.now() - started, ok: !result?.isError, ...outputSize(result) });
+            await logTool({
+              requestId,
+              tool: name,
+              input,
+              ms: Date.now() - started,
+              ok: !result?.isError,
+              ...outputSize(result)
+            });
             return result;
           } catch (error) {
             const message = clip(error instanceof Error ? error.message : String(error), 500);

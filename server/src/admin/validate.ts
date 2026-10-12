@@ -31,7 +31,9 @@ const WORD = /^[\w.-]{1,40}$/;                               // 짧은 영문 �
 const NAME = /^[a-z][a-z_]{0,60}$/;                          // 도구 이름
 const CHECK = /^[\p{L}\p{N} ·(),.%/①-⑳_-]{1,80}$/u;           // 코드가 만든 검토 이름
 const HOUR = /^\d{4}-\d{2}-\d{2}T\d{2}$/;                     // 시각(시간 단위)
-const clean = (record: Obj): Obj => Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+// 값이 undefined인 항목을 뺀다.
+const clean = (record: Obj): Obj =>
+  Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 const oneOf = <T>(list: readonly T[], value: unknown) => list.includes(value as T) ? value as T : undefined;
 
 const APP_VERSION = /^(\d+\.\d+\.\d+|dev)$/;                  // 프로그램 버전
@@ -74,10 +76,15 @@ function recordBody(value: unknown): Obj | undefined {
         cached: item.cached === true,
         tools: Array.isArray(item.tools) ? item.tools.filter(tool => str(tool, NAME)).slice(0, 50) : [],
         usage: clean({
-          inputTokens: num(usage.inputTokens), outputTokens: num(usage.outputTokens), cachedInputTokens: num(usage.cachedInputTokens)
+          inputTokens: num(usage.inputTokens),
+          outputTokens: num(usage.outputTokens),
+          cachedInputTokens: num(usage.cachedInputTokens)
         }),
         counts: clean({
-          recorded: num(counts.recorded), candidates: num(counts.candidates), fixes: num(counts.fixes), applied: num(counts.applied)
+          recorded: num(counts.recorded),
+          candidates: num(counts.candidates),
+          fixes: num(counts.fixes),
+          applied: num(counts.applied)
         }),
         errorKind: str(item.errorKind, WORD)
       });

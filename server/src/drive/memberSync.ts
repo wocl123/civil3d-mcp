@@ -44,7 +44,9 @@ export function validOfficial(value: unknown): Official | undefined {
   return { version: item.version, publishedAt: item.publishedAt, items, parameters: item.parameters };
 }
 
-export async function memberSync(drive: DriveSettings, state: SyncState): Promise<{ sent: number; candidates: number; official?: number }> {
+export async function memberSync(
+  drive: DriveSettings, state: SyncState
+): Promise<{ sent: number; candidates: number; official?: number }> {
   const root = findDriveRoot(drive.root);
   if (!root) {
     throw new DriveError(NO_DRIVE);

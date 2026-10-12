@@ -47,12 +47,21 @@ async function credentials(endpoint: string): Promise<Credentials> {
   return fresh;
 }
 
-async function request(auth: Credentials, action: string, extra: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+async function request(
+  auth: Credentials, action: string, extra: Record<string, unknown> = {}
+): Promise<Record<string, unknown>> {
   if (!validIngestUrl(auth.endpoint)) {
     throw new Error("관리자 자동 수신 주소가 올바르지 않습니다.");
   }
 
-  const text = JSON.stringify({ schema: 1, action, installId: auth.installId, token: auth.token, appVersion: productVersion, ...extra });
+  const text = JSON.stringify({
+    schema: 1,
+    action,
+    installId: auth.installId,
+    token: auth.token,
+    appVersion: productVersion,
+    ...extra
+  });
   if (Buffer.byteLength(text) > MAX_BYTES) {
     throw new Error("자동 전송 묶음이 크기 제한을 초과했습니다.");
   }
@@ -104,7 +113,9 @@ async function request(auth: Credentials, action: string, extra: Record<string, 
   return result;
 }
 
-export async function webMemberSync(endpoint: string, state: SyncState): Promise<{ sent: number; candidates: number; official?: number }> {
+export async function webMemberSync(
+  endpoint: string, state: SyncState
+): Promise<{ sent: number; candidates: number; official?: number }> {
   const auth = await credentials(endpoint);
   if (!auth.registered) {
     await request(auth, "register");

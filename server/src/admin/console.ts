@@ -11,7 +11,12 @@ const { loadSettings, saveSettings } = await import("../data/settings.js");
 const { runSync } = await import("../sync/syncLoop.js");
 
 const settings = await loadSettings();
-settings.drive = { ...settings.drive, enabled: true, admin: true, since: settings.drive?.since ?? new Date().toISOString() };
+settings.drive = {
+  ...settings.drive,
+  enabled: true,
+  admin: true,
+  since: settings.drive?.since ?? new Date().toISOString()
+};
 if (process.env.MY_CIVIL3D_DRIVE_DIR) {
   settings.drive.root = process.env.MY_CIVIL3D_DRIVE_DIR;
 }
@@ -49,7 +54,9 @@ if (process.argv.includes("--once")) {
     return task;
   };
 
-  const clock = setInterval(() => void enqueue(sync).then(console.log, error => console.error(String(error))), 10 * 60 * 1000);
+  // 10분마다 자동 동기화(입력한 명령과 겹치지 않게 같은 대기열로 돌린다).
+  const syncInBackground = () => void enqueue(sync).then(console.log, error => console.error(String(error)));
+  const clock = setInterval(syncInBackground, 10 * 60 * 1000);
   try {
     while (true) {
       const text = (await input.question("관리자> ")).trim();

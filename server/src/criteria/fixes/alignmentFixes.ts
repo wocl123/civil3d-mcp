@@ -122,7 +122,10 @@ export function addSpiralFixes(context: CurveContext, minSpiral: number): FixOpt
   const length = ceilTo(minSpiral, step("alignment.spiralStep", 1, notes));
   const parameter = ceilTo(Math.sqrt(radius * length));
   const shift = spiralShift(radius, length);
-  const growth = curveTangent({ radius, spiral: length }, radians(delta)) - curveTangent({ radius, spiral: 0 }, radians(delta));
+  // 완화곡선을 넣으면 접선장이 얼마나 길어지는지.
+  const tangentWith = curveTangent({ radius, spiral: length }, radians(delta));
+  const tangentWithout = curveTangent({ radius, spiral: 0 }, radians(delta));
+  const growth = tangentWith - tangentWithout;
   const spiralAngle = length / radius * 180 / Math.PI;
 
   const fix: FixOption = {

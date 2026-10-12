@@ -23,7 +23,7 @@ async function alignmentOverview(alignment: string) {
   ]);
   return {
     ...overview,
-    profiles: related[0]?.profiles.map(profile => ({ name: profile.name, handle: profile.handle, type: profile.type })) ?? [],
+    profiles: related[0]?.profiles.map(({ name, handle, type }) => ({ name, handle, type })) ?? [],
     designSpeeds: speeds,
     ...(curves ? { curves } : {})
   };

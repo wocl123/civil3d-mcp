@@ -101,7 +101,14 @@ async function check(): Promise<UpdateState> {
 
       let data: Buffer | undefined;
       try {
-        data = local ? await readFile(release.path) : release.downloadUrl ? await downloadGitHubAsset(release.downloadUrl, release.size!) : await download(release.downloadId!, release.size);
+        // 보내기 폴더의 zip / GitHub 릴리스 / 드라이브 공유 링크 중 하나에서 받는다.
+        if (local) {
+          data = await readFile(release.path);
+        } else if (release.downloadUrl) {
+          data = await downloadGitHubAsset(release.downloadUrl, release.size!);
+        } else {
+          data = await download(release.downloadId!, release.size);
+        }
       } catch (error) {
         await reportLinkFailure(release);
         throw error;
@@ -141,7 +148,19 @@ async function check(): Promise<UpdateState> {
 }
 
 // 배포 중인 버전과 그 zip 위치(보내기 폴더) 또는 링크(downloadId). 없으면 undefined.
-type Published = { version?: string; sha256?: string; size?: number; minVersion?: string; path: string; downloadId?: string; publishedAt?: string; status?: string; file?: string; signature?: string; downloadUrl?: string };
+type Published = {
+  version?: string;
+  sha256?: string;
+  size?: number;
+  minVersion?: string;
+  path: string;
+  downloadId?: string;
+  publishedAt?: string;
+  status?: string;
+  file?: string;
+  signature?: string;
+  downloadUrl?: string;
+};
 
 const LINK_GRACE_MS = 60 * 60 * 1000;   // 배포 직후에는 공용 파일이 아직 올라가는 중일 수 있다
 
@@ -161,7 +180,8 @@ async function reportLinkFailure(release: Published): Promise<void> {
     return;
   }
 
-  await writeAtomic(release.status, JSON.stringify({ linkFailed: release.version, at: new Date().toISOString() }, null, 1)).catch(() => undefined);
+  const status = JSON.stringify({ linkFailed: release.version, at: new Date().toISOString() }, null, 1);
+  await writeAtomic(release.status, status).catch(() => undefined);
 }
 
 async function publishedRelease(drive: DriveSettings | undefined): Promise<Published | undefined> {
@@ -181,7 +201,12 @@ async function publishedRelease(drive: DriveSettings | undefined): Promise<Publi
 
   if (drive.admin) {
     const live = current();
-    return live && { version: live.release.version, sha256: live.release.sha256, size: live.release.size, minVersion: live.minVersion, path: releaseFile(live.release) };
+    if (!live) {
+      return live;
+    }
+
+    const { version, sha256, size } = live.release;
+    return { version, sha256, size, minVersion: live.minVersion, path: releaseFile(live.release) };
   }
 
   const root = findDriveRoot(drive.root);

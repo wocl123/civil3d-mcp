@@ -12,12 +12,18 @@ export function fixView(fix: FixOption) {
     applicable: fix.applicable,
     status: fix.status,
     ...(fix.reason ? { reason: fix.reason } : {}),
-    ...(fix.changes.length
-      ? { changes: fix.changes.map(({ property, from, to, unit }) => ({ property, ...(from !== undefined ? { from } : {}), to, unit })) }
-      : {}),
+    ...(fix.changes.length ? { changes: fix.changes.map(changeView) } : {}),
     effects: fix.effects
   };
 }
+
+// 바꿀 값 하나: 속성, 지금 값(있으면), 새 값, 단위.
+const changeView = ({ property, from, to, unit }: FixOption["changes"][number]) => ({
+  property,
+  ...(from !== undefined ? { from } : {}),
+  to,
+  unit
+});
 
 // 검토 항목들의 수정안을 위 모습으로 바꾼다.
 export const itemsView = (items: CheckItem[]) =>

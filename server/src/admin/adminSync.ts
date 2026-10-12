@@ -28,7 +28,15 @@ import { groupKey } from "./review.js";
 import { Invalid, validCandidates, validPackage, type CandidateIn } from "./validate.js";
 
 // linkFailures: 링크로 설치 파일을 받지 못해 zip을 따로 넣어 준 사용자 수(링크가 바뀌었을 수 있다)
-export type AdminResult = { sent: number; candidates: number; official: number; members: number; refused: number; linkFailures: number; problems: string[] };
+export type AdminResult = {
+  sent: number;
+  candidates: number;
+  official: number;
+  members: number;
+  refused: number;
+  linkFailures: number;
+  problems: string[];
+};
 
 const readJson = async <T>(file: string): Promise<T | undefined> => {
   try {
@@ -52,7 +60,15 @@ function addCandidate(store: AdminStore, installId: string, item: CandidateIn): 
 
 export async function adminSync(drive: DriveSettings, state: SyncState): Promise<AdminResult> {
   const store = adminStore();
-  const result: AdminResult = { sent: 0, candidates: 0, official: store.official.version, members: 0, refused: 0, linkFailures: 0, problems: [] };
+  const result: AdminResult = {
+    sent: 0,
+    candidates: 0,
+    official: store.official.version,
+    members: 0,
+    refused: 0,
+    linkFailures: 0,
+    problems: []
+  };
   const own = (await install()).installId;
 
   // 1) 이 PC의 기록과 후보
@@ -79,8 +95,18 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
   }
 
   const terms = await privateTerms();
-  const mine = (await unsentCandidates()).map(item => ({ id: item.id, body: { localId: item.id, title: blank(item.title, terms), content: blank(item.content, terms),
-    ...(item.parameter ? { parameter: item.parameter } : {}), provider: item.provider, at: item.at.slice(0, 10), localStatus: item.status } }))
+  // 이 PC의 아직 보내지 않은 후보. 개인 정보(이름·경로)는 가리고, 가린 뒤에도 남아 있으면 뺀다.
+  const toBody = (item: Awaited<ReturnType<typeof unsentCandidates>>[number]) => ({
+    localId: item.id,
+    title: blank(item.title, terms),
+    content: blank(item.content, terms),
+    ...(item.parameter ? { parameter: item.parameter } : {}),
+    provider: item.provider,
+    at: item.at.slice(0, 10),
+    localStatus: item.status
+  });
+  const mine = (await unsentCandidates())
+    .map(item => ({ id: item.id, body: toBody(item) }))
     .filter(item => !leak(JSON.stringify(item.body), terms));
   if (mine.length) {
     for (const item of validCandidates({ candidates: mine.map(entry => entry.body) })) {
@@ -123,7 +149,13 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
       continue;
     }
 
-    const member = store.members[folder.installId] ??= { installId: folder.installId, folder: folder.name, firstSeen: today(), lastSeen: today(), seen: false };
+    const member = store.members[folder.installId] ??= {
+      installId: folder.installId,
+      folder: folder.name,
+      firstSeen: today(),
+      lastSeen: today(),
+      seen: false
+    };
     member.lastSeen = today();
     if (member.blocked) {
       continue;
@@ -152,7 +184,9 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
 }
 
 // 한 사용자 폴더의 묶음·후보를 가져온다. 가져갔거나(이미 있는 것 포함) 받지 않기로 한 파일 id를 돌려준다.
-async function importFolder(store: AdminStore, folder: MemberFolder, result: AdminResult): Promise<{ packages: string[]; candidates: string[] }> {
+async function importFolder(
+  store: AdminStore, folder: MemberFolder, result: AdminResult
+): Promise<{ packages: string[]; candidates: string[] }> {
   const taken = { packages: [] as string[], candidates: [] as string[] };
   for (const name of await jsonFiles(join(folder.path, "packages"))) {
     const id = name.slice(0, -5);
@@ -219,12 +253,16 @@ async function updateSharedRelease(root: string, live: NonNullable<ReturnType<ty
   await mkdir(dir, { recursive: true });
   const info = await readJson<{ version?: string; sha256?: string }>(join(dir, "release.json"));
   const zip = join(dir, LATEST_ZIP);
-  if (info?.version === live.release.version && info.sha256 === live.release.sha256 && (await stat(zip).catch(() => undefined))?.size === live.release.size) {
+  const { version, sha256, size } = live.release;
+
+  // 이미 같은 버전이 들어 있으면 그대로 둔다.
+  const sameVersion = info?.version === version && info.sha256 === sha256;
+  if (sameVersion && (await stat(zip).catch(() => undefined))?.size === size) {
     return;
   }
 
   await pipeline(createReadStream(releaseFile(live.release)), createWriteStream(zip, { flags: "w" }));
-  await writeAtomic(join(dir, "release.json"), JSON.stringify({ version: live.release.version, sha256: live.release.sha256, size: live.release.size }, null, 1));
+  await writeAtomic(join(dir, "release.json"), JSON.stringify({ version, sha256, size }, null, 1));
 }
 
 // 링크로 받지 못했다고 알린 사용자(status.json의 linkFailed가 지금 배포 버전)인지.
@@ -234,8 +272,14 @@ async function linkFailed(folder: MemberFolder, version: string): Promise<boolea
 
 // 사용자 폴더의 admin/ 에 가져간 목록, 승인 지식, 배포 버전을 넣는다(바뀐 것만 쓴다).
 // 배포 버전: 링크(downloadId)가 있으면 작은 release.json만 넣는다. 링크가 없거나 그 사용자가 링크로 받지 못했으면 zip을 따로 넣는다.
-async function shareBack(folder: MemberFolder, store: AdminStore, live: ReturnType<typeof current>, downloadId: string | undefined,
-  taken: { packages: string[]; candidates: string[] }, result: AdminResult): Promise<void> {
+async function shareBack(
+  folder: MemberFolder,
+  store: AdminStore,
+  live: ReturnType<typeof current>,
+  downloadId: string | undefined,
+  taken: { packages: string[]; candidates: string[] },
+  result: AdminResult
+): Promise<void> {
   const dir = join(folder.path, "admin");
   const write = async (name: string, value: unknown) => {
     const text = JSON.stringify(value, null, 1);
@@ -289,5 +333,10 @@ export async function newMemberCount(drive: DriveSettings): Promise<number> {
 
   const store = adminStore();
   const own = (await install()).installId;
-  return (await findMemberFolders(root)).filter(folder => folder.installId !== own && !store.members[folder.installId]?.seen && !store.members[folder.installId]?.blocked).length;
+  const isNew = (folder: MemberFolder) => {
+    const member = store.members[folder.installId];
+    return folder.installId !== own && !member?.seen && !member?.blocked;
+  };
+
+  return (await findMemberFolders(root)).filter(isNew).length;
 }

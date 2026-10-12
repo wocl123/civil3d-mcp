@@ -252,7 +252,12 @@ export function report(store: Store, config: Config) {
     turns: turns.length,
     failedTurns,
     tools: [...tools.entries()]
-      .map(([tool, entry]) => ({ tool, calls: entry.calls, failed: entry.failed, avgMs: Math.round(entry.ms / entry.calls) }))
+      .map(([tool, entry]) => ({
+        tool,
+        calls: entry.calls,
+        failed: entry.failed,
+        avgMs: Math.round(entry.ms / entry.calls)
+      }))
       .sort((a, b) => b.failed - a.failed || b.calls - a.calls),
     kept
   };
@@ -262,9 +267,20 @@ export function report(store: Store, config: Config) {
 //   신호: 사용자가 👎를 누름(feedback), 적용한 변경을 되돌림(change undone), 변경 실패, 질문 실패(errorKind).
 //   같은 질문의 도구 호출·변경·평가를 turnId로 묶는다. 질문·답은 설치 쪽에서 가림 처리된 것이다.
 export type ProblemCase = {
-  key: string; id: string; at: string; triage?: CaseTriage; appVersion?: string; provider?: string; model?: string; errorKind?: string;
-  question?: string; answer?: string; signals: string[]; feedback: string[];
-  changes: { state: string; title?: string; labels?: string }[]; tools: string[];
+  key: string;
+  id: string;
+  at: string;
+  triage?: CaseTriage;
+  appVersion?: string;
+  provider?: string;
+  model?: string;
+  errorKind?: string;
+  question?: string;
+  answer?: string;
+  signals: string[];
+  feedback: string[];
+  changes: { state: string; title?: string; labels?: string }[];
+  tools: string[];
 };
 
 // status: new(아직 분류 안 함, 기본) / todo / done / discarded / all. 기간 제한 없음(검토자가 처리하거나 버린다).
@@ -287,7 +303,15 @@ export function problemCases(store: Store, status: CaseStatus = "new", limit = 1
     const at = String(r.at ?? "");
     if (r.type === "turn" && typeof r.id === "string") {
       const item = caseOf(installId, r.id, at);
-      Object.assign(item, { at, appVersion: r.appVersion, provider: r.provider, model: r.model, errorKind: r.errorKind, question: r.question, answer: r.answer });
+      Object.assign(item, {
+        at,
+        appVersion: r.appVersion,
+        provider: r.provider,
+        model: r.model,
+        errorKind: r.errorKind,
+        question: r.question,
+        answer: r.answer
+      });
       if (r.errorKind) {
         item.signals.push(`실패(${r.errorKind})`);
       }
@@ -299,7 +323,11 @@ export function problemCases(store: Store, status: CaseStatus = "new", limit = 1
       }
     } else if (r.type === "change" && typeof r.turnId === "string") {
       const item = caseOf(installId, r.turnId, at);
-      item.changes.push({ state: String(r.state), title: r.title as string | undefined, labels: r.labels as string | undefined });
+      item.changes.push({
+        state: String(r.state),
+        title: r.title as string | undefined,
+        labels: r.labels as string | undefined
+      });
       if (r.state === "undone") {
         item.signals.push("되돌림");
       }
@@ -312,16 +340,28 @@ export function problemCases(store: Store, status: CaseStatus = "new", limit = 1
     }
   }
 
+  // 👍만 있는 질문은 사례가 아니다. 신호는 중복을 빼고, 분류한 적 있으면 그 분류를 붙인다.
+  const withTriage = (item: ProblemCase): ProblemCase => ({
+    ...item,
+    signals: [...new Set(item.signals)],
+    ...(store.cases[item.key] ? { triage: store.cases[item.key] } : {})
+  });
+  const inStatus = (item: ProblemCase) =>
+    status === "all" || (status === "new" ? !item.triage : item.triage?.status === status);
+
   return [...cases.values()]
     .filter(item => item.signals.some(signal => signal !== "👍"))
-    .map(item => ({ ...item, signals: [...new Set(item.signals)], ...(store.cases[item.key] ? { triage: store.cases[item.key] } : {}) }))
-    .filter(item => status === "all" || (status === "new" ? !item.triage : item.triage?.status === status))
+    .map(withTriage)
+    .filter(inStatus)
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, limit);
 }
 
 // 사례 분류: todo(처리하기로 함, 분류 필수) / done(처리 끝, 고친 버전) / discard(버림: 내용 삭제) / reopen(분류 취소)
-export function decideCase(store: Store, input: { key: string; action: string; category?: string; note?: string; version?: string }): CaseTriage | undefined {
+export function decideCase(
+  store: Store,
+  input: { key: string; action: string; category?: string; note?: string; version?: string }
+): CaseTriage | undefined {
   const match = /^([a-f\d]{16}):([\w-]{8,64})$/.exec(input.key);
   if (!match) {
     throw new ReviewError("사례 키가 맞지 않습니다.");

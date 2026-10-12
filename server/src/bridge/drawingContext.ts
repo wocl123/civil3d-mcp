@@ -4,4 +4,5 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export type DrawingContext = { drawingId: string; revision: string; criteriaVersion?: string };
 const context = new AsyncLocalStorage<DrawingContext>();
 export const drawingContext = () => context.getStore();
-export const inDrawingContext = <T>(value: DrawingContext, work: () => Promise<T>): Promise<T> => context.run(value, work);
+export const inDrawingContext = <T>(value: DrawingContext, work: () => Promise<T>): Promise<T> =>
+  context.run(value, work);

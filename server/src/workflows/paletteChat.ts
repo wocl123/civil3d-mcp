@@ -136,10 +136,13 @@ export async function answerChat(provider: Provider, message: string,
       }
     });
   } catch (error) {
-    await log({ kind: "chat", drawing: scope.label, selected, tools, error: clip(error instanceof Error ? error.message : String(error), 1000) });
+    const failure = error instanceof Error ? error : new Error(String(error));
+    await log({ kind: "chat", drawing: scope.label, selected, tools, error: clip(failure.message, 1000) });
     syncSoon();
     await settleOperations(requestId);
-    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { applied: await appliedFor(requestId) });
+
+    // 실패해도 그 전에 적용한 변경은 함께 알린다(팔레트가 되돌리기 카드를 보여 줄 수 있게).
+    throw Object.assign(failure, { applied: await appliedFor(requestId) });
   }
 
   // ── 4) 답 정리와 지식 저장
@@ -158,31 +161,71 @@ export async function answerChat(provider: Provider, message: string,
   // 도면을 바꾸었거나 수정안을 낸 답은 재사용하지 않는다(다시 보여 줘도 적용되지 않고 id도 없다).
   const [applied, fixes] = await Promise.all([appliedFor(requestId), fixesFor(requestId)]);
   const after = await currentDrawingScope();
-  if (!applied.length && !fixes.length && after.drawingId === scope.drawingId && after.state === scope.state) {
-    await saveAnswer({ kind: "chat", provider, key, question, scope: scope.key, state: scope.state, drawingId: scope.drawingId, answer, usage: result.usage });
+  const drawingUnchanged = after.drawingId === scope.drawingId && after.state === scope.state;
+  if (!applied.length && !fixes.length && drawingUnchanged) {
+    await saveAnswer({
+      kind: "chat",
+      provider,
+      key,
+      question,
+      scope: scope.key,
+      state: scope.state,
+      drawingId: scope.drawingId,
+      answer,
+      usage: result.usage
+    });
   }
 
   // ── 5) 대화에 남기고, 요약·기록·동기화
-  const fixNote = fixes.length
-    ? "\n[이 답의 수정안 id] " + fixes.map(fix => `${fix.id}: ${fix.target} · ${fix.title}${fix.applicable ? "" : " (자동 적용 불가)"}`).join("; ")
-    : "";
-  const appliedNote = applied.length
-    ? "\n[도면 변경 결과] " + applied.map(entry => `${entry.state === "applied" ? "적용됨" : "결과 확인 필요"}: ${entry.labels.join(", ")}`).join("; ")
-    : "";
-  remember(conversation, { provider, question, answer: answer + appliedNote + fixNote, fixIds: fixes.map(fix => fix.id) });
+  const fixLine = (fix: (typeof fixes)[number]) =>
+    `${fix.id}: ${fix.target} · ${fix.title}${fix.applicable ? "" : " (자동 적용 불가)"}`;
+  const appliedLine = (entry: (typeof applied)[number]) =>
+    `${entry.state === "applied" ? "적용됨" : "결과 확인 필요"}: ${entry.labels.join(", ")}`;
+
+  const fixNote = fixes.length ? "\n[이 답의 수정안 id] " + fixes.map(fixLine).join("; ") : "";
+  const appliedNote = applied.length ? "\n[도면 변경 결과] " + applied.map(appliedLine).join("; ") : "";
+  remember(conversation, {
+    provider,
+    question,
+    answer: answer + appliedNote + fixNote,
+    fixIds: fixes.map(fix => fix.id)
+  });
   void compactConversation(conversation, provider);
 
   await log({
-    kind: "chat", drawing: scope.label, selected, model: await paletteModel(provider), tools, answer: clip(answer),
-    applied: applied.map(entry => entry.labels.join(", ")), fixes: fixes.map(fix => fix.id), recorded, candidates, usage: result.usage
+    kind: "chat",
+    drawing: scope.label,
+    selected,
+    model: await paletteModel(provider),
+    tools,
+    answer: clip(answer),
+    applied: applied.map(entry => entry.labels.join(", ")),
+    fixes: fixes.map(fix => fix.id),
+    recorded,
+    candidates,
+    usage: result.usage
   });
   syncSoon();
 
   return {
-    provider, requestId, answer, usage: result.usage, totals, cached: false, recorded, candidates, conversation: status(conversation),
+    provider,
+    requestId,
+    answer,
+    usage: result.usage,
+    totals,
+    cached: false,
+    recorded,
+    candidates,
+    conversation: status(conversation),
     fixes: fixes.map(fixCard),
-    applied: applied.map(entry => ({ operationId: entry.operationId, fixId: entry.fixId, state: entry.state, recheck: entry.recheck, warnings: entry.warnings, title: entry.title, target: entry.target, labels: entry.labels, kind: entry.kind }))
+    applied: applied.map(appliedCard)
   };
+}
+
+// 팔레트의 적용 결과 카드에 필요한 것만.
+function appliedCard(entry: Awaited<ReturnType<typeof appliedFor>>[number]) {
+  const { operationId, fixId, state, recheck, warnings, title, target, labels, kind } = entry;
+  return { operationId, fixId, state, recheck, warnings, title, target, labels, kind };
 }
 
 // /compact : 지금 바로 앞 대화를 요약한다.
@@ -195,5 +238,13 @@ async function compactNow(provider: Provider, conversation: string | undefined) 
 ### 요약
 ${summaryOf(conversation) ?? ""}`
     : state.turns <= 1 ? "요약할 대화가 아직 없습니다." : "요약하지 못했습니다. 대화는 그대로 이어집니다.";
-  return { provider, answer, usage: NO_USAGE, totals: getUsageTotals(provider), cached: false, recorded: [], conversation: state };
+  return {
+    provider,
+    answer,
+    usage: NO_USAGE,
+    totals: getUsageTotals(provider),
+    cached: false,
+    recorded: [],
+    conversation: state
+  };
 }

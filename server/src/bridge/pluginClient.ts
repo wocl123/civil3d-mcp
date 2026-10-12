@@ -38,7 +38,9 @@ const RETRY_DELAYS_MS = [500, 1500];
 // timeoutMs는 사용자를 기다리는 요청(폴리라인 고르기 등)만 길게 준다.
 // 요청을 보내기 전에 실패한 경우(연결 파일 없음, 연결 거부)만 연결 파일을 다시 읽고 다시 시도한다.
 // 보낸 뒤의 실패는 다시 보내지 않는다(도면 변경이 두 번 실행되면 안 된다).
-export async function callPlugin(method: BridgeMethod, params: Record<string, unknown> = {}, timeoutMs = 30000): Promise<unknown> {
+export async function callPlugin(
+  method: BridgeMethod, params: Record<string, unknown> = {}, timeoutMs = 30000
+): Promise<unknown> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await callOnce(method, params, timeoutMs);

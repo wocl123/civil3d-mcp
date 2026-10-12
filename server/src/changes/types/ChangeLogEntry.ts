@@ -12,7 +12,12 @@ export type ChangeLogEntry = {
   // 적용 결과: 바뀐 값들(before → after) 또는 새로 만든 선형, 그리고 적용 후 도면 리비전.
   result?: {
     changes?: { kind: string; at?: number; property: string; before: number; after: number }[];
-    created?: { name: string; handle: string; length: number; curves: { ip: number; radius: number; spiralLength?: number }[] };
+    created?: {
+      name: string;
+      handle: string;
+      length: number;
+      curves: { ip: number; radius: number; spiralLength?: number }[];
+    };
     revision: string;
   };
 

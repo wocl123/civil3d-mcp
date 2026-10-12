@@ -84,8 +84,12 @@ export async function track(scope: DrawingScope, items: Omit<Tracked, "id" | "la
     const now = new Date().toISOString();
     for (const item of items) {
       // 같은 값을 나중에 또 바꿨으면 앞 기록을 대신한다(AI의 마지막 값이 기준).
-      file.items = file.items.filter(old =>
-        !(old.handle === item.handle && old.property === item.property && old.curve === item.curve && old.at === item.at));
+      const sameValue = (old: typeof item) =>
+        old.handle === item.handle
+        && old.property === item.property
+        && old.curve === item.curve
+        && old.at === item.at;
+      file.items = file.items.filter(old => !sameValue(old));
       const id = hashKey(item.handle, item.property, String(item.curve ?? item.at), now).slice(0, 12);
       file.items.push({ ...item, id, lastValue: item.aiValue, createdAt: now });
     }
@@ -99,7 +103,10 @@ export async function track(scope: DrawingScope, items: Omit<Tracked, "id" | "la
 type Reading = { value?: number; outcome?: Exclude<Outcome, "modified" | "kept"> };
 
 // 객체를 찾지 못했다는 오류인지(→ 지워졌다).
-const missing = (error: unknown) => /was not found|not found\.$/i.test(error instanceof Error ? error.message : String(error));
+const missing = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /was not found|not found\.$/i.test(message);
+};
 
 // 선형: 요소를 읽어 곡선 그룹 번호로 같은 곡선을 찾는다.
 async function readAlignment(handle: string, items: Tracked[]): Promise<Map<Tracked, Reading>> {

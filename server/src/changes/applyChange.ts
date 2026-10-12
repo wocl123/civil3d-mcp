@@ -19,8 +19,12 @@ import { cancelledFix, readOperation, saveOperation, usedFix, usageFile, type Op
 
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export async function applyFix(fixId: string, offered: string[], requestId = process.env.MY_CIVIL3D_REQUEST_ID ?? "none",
-  reapplyOperation?: string) {
+export async function applyFix(
+  fixId: string,
+  offered: string[],
+  requestId = process.env.MY_CIVIL3D_REQUEST_ID ?? "none",
+  reapplyOperation?: string
+) {
   if (!offered.includes(fixId)) {
     throw new Error(`Fix ${fixId} was not offered to the user in this conversation. Show it and ask before applying.`);
   }
@@ -80,30 +84,52 @@ export async function applyFix(fixId: string, offered: string[], requestId = pro
       throw new Error("Drawing changed since the fix was calculated. Run the check again.");
     }
 
-    const operation: Operation = { operationId: randomUUID(), fixId, requestId, at: new Date().toISOString(), state: "running",
-      title: fix.title, target: fix.target, labels: fixLabels(fix), kind: fix.remove ? "delete" : fix.create ? "create" : "change",
-      drawingId: scope.drawingId!, revision: scope.state };
+    const operation: Operation = {
+      operationId: randomUUID(),
+      fixId,
+      requestId,
+      at: new Date().toISOString(),
+      state: "running",
+      title: fix.title,
+      target: fix.target,
+      labels: fixLabels(fix),
+      kind: fix.remove ? "delete" : fix.create ? "create" : "change",
+      drawingId: scope.drawingId!,
+      revision: scope.state
+    };
     // 네트워크 요청 전에 실행 사실을 남긴다. 프로세스 종료 후 불명확한 작업을 다시 실행하지 않는다.
     await saveOperation(operation);
     let result: Record<string, unknown>;
     try {
-      // 만들기 / 지우기 / 속성 바꾸기 / 값 바꾸기
-      const [method, params] = fix.create ? ["alignment.create" as const, fix.create]
-        : fix.remove ? ["drawing.delete" as const, { targets: fix.remove.targets }]
-        : fix.edit ? ["alignment.edit" as const, { edits: fix.edit.edits }]
-        : ["change.apply" as const, { changes: fix.changes.map(item => ({ kind: item.object.kind, handle: item.object.handle,
-          at: item.object.at, property: item.property, from: item.from, to: item.to })) }];
-      result = await inDrawingContext({ drawingId: scope.drawingId!, revision: scope.state }, () => callPlugin(
-        method, { ...params, operationId: operation.operationId })) as Record<string, unknown>;
+      const [method, params] = pluginRequest(fix);
+      const call = () => callPlugin(method, { ...params, operationId: operation.operationId });
+      const context = { drawingId: scope.drawingId!, revision: scope.state };
+      result = await inDrawingContext(context, call) as Record<string, unknown>;
     } catch (error) {
       const message = messageOf(error);
-      const details = error as { drawingChanged?: boolean | "unknown" };
-      const guide = { ...failureGuide(message), ...(details.drawingChanged !== undefined ? { drawingChanged: details.drawingChanged } : {}) };
+      // 플러그인이 도면이 바뀌었는지 알려 줬으면 그 값을 쓴다("unknown"이면 결과 확인 필요).
+      const { drawingChanged } = error as { drawingChanged?: boolean | "unknown" };
+      const guide = { ...failureGuide(message), ...(drawingChanged !== undefined ? { drawingChanged } : {}) };
       operation.state = guide.drawingChanged === "unknown" ? "unknown" : "rejected";
       await saveOperation(operation);
-      await logChange({ fixId, state: "failed", title: fix.title, target: fix.target, check: fix.check, labels: operation.labels, error: message });
-      return { applied: false, mutation: operation.state, operationId: operation.operationId,
-        drawingChanged: guide.drawingChanged, fix: fix.title, error: message, guide };
+      await logChange({
+        fixId,
+        state: "failed",
+        title: fix.title,
+        target: fix.target,
+        check: fix.check,
+        labels: operation.labels,
+        error: message
+      });
+      return {
+        applied: false,
+        mutation: operation.state,
+        operationId: operation.operationId,
+        drawingChanged: guide.drawingChanged,
+        fix: fix.title,
+        error: message,
+        guide
+      };
     }
 
     const revision = String(result.revision);
@@ -118,10 +144,21 @@ export async function applyFix(fixId: string, offered: string[], requestId = pro
     }
 
     const changeResult = { ...result, ...(fix.create ? { created: result } : {}), revision } as ChangeLogEntry["result"];
-    await logChange({ fixId, state: "applied", title: fix.title, target: fix.target, check: fix.check, labels: operation.labels, result: changeResult });
+    await logChange({
+      fixId,
+      state: "applied",
+      title: fix.title,
+      target: fix.target,
+      check: fix.check,
+      labels: operation.labels,
+      result: changeResult
+    });
+
+    // 바뀐 도면으로 다시 검토한다. 실패해도 적용은 그대로다.
     let recheckResult: Awaited<ReturnType<typeof recheck>> | { state: "failed"; error: string };
     try {
-      recheckResult = await inDrawingContext({ drawingId: scope.drawingId!, revision, criteriaVersion: fix.binding!.criteriaVersion }, async () => {
+      const context = { drawingId: scope.drawingId!, revision, criteriaVersion: fix.binding!.criteriaVersion };
+      recheckResult = await inDrawingContext(context, async () => {
         await trackApplied(fix, changeResult);
         return recheck(fix);
       });
@@ -138,11 +175,65 @@ export async function applyFix(fixId: string, offered: string[], requestId = pro
     }
 
     // 적용 성공은 재검토·추적·기록 실패와 무관하게 유지한다. 팔레트는 작업 ID로 되돌리기 버튼을 제공한다.
-    return { applied: true, mutation: "applied", drawingChanged: true, operationId: operation.operationId,
-      fix: fix.title, ...(fix.create ? { created: result } : fix.remove ? { deleted: result.deleted, profiles: result.profiles, profileViews: result.profileViews, corridors: result.corridors }
-      : fix.edit ? { edited: result.edited, properties: result.changes } : { changes: result.changes }),
-      undo: "팔레트의 되돌리기 버튼으로 취소할 수 있음", warnings, recheck: recheckResult };
+    return {
+      applied: true,
+      mutation: "applied",
+      drawingChanged: true,
+      operationId: operation.operationId,
+      fix: fix.title,
+      ...appliedDetails(fix, result),
+      undo: "팔레트의 되돌리기 버튼으로 취소할 수 있음",
+      warnings,
+      recheck: recheckResult
+    };
   }));
+}
+
+// 수정안 종류에 맞는 플러그인 요청: 만들기 / 지우기 / 속성 바꾸기 / 값 바꾸기
+function pluginRequest(fix: StoredFix) {
+  if (fix.create) {
+    return ["alignment.create" as const, fix.create] as const;
+  }
+
+  if (fix.remove) {
+    return ["drawing.delete" as const, { targets: fix.remove.targets }] as const;
+  }
+
+  if (fix.edit) {
+    return ["alignment.edit" as const, { edits: fix.edit.edits }] as const;
+  }
+
+  const changes = fix.changes.map(item => ({
+    kind: item.object.kind,
+    handle: item.object.handle,
+    at: item.object.at,
+    property: item.property,
+    from: item.from,
+    to: item.to
+  }));
+  return ["change.apply" as const, { changes }] as const;
+}
+
+// 적용 결과에서 수정안 종류별로 알려 줄 값.
+function appliedDetails(fix: StoredFix, result: Record<string, unknown>) {
+  if (fix.create) {
+    return { created: result };
+  }
+
+  if (fix.remove) {
+    return {
+      deleted: result.deleted,
+      profiles: result.profiles,
+      profileViews: result.profileViews,
+      corridors: result.corridors
+    };
+  }
+
+  if (fix.edit) {
+    return { edited: result.edited, properties: result.changes };
+  }
+
+  return { changes: result.changes };
 }
 
 async function recheck(fix: StoredFix) {
@@ -158,16 +249,40 @@ async function recheck(fix: StoredFix) {
     : await checkProfileCriteria({ ...input, ...(handle ? { profile: handle } : {}) });
   const items = reports.flatMap(fullItems);
   await registerFixes(items, fix.source);
-  const key = /^(곡선|경사) (\d+)/.exec(fix.target);
-  const sameTarget = fix.create || fix.edit ? items : items.filter(item => fix.targetRef
-    ? item.targetRef?.objectHandle === fix.targetRef.objectHandle && item.targetRef.kind === fix.targetRef.kind && item.targetRef.elementKey === fix.targetRef.elementKey
-    : !!key && /^(곡선|경사) (\d+)/.exec(item.target)?.[0] === key[0]);
-  const assessment = reports.every(report => report.assessment === "not_applicable") ? "not_applicable"
+  // 만들기·속성 바꾸기는 검토 항목 전체가 대상이다. 값 바꾸기는 바꾼 요소(곡선 n, 경사 n)만.
+  const wholeObject = !!(fix.create || fix.edit);
+  const sameTarget = wholeObject ? items : items.filter(item => sameElement(fix, item));
+  const otherFailures = wholeObject ? [] : items.filter(item => item.result === "fail" && !sameTarget.includes(item));
+
+  const allNotApplicable = reports.every(report => report.assessment === "not_applicable");
+  const assessment = allNotApplicable
+    ? "not_applicable"
     : assess(sameTarget, reports.some(report => report.missing.length > 0));
-  return { state: "completed" as const, assessment, target: fix.target, targetPassed: assessment === "pass",
-    targetItems: sameTarget, otherFailures: fix.create || fix.edit ? [] : items.filter(item => item.result === "fail" && !sameTarget.includes(item)),
-    summary: reports.map(report => ({ target: report.target, ...report.summary })) };
+
+  return {
+    state: "completed" as const,
+    assessment,
+    target: fix.target,
+    targetPassed: assessment === "pass",
+    targetItems: sameTarget,
+    otherFailures,
+    summary: reports.map(report => ({ target: report.target, ...report.summary }))
+  };
 }
+
+// 검토 항목이 수정안이 바꾼 요소와 같은지: 요소 참조가 있으면 그것으로, 없으면 "곡선 n"·"경사 n" 이름으로.
+function sameElement(fix: StoredFix, item: ReturnType<typeof fullItems>[number]): boolean {
+  if (fix.targetRef) {
+    return item.targetRef?.objectHandle === fix.targetRef.objectHandle
+      && item.targetRef.kind === fix.targetRef.kind
+      && item.targetRef.elementKey === fix.targetRef.elementKey;
+  }
+
+  const key = ELEMENT_NAME.exec(fix.target);
+  return !!key && ELEMENT_NAME.exec(item.target)?.[0] === key[0];
+}
+
+const ELEMENT_NAME = /^(곡선|경사) (\d+)/;
 
 // 확정([확정] 버튼): 사용자가 결과를 받아들였다. 플러그인은 되돌리기용 작업 기록을 버리고,
 // 이 작업은 더 이상 버튼으로 되돌리거나 다시 적용할 수 없다.
@@ -216,7 +331,7 @@ export async function undoOperation(operationId: string, offered: string[]) {
 
     const current = await readOperation(operationId);
     // C#이 도면 ID와 마지막 편집 리비전을 검사한다. 현재 활성 도면에 무조건 UNDO를 보내지 않는다.
-    let result: Operation & { restored?: number; skippedSteps?: string[]; linkedObjects?: number; commandsAfter?: string[] };
+    let result: Operation & UndoDetails;
     try {
       result = await callPlugin("change.undo", { operationId }) as typeof result;
     } catch (error) {
@@ -240,15 +355,46 @@ export async function undoOperation(operationId: string, offered: string[]) {
     current.revision = result.revision;
     await saveOperation(current);
     // 되돌림도 기록한다. 적용한 질문(requestId)과 이어져, 중앙에서 "적용했다가 되돌린 답"을 찾을 수 있다.
-    await logChange({ requestId: current.requestId, fixId: current.fixId, state: "undone", title: current.title, target: current.target, labels: current.labels });
+    await logChange({
+      requestId: current.requestId,
+      fixId: current.fixId,
+      state: "undone",
+      title: current.title,
+      target: current.target,
+      labels: current.labels
+    });
     // 플러그인은 작업 기록(시작~끝)과 작업 뒤 기록(끝~되돌리기)으로 작업 시작 시점까지 거슬러 올라간다.
     // 함께 되돌린 것(화면 확대·이동 등, Civil 3D가 함께 갱신한 연관 객체)을 알리고, 도면 확인을 부탁한다.
-    const skipped = result.skippedSteps?.length ?? 0;
-    const commands = [...new Set(result.commandsAfter ?? [])].slice(0, 8);
-    const message = `작업 전 상태로 되돌렸습니다${result.restored ? ` (삭제했던 객체 ${result.restored}개 복원 확인)` : ""}.` +
-      (skipped ? ` 적용 뒤의 화면 변경 등 ${skipped}단계${commands.length ? `(${commands.join(", ")})` : ""}도 함께 되돌렸습니다.` : "") +
-      (result.linkedObjects ? ` Civil 3D가 연관 객체 ${result.linkedObjects}개를 함께 갱신했습니다.` : "") +
-      " 도면이 작업 전과 같은지 확인해 주세요.";
-    return { ...current, message };
+    return { ...current, message: undoMessage(result) };
   });
+}
+
+// 플러그인이 되돌리기 결과와 함께 알려 주는 것.
+type UndoDetails = {
+  restored?: number;          // 되살린(작업에서 지웠던) 객체 수
+  skippedSteps?: string[];    // 함께 되돌린 작업 뒤 단계(화면 이동 등)
+  linkedObjects?: number;     // Civil 3D가 함께 갱신한 연관 객체 수
+  commandsAfter?: string[];   // 작업 뒤 사용자가 실행한 명령
+};
+
+function undoMessage(result: UndoDetails): string {
+  let message = "작업 전 상태로 되돌렸습니다";
+  if (result.restored) {
+    message += ` (삭제했던 객체 ${result.restored}개 복원 확인)`;
+  }
+
+  message += ".";
+
+  const skipped = result.skippedSteps?.length ?? 0;
+  if (skipped) {
+    const commands = [...new Set(result.commandsAfter ?? [])].slice(0, 8);
+    const commandList = commands.length ? `(${commands.join(", ")})` : "";
+    message += ` 적용 뒤의 화면 변경 등 ${skipped}단계${commandList}도 함께 되돌렸습니다.`;
+  }
+
+  if (result.linkedObjects) {
+    message += ` Civil 3D가 연관 객체 ${result.linkedObjects}개를 함께 갱신했습니다.`;
+  }
+
+  return message + " 도면이 작업 전과 같은지 확인해 주세요.";
 }

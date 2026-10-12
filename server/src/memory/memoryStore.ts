@@ -104,9 +104,13 @@ export async function saveAnswer(entry: Omit<CachedAnswer, "createdAt" | "lastUs
 
   const data = await load();
   const now = Date.now();
-  const others = data.answers.filter(answer =>
-    now - answer.createdAt < ANSWER_TTL_MS &&
-    !(answer.kind === entry.kind && answer.provider === entry.provider && answer.key === entry.key && answer.scope === entry.scope));
+  // 같은 답(종류·AI·키·범위가 같음)은 새 것으로 바꾸고, 기간이 지난 답은 버린다.
+  const sameAnswer = (answer: typeof entry) =>
+    answer.kind === entry.kind
+    && answer.provider === entry.provider
+    && answer.key === entry.key
+    && answer.scope === entry.scope;
+  const others = data.answers.filter(answer => now - answer.createdAt < ANSWER_TTL_MS && !sameAnswer(answer));
 
   data.answers = [{ ...entry, createdAt: now, lastUsedAt: now, hits: 0 }, ...others]
     .sort((a, b) => b.lastUsedAt - a.lastUsedAt)

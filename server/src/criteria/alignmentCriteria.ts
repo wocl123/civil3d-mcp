@@ -205,7 +205,9 @@ async function checkAlignmentCriteriaInternal(given: AlignmentCriteriaInput): Pr
 
   // 8) 제21조① 편경사 변화 지점들 중 가장 큰 차로 경사를 최대 편경사와 비교한다.
   const slopes = superelevation
-    .flatMap(item => [item.leftOutLanePercent, item.leftInLanePercent, item.rightInLanePercent, item.rightOutLanePercent])
+    .flatMap(item => [
+      item.leftOutLanePercent, item.leftInLanePercent, item.rightInLanePercent, item.rightOutLanePercent
+    ])
     .filter((value): value is number => typeof value === "number")
     .map(Math.abs);
 

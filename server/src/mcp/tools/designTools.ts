@@ -55,7 +55,9 @@ export function registerDesignTools(server: McpServer): void {
         .describe("Design speed in km/h, only when the user gives one; it is checked against roadClass and region."),
       area: z.enum(SUPERELEVATION_AREAS).optional().describe("Area for the maximum superelevation (제21조), needed in 지방지역."),
       maxSuperelevation: z.union([z.literal(6), z.literal(7), z.literal(8)]).optional(),
-      radii: z.array(z.object({ ip: z.number().int().min(1), radius: z.number().min(0).max(100000) })).max(100).optional()
+      radii: z.array(z.object({ ip: z.number().int().min(1), radius: z.number().min(0).max(100000) }))
+        .max(100)
+        .optional()
         .describe("Radii the user asked for by IP number; 0 leaves an angle point without a curve.")
     },
     annotations: { readOnlyHint: true, openWorldHint: false }

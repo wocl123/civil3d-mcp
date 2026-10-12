@@ -125,7 +125,8 @@ async function syncOnce(): Promise<SyncResult> {
       }
 
       const done = await adminSync(drive, state);
-      Object.assign(result, { sent: done.sent, candidates: done.candidates, official: done.official, members: done.members, linkFailures: done.linkFailures, problems: done.problems });
+      const { sent, candidates, official, members, linkFailures, problems } = done;
+      Object.assign(result, { sent, candidates, official, members, linkFailures, problems });
     } else if (team?.ingestUrl) {
       Object.assign(result, await webMemberSync(team.ingestUrl, state));
     } else {

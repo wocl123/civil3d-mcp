@@ -50,7 +50,12 @@ export function parseCodexQuota(value: unknown): QuotaInfo {
       ? new Date(window.resetsAt * 1000).toISOString()
       : null;
 
-    windows.push({ label, usedPercent: clampPercent(used), remainingPercent: clampPercent(100 - used), resetsAt: reset });
+    windows.push({
+      label,
+      usedPercent: clampPercent(used),
+      remainingPercent: clampPercent(100 - used),
+      resetsAt: reset
+    });
   }
 
   return {

@@ -16,9 +16,21 @@ import { adminDir } from "./adminConfig.js";
 // 사용자 하나 = 그 사람이 관리자와 공유한 드라이브 폴더 하나.
 //   seen: 관리자가 /중앙 사용자 로 본 적 있음(팔레트 아래 줄의 "새 사용자 n"에서 빠진다)
 //   blocked: 관리자가 차단함(그 폴더에서 더 가져오지도, 나눠 주지도 않는다)
-export type MemberRow = { installId: string; folder: string; firstSeen: string; lastSeen: string; seen: boolean; blocked?: boolean };
+export type MemberRow = {
+  installId: string;
+  folder: string;
+  firstSeen: string;
+  lastSeen: string;
+  seen: boolean;
+  blocked?: boolean;
+};
 
-export type StoredRecord = { installId: string; packageId: string; receivedAt: string; record: Record<string, unknown> };
+export type StoredRecord = {
+  installId: string;
+  packageId: string;
+  receivedAt: string;
+  record: Record<string, unknown>;
+};
 
 export type CandidateRow = {
   id: string;            // S-1, S-2, ...
@@ -45,7 +57,12 @@ export type OfficialItem = {
   from: string;          // 승인한 검토 항목 id (G-… 또는 P-…)
 };
 
-export type Official = { version: number; publishedAt?: string; items: OfficialItem[]; parameters: Record<string, number> };
+export type Official = {
+  version: number;
+  publishedAt?: string;
+  items: OfficialItem[];
+  parameters: Record<string, number>;
+};
 
 // 문제 사례 분류(검토자). 키: "<설치ID>:<질문 id>".
 //   todo: 처리하기로 함(분류·메모) / done: 처리 끝(고친 버전) / discarded: 버림(내용은 기록에서 지움)
@@ -164,7 +181,11 @@ export class AdminStore {
       return typeof id === "string" ? `${row.installId}:${id}` : undefined;
     };
 
-    const hasContent = (row: StoredRecord) => CONTENT_FIELDS.some(field => field in (row.record as Record<string, unknown>));
+    const hasContent = (row: StoredRecord) => {
+      const record = row.record as Record<string, unknown>;
+      return CONTENT_FIELDS.some(field => field in record);
+    };
+
     const target = (row: StoredRecord) => {
       const key = keyOf(row);
       return !!key && hasContent(row) && match(key);

@@ -65,7 +65,8 @@ export function registerAlignmentEditTools(server: McpServer): void {
     }
 
     // 계획 저장: 미리 본 값 그대로 적용한다.
-    const value = (item: PreviewItem, property: string) => item.changes.find(change => change.property === property)?.to;
+    const value = (item: PreviewItem, property: string) =>
+      item.changes.find(change => change.property === property)?.to;
     const edits: AlignmentEdit[] = changing.map(item => ({
       handle: item.handle, name: item.name,
       ...(value(item, "이름") !== undefined ? { newName: value(item, "이름") } : {}),
