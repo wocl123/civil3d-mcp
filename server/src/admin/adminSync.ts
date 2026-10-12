@@ -9,14 +9,14 @@
 import { createReadStream, createWriteStream } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { install } from "../data/install.js";
 import type { DriveSettings } from "../data/settings.js";
 import { privateTerms } from "../data/terms.js";
 import { writeAtomic } from "../files.js";
 import { applyOfficial } from "../knowledge/centralKnowledge.js";
 import { markSubmitted, unsentCandidates } from "../knowledge/candidateStore.js";
-import { findDriveRoot, findMemberFolders, jsonFiles, LATEST_ZIP, RELEASE_FOLDER, STATUS_FILE, type MemberFolder } from "../drive/driveFolders.js";
+import { datedJsonFiles, findDriveRoot, findMemberFolders, jsonFiles, LATEST_ZIP, RELEASE_FOLDER, STATUS_FILE, type MemberFolder } from "../drive/driveFolders.js";
 import { DriveError, NO_DRIVE } from "../drive/memberSync.js";
 import { outboxDir } from "../sync/exporter.js";
 import { blank, leak } from "../sync/privacy.js";
@@ -188,8 +188,8 @@ async function importFolder(
   store: AdminStore, folder: MemberFolder, result: AdminResult
 ): Promise<{ packages: string[]; candidates: string[] }> {
   const taken = { packages: [] as string[], candidates: [] as string[] };
-  for (const name of await jsonFiles(join(folder.path, "packages"))) {
-    const id = name.slice(0, -5);
+  for (const name of await datedJsonFiles(join(folder.path, "packages"))) {
+    const id = basename(name, ".json");
     if (store.packages.has(id)) {
       taken.packages.push(id);
       continue;
@@ -220,8 +220,8 @@ async function importFolder(
     taken.packages.push(id);
   }
 
-  for (const name of await jsonFiles(join(folder.path, "candidates"))) {
-    const id = name.slice(0, -5);
+  for (const name of await datedJsonFiles(join(folder.path, "candidates"))) {
+    const id = basename(name, ".json");
     const body = await readJson(join(folder.path, "candidates", name));
     if (body === undefined) {
       continue;

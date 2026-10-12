@@ -38,6 +38,13 @@ function intakeChild(folder, name) {
   intakeAssertPrivate(folder);
   return intakeAssertPrivate(intakeOne(folder.getFoldersByName(name)) || folder.createFolder(name));
 }
+// 받은 묶음·후보는 한국 날짜별 폴더에 둔다(packages/2026-10-12/...).
+// 날짜는 보낸 쪽이 만든 시각(시간 단위)으로 정한다: 응답을 잃고 다음 날 다시 보내도 같은 폴더에 가서 중복되지 않는다.
+function intakeDay(hourText) {
+  const sent = /^\d{4}-\d{2}-\d{2}T\d{2}$/.test(hourText || '') ? Date.parse(hourText + ':00:00Z') : NaN;
+  const time = Number.isFinite(sent) ? sent : Date.now();
+  return new Date(time + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
 function intakeRoot() {
   const id = PropertiesService.getScriptProperties().getProperty('MC_INTAKE_ROOT_ID');
   if (!id) intakeFail('ADMIN_SETUP_REQUIRED');
@@ -159,7 +166,8 @@ function intakeHandle(body, bytes) {
     const checked = validPackage(body.package, body.installId);
     if (checked.records.length !== body.package.records.length) intakeFail('INVALID_RECORD');
     const digest = intakeHash(JSON.stringify(body.package));
-    const packages = intakeChild(folder, 'packages'), name = checked.packageId + '.json';
+    const day = intakeDay(body.package.createdAt);
+    const packages = intakeChild(intakeChild(folder, 'packages'), day), name = checked.packageId + '.json';
     const existing = intakeRead(packages, name);
     if (existing && existing.transportSha256 !== digest) intakeFail('PACKAGE_CONFLICT');
     if (!existing) intakeWrite(packages, name, { schema: 1, packageId: checked.packageId, installId: body.installId,
@@ -168,8 +176,10 @@ function intakeHandle(body, bytes) {
   }
   if (body.action === 'candidates') {
     const checked = validCandidates(body);
-    const candidates = intakeChild(folder, 'candidates');
+    const all = intakeChild(folder, 'candidates');
     checked.forEach(item => {
+      const day = /^\d{4}-\d{2}-\d{2}$/.test(item.at || '') ? item.at : intakeDay('');
+      const candidates = intakeChild(all, day);
       const name = item.localId + '.json', existing = intakeRead(candidates, name);
       if (existing && JSON.stringify(existing) !== JSON.stringify(item)) intakeFail('CANDIDATE_CONFLICT');
       if (!existing) intakeWrite(candidates, name, item);

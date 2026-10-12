@@ -111,8 +111,10 @@ try {
   assert.match(first.error, /수신 확인/);
   assert.equal(readdirSync(pending).length, 1, 'unconfirmed data remains local');
   const member = join(intakeRoot, 'MyCivil3DMcp-' + installId), packages = join(member, 'packages');
-  assert.equal(readdirSync(packages).length, 1, 'server stored data before reply was lost');
-  const storedText = readFileSync(join(packages, readdirSync(packages)[0]), 'utf8');
+  const storedPackages = () => readdirSync(packages, { recursive: true }).filter(name => name.endsWith('.json'));
+  assert.equal(storedPackages().length, 1, 'server stored data before reply was lost');
+  assert.match(storedPackages()[0], /^\d{4}-\d{2}-\d{2}[\\/]/, 'packages are kept in date folders');
+  const storedText = readFileSync(join(packages, storedPackages()[0]), 'utf8');
   assert.ok(!storedText.includes('Secret.dwg') && !storedText.includes('C:\\Users'));
   assert.equal(JSON.parse(storedText).records.length, 3);
   const credentials = JSON.parse(readFileSync(join(data, 'state', 'ingest-credentials.json'), 'utf8'));
@@ -125,7 +127,7 @@ try {
   assert.equal(retried.sent, 1);
   assert.equal(retried.candidates, 1);
   assert.equal(readdirSync(pending).length, 0);
-  assert.equal(readdirSync(packages).length, 1, 'retry did not duplicate stored package');
+  assert.equal(storedPackages().length, 1, 'retry did not duplicate stored package');
   assert.equal((await unsentCandidates()).length, 0);
   assert.equal((await loadState()).sentPackages, 1);
   const status = await centralCommand('/중앙');

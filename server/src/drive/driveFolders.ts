@@ -111,3 +111,16 @@ export async function findMemberFolders(root: string): Promise<MemberFolder[]> {
 
 // 폴더 안 JSON 파일 이름들(없으면 빈 목록).
 export const jsonFiles = async (folder: string) => (await readdir(folder).catch(() => [] as string[])).filter(name => name.endsWith(".json")).sort();
+
+// 받은 파일 목록: 바로 아래 파일(예전 형식)과 날짜 폴더(2026-10-12/) 안의 파일. 경로는 folder 기준.
+export async function datedJsonFiles(folder: string): Promise<string[]> {
+  const found = await jsonFiles(folder);
+  const days = (await readdir(folder).catch(() => [] as string[])).filter(name => /^\d{4}-\d{2}-\d{2}$/.test(name)).sort();
+  for (const day of days) {
+    for (const name of await jsonFiles(join(folder, day))) {
+      found.push(join(day, name));
+    }
+  }
+
+  return found;
+}
