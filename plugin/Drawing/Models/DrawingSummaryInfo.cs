@@ -13,7 +13,8 @@ public sealed record DrawingSummaryInfo(string DrawingName, int ObjectCount,
 /// 관망: First = 관 수, Second = 구조물 수 / 코리더: First = 기준선 수 /
 /// 부지: First = 구획 수, Second = 선형 수.
 /// </summary>
-public sealed record CivilCounts(int Alignments, IReadOnlyDictionary<string, int> AlignmentTypes, int Profiles, int CogoPoints,
+public sealed record CivilCounts(
+    int Alignments, IReadOnlyDictionary<string, int> AlignmentTypes, int Profiles, int CogoPoints,
     IReadOnlyList<NamedCount> Surfaces, int SurfaceCount, IReadOnlyList<NamedCount> PipeNetworks, int PipeNetworkCount,
     IReadOnlyList<NamedCount> Corridors, int CorridorCount, IReadOnlyList<NamedCount> Sites, int SiteCount);
 

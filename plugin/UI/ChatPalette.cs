@@ -21,9 +21,16 @@ internal static class ChatPalette
             };
             _panel = new ChatPanel();
             // 질문을 입력하는 동안에만 키보드 포커스를 팔레트에 붙잡아 둔다(아니면 도면으로 돌아감).
-            _panel.InputFocusChanged += focused => { if (_palette is not null) _palette.KeepFocus = focused; };
+            _panel.InputFocusChanged += focused =>
+            {
+                if (_palette is not null)
+                {
+                    _palette.KeepFocus = focused;
+                }
+            };
             _palette.AddVisual("AI", _panel);
         }
+
         // 열 때마다 AI 상태·사용량을 새로 읽는다.
         _palette.Visible = true;
         _ = _panel!.RefreshAllAsync();

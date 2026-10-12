@@ -24,8 +24,14 @@ internal sealed record ChatTheme(Brush Background, Brush Surface, Brush Border, 
     // COLORTHEME: 0 = 어두운 테마, 1 = 밝은 테마. 못 읽으면 어두운 테마.
     public static ChatTheme Current()
     {
-        try { return ReadColorTheme() == 1 ? Light : Dark; }
-        catch (System.Exception) { return Dark; }
+        try
+        {
+            return ReadColorTheme() == 1 ? Light : Dark;
+        }
+        catch (System.Exception)
+        {
+            return Dark;
+        }
     }
 
     // 따로 둔 이유: AutoCAD 런타임이 없을 때 위의 try 안에서 실패하게 하려고(인라인 금지).

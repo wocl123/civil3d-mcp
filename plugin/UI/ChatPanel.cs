@@ -19,35 +19,69 @@ namespace MyCivil3DMcp.Plugin;
 internal sealed class ChatPanel : UserControl
 {
     private static readonly string[] Providers = ["claude", "codex", "gemini"];
+    private static readonly TimeSpan DefaultSessionLength = TimeSpan.FromMinutes(30);
+
+    // 수정안 카드에 자주 쓰는 안내
+    private const string AppliedMessage = "도면 변경이 적용되었습니다.";
+    private const string UnknownMessage = "변경 결과 확인이 필요합니다.";
+    private const string DeletedMessage = "삭제했습니다. 복원하려면 되돌리기를 눌러 주세요.";
+    private const string RecheckFailedMessage =
+        "변경이 적용되었습니다. 재검토에 실패하여 기준 만족 여부는 확인하지 못했습니다. 취소하려면 되돌리기를 눌러 주세요.";
+
     private readonly ChatTheme _theme = ChatTheme.Current();
+
+    // ── 화면 부품
     private readonly StackPanel _messages = new() { Margin = new Thickness(10, 6, 10, 10) };
     private readonly ScrollViewer _scroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     private readonly TextBox _input = new();
     private readonly TextBlock _placeholder = new();
     private readonly Button _send = new() { Content = "보내기" };
     private readonly TextBlock _usage = new() { TextWrapping = TextWrapping.Wrap };
+
     // 아래 줄 오른쪽의 작은 버전 표시. 업데이트가 준비되면 "v0.1.0 → 0.1.1"만 보이고 설명은 툴팁에 둔다.
-    private readonly TextBlock _version = new() { FontSize = 10.5, Margin = new Thickness(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _version = new()
+    {
+        FontSize = 10.5,
+        Margin = new Thickness(6, 0, 6, 0),
+        VerticalAlignment = VerticalAlignment.Center
+    };
+
     // 관리자 PC: 아직 보지 않은 사용자 폴더가 있으면 "새 사용자 2"(누르면 /중앙 사용자). 1분마다 새로 읽는다.
-    private readonly TextBlock _members = new() { FontSize = 10.5, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
-        Cursor = Cursors.Hand, Visibility = Visibility.Collapsed, ToolTip = "보내기 폴더를 공유한 새 사용자가 있습니다. 눌러서 목록을 봅니다." };
+    private readonly TextBlock _members = new()
+    {
+        FontSize = 10.5,
+        Margin = new Thickness(6, 0, 0, 0),
+        VerticalAlignment = VerticalAlignment.Center,
+        Cursor = Cursors.Hand,
+        Visibility = Visibility.Collapsed,
+        ToolTip = "보내기 폴더를 공유한 새 사용자가 있습니다. 눌러서 목록을 봅니다."
+    };
+
     private readonly DispatcherTimer _statusClock = new() { Interval = TimeSpan.FromMinutes(1) };
     private int _memberCount;
+
+    // ── AI 선택과 세션
     private readonly Dictionary<string, Button> _chips = new();
     private readonly Dictionary<string, string> _states = Providers.ToDictionary(name => name, _ => "unchecked");
+
     // 준비된 AI마다 세션이 끝나는 시각과 세션 길이(서비스가 알려 줌).
     // 쓰면 시간이 처음부터 다시 시작되고, 안 쓰면 시간이 다 됐을 때 풀린다.
     private readonly Dictionary<string, DateTime> _sessionEnds = new();
     private readonly Dictionary<string, TimeSpan> _sessionLengths = new();
     private readonly DispatcherTimer _sessionClock = new() { Interval = TimeSpan.FromSeconds(1) };
     private string? _selected;
+
+    // ── 대화 상태
     // 이 대화의 id. 서비스는 이 id로 최근 대화를 찾아 질문과 함께 AI에 보낸다.
     private string _conversation = Guid.NewGuid().ToString("N");
     private bool _busy;
     private bool _changing;
     private readonly List<Action> _refreshChangeButtons = new();
+
     // 수정안 id → 그 카드를 적용 결과로 고쳐 쓰는 함수.
     private readonly Dictionary<string, Action<JsonNode>> _cards = new();
+
+    // ── 사용량 줄
     private string _lastUsage = "이번 —";
     private string _totalUsage = "누적 —";
     private string _quota = "한도 —";
@@ -62,9 +96,17 @@ internal sealed class ChatPanel : UserControl
         Foreground = _theme.Text;
         Background = _theme.Background;
 
+        // 제목 / AI 선택 / 대화(남는 높이) / 입력 / 사용량
         Grid layout = new();
-        foreach (GridLength height in new[] { GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto })
+        GridLength[] rows =
+        [
+            GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto
+        ];
+        foreach (GridLength height in rows)
+        {
             layout.RowDefinitions.Add(new RowDefinition { Height = height });
+        }
+
         Content = layout;
 
         Add(layout, Header(), 0);
@@ -76,6 +118,7 @@ internal sealed class ChatPanel : UserControl
 
         AddNotice("AI를 고른 뒤 열린 도면에 대해 물어보세요. 도면은 수정안에 동의할 때만 바뀌며 Ctrl+Z로 되돌릴 수 있습니다.");
         UpdateControls();
+
         _sessionClock.Tick += (_, _) => TickSessions();
         _sessionClock.Start();
         _statusClock.Tick += async (_, _) => await RefreshVersionAsync();
@@ -87,50 +130,97 @@ internal sealed class ChatPanel : UserControl
     {
         double? left = session?["expiresInMs"]?.GetValue<double>();
         double? length = session?["sessionMs"]?.GetValue<double>();
-        if (left is null) { _sessionEnds.Remove(name); return; }
+
+        if (left is null)
+        {
+            _sessionEnds.Remove(name);
+            return;
+        }
+
         _sessionEnds[name] = DateTime.UtcNow.AddMilliseconds(left.Value);
-        if (length is not null) _sessionLengths[name] = TimeSpan.FromMilliseconds(length.Value);
+
+        if (length is not null)
+        {
+            _sessionLengths[name] = TimeSpan.FromMilliseconds(length.Value);
+        }
     }
 
     // 1초마다: 보이는 시간을 줄이고, 시간이 다 된 AI는 풀어 준다.
     private void TickSessions()
     {
-        if (_sessionEnds.Count == 0) return;
+        if (_sessionEnds.Count == 0)
+        {
+            return;
+        }
+
         foreach ((string name, DateTime end) in _sessionEnds.ToList())
         {
-            if (DateTime.UtcNow < end || _states[name] != "ready") continue;
+            if (DateTime.UtcNow < end || _states[name] != "ready")
+            {
+                continue;
+            }
+
             // 답을 쓰는 중이면 세션을 유지한다. 끝나면 서비스가 늘려 준다.
-            if (_busy && name == _selected) continue;
+            if (_busy && name == _selected)
+            {
+                continue;
+            }
+
             _sessionEnds.Remove(name);
             _states[name] = "unchecked";
+
             if (name == _selected)
             {
                 _selected = null;
-                int minutes = (int)Math.Round((_sessionLengths.TryGetValue(name, out TimeSpan length) ? length : TimeSpan.FromMinutes(30)).TotalMinutes);
+
+                TimeSpan length = _sessionLengths.GetValueOrDefault(name, DefaultSessionLength);
+                int minutes = (int)Math.Round(length.TotalMinutes);
                 AddNotice($"{Display(name)}를 {minutes}분 동안 쓰지 않아 세션이 풀렸습니다. 다시 누르면 로그인을 확인하고 이어서 씁니다.");
                 UpdateControls();
             }
         }
+
         UpdateChips();
     }
 
     // 남은 시간 글("29:41").
     private string SessionLeft(string name)
     {
-        if (!_sessionEnds.TryGetValue(name, out DateTime end)) return "";
+        if (!_sessionEnds.TryGetValue(name, out DateTime end))
+        {
+            return "";
+        }
+
         TimeSpan left = end - DateTime.UtcNow;
-        if (left < TimeSpan.Zero) left = TimeSpan.Zero;
+        if (left < TimeSpan.Zero)
+        {
+            left = TimeSpan.Zero;
+        }
+
         return $" · {(int)left.TotalMinutes}:{left.Seconds:00}";
     }
 
     // 팔레트를 열 때: AI 상태와 사용량을 새로 읽는다.
     public async Task RefreshAllAsync()
     {
-        if (_busy) return;
+        if (_busy)
+        {
+            return;
+        }
+
         NodeService.Start();
-        if (NodeService.LastError is not null) AddNotice(NodeService.LastError, error: true);
+        if (NodeService.LastError is not null)
+        {
+            AddNotice(NodeService.LastError, error: true);
+        }
+
         await RefreshProvidersAsync();
-        if (_selected is not null) await RefreshUsageAsync(_selected, refreshQuota: false);
+
+        if (_selected is not null)
+        {
+            await RefreshUsageAsync(_selected, refreshQuota: false);
+        }
+
         await RefreshVersionAsync();
         ShowSharingNoticeOnce();
     }
@@ -140,14 +230,24 @@ internal sealed class ChatPanel : UserControl
     {
         try
         {
-            string flag = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "MyCivil3DMcp", "data", "state", "sharing-notice-shown");
-            if (System.IO.File.Exists(flag)) return;
-            AddNotice("안내: 질문과 답변은 결과 품질 개선을 위해 내 구글 드라이브의 보내기 폴더를 거쳐 관리자에게 전송됩니다(폴더를 관리자와 공유했을 때). 도면 파일 이름·경로·사용자 이름은 가려서 보냅니다.");
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string flag = System.IO.Path.Combine(localAppData, "MyCivil3DMcp", "data", "state", "sharing-notice-shown");
+            if (System.IO.File.Exists(flag))
+            {
+                return;
+            }
+
+            AddNotice(
+                "안내: 질문과 답변은 결과 품질 개선을 위해 내 구글 드라이브의 보내기 폴더를 거쳐 관리자에게 전송됩니다" +
+                "(폴더를 관리자와 공유했을 때). 도면 파일 이름·경로·사용자 이름은 가려서 보냅니다.");
+
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(flag)!);
             System.IO.File.WriteAllText(flag, DateTime.Now.ToString("o"));
         }
-        catch (System.Exception) { }
+        catch (System.Exception)
+        {
+            // 안내 표시 기록에 실패하면 다음에 한 번 더 보일 뿐이다.
+        }
     }
 
     // 프로그램 버전과 자동 업데이트 상태(서비스가 드라이브의 배포 버전을 보고, 새 버전을 받아 두면 Civil 3D를 끌 때 설치한다).
@@ -161,22 +261,48 @@ internal sealed class ChatPanel : UserControl
             string state = data["state"]?.ToString() ?? "";
             bool required = data["required"]?.GetValue<bool>() == true;
             int members = data["newMembers"]?.GetValue<int>() ?? 0;
+
+            // 관리자 PC: 새 사용자 폴더
             _members.Text = $"새 사용자 {members}";
             _members.Visibility = members > 0 ? Visibility.Visible : Visibility.Collapsed;
-            if (members > _memberCount) AddNotice($"새 사용자 폴더가 {members}개 있습니다. 아래 줄의 '새 사용자'를 누르거나 /중앙 사용자 를 입력하세요.");
+            if (members > _memberCount)
+            {
+                AddNotice($"새 사용자 폴더가 {members}개 있습니다. 아래 줄의 '새 사용자'를 누르거나 /중앙 사용자 를 입력하세요.");
+            }
+
             _memberCount = members;
-            _version.Text = current == "dev" ? "개발판" : state == "scheduled" && latest is not null ? $"v{current} → {latest}" : $"v{current}";
-            _version.Foreground = state == "scheduled" ? _theme.Ready : _theme.Muted;
+
+            // 버전 표시
+            bool scheduled = state == "scheduled";
+            if (current == "dev")
+            {
+                _version.Text = "개발판";
+            }
+            else if (scheduled && latest is not null)
+            {
+                _version.Text = $"v{current} → {latest}";
+            }
+            else
+            {
+                _version.Text = $"v{current}";
+            }
+
+            _version.Foreground = scheduled ? _theme.Ready : _theme.Muted;
+
+            string requiredNote = required ? " 이 버전은 꼭 필요한 업데이트입니다." : "";
             _version.ToolTip = state switch
             {
-                "scheduled" => $"새 버전 {latest}을 받아 두었습니다. Civil 3D를 끄면 자동으로 설치됩니다." + (required ? " 이 버전은 꼭 필요한 업데이트입니다." : ""),
+                "scheduled" => $"새 버전 {latest}을 받아 두었습니다. Civil 3D를 끄면 자동으로 설치됩니다." + requiredNote,
                 "latest" => "최신 버전입니다.",
                 "offline" => "구글 드라이브를 쓰지 않거나 관리자가 아직 배포 버전을 넣지 않아 업데이트를 확인하지 않습니다.",
                 "failed" => "업데이트 확인 실패: " + (data["message"]?.ToString() ?? ""),
                 _ => "개발 폴더에서 실행 중입니다(자동 업데이트 없음)."
             };
         }
-        catch (System.Exception) { _version.Text = ""; }
+        catch (System.Exception)
+        {
+            _version.Text = "";
+        }
     }
 
     // ── 화면 구성
@@ -184,32 +310,45 @@ internal sealed class ChatPanel : UserControl
     private UIElement Header()
     {
         DockPanel header = new() { Margin = new Thickness(12, 10, 10, 4), LastChildFill = true };
-        Button clear = SmallButton("새 대화", "대화를 지우고 새로 시작합니다. AI는 앞의 대화를 잊고, 도면 지식과 저장된 답변은 그대로입니다.");
+
+        Button clear = SmallButton(
+            "새 대화", "대화를 지우고 새로 시작합니다. AI는 앞의 대화를 잊고, 도면 지식과 저장된 답변은 그대로입니다.");
         clear.Click += (_, _) => StartNewConversation();
         DockPanel.SetDock(clear, Dock.Right);
         header.Children.Add(clear);
+
         header.Children.Add(new TextBlock
         {
-            Text = "My Civil 3D AI", FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center
+            Text = "My Civil 3D AI",
+            FontSize = 14,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
         });
+
         return header;
     }
 
     private UIElement ProviderRow()
     {
         UniformGrid row = new() { Rows = 1, Margin = new Thickness(10, 2, 10, 6) };
+
         foreach (string name in Providers)
         {
             Button chip = new()
             {
-                Margin = new Thickness(2), Padding = new Thickness(6, 5, 6, 5), Cursor = Cursors.Hand,
-                HorizontalContentAlignment = HorizontalAlignment.Left, BorderThickness = new Thickness(1.5)
+                Margin = new Thickness(2),
+                Padding = new Thickness(6, 5, 6, 5),
+                Cursor = Cursors.Hand,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                BorderThickness = new Thickness(1.5),
+                Template = FlatTemplate()
             };
-            chip.Template = FlatTemplate();
             chip.Click += async (_, _) => await ChooseAsync(name);
+
             _chips[name] = chip;
             row.Children.Add(chip);
         }
+
         UpdateChips();
         return row;
     }
@@ -220,28 +359,37 @@ internal sealed class ChatPanel : UserControl
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+        // 입력칸
         _input.AcceptsReturn = true;
         _input.TextWrapping = TextWrapping.Wrap;
         _input.MinHeight = 38;
-        _input.ToolTip = "Enter 보내기 · Shift+Enter 줄바꿈 · /compact 대화 요약 · /후보 지식 후보 검토";
         _input.MaxHeight = 120;
+        _input.ToolTip = "Enter 보내기 · Shift+Enter 줄바꿈 · /compact 대화 요약 · /후보 지식 후보 검토";
         _input.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         _input.Padding = new Thickness(6, 6, 6, 6);
         _input.Background = _theme.Surface;
         _input.Foreground = _theme.Text;
         _input.CaretBrush = _theme.Text;
         _input.BorderBrush = _theme.Border;
+
         _input.PreviewKeyDown += async (_, e) =>
         {
-            if (e.Key != Key.Enter || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
+            bool sendKey = e.Key == Key.Enter && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+            if (!sendKey)
+            {
+                return;
+            }
+
             e.Handled = true;
             await SendAsync();
         };
         _input.TextChanged += (_, _) => UpdateControls();
+
         // 팔레트가 포커스를 잡고 있지 않으면 Civil 3D가 키 입력을 명령줄로 가져간다.
         _input.GotKeyboardFocus += (_, _) => InputFocusChanged?.Invoke(true);
         _input.LostKeyboardFocus += (_, _) => InputFocusChanged?.Invoke(false);
 
+        // 입력칸이 비었을 때 보이는 안내 글
         _placeholder.Foreground = _theme.Muted;
         _placeholder.Margin = new Thickness(9, 8, 6, 0);
         _placeholder.IsHitTestVisible = false;
@@ -253,6 +401,7 @@ internal sealed class ChatPanel : UserControl
         Grid.SetColumn(inputHost, 0);
         row.Children.Add(inputHost);
 
+        // 보내기(답을 기다리는 중에는 중지)
         _send.Margin = new Thickness(6, 0, 0, 0);
         _send.Padding = new Thickness(12, 6, 12, 6);
         _send.VerticalAlignment = VerticalAlignment.Bottom;
@@ -264,40 +413,76 @@ internal sealed class ChatPanel : UserControl
         {
             if (_busy)
             {
-                try { await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/chat/cancel", new { conversation = _conversation }); }
-                catch (System.Exception ex) { AddNotice("중지 요청 실패: " + ex.Message, error: true); }
+                await CancelAnswerAsync();
             }
-            else await SendAsync();
+            else
+            {
+                await SendAsync();
+            }
         };
         Grid.SetColumn(_send, 1);
         row.Children.Add(_send);
+
         return row;
+    }
+
+    private async Task CancelAnswerAsync()
+    {
+        try
+        {
+            await PaletteApiClient.RequestAsync(
+                HttpMethod.Post, "/api/chat/cancel", new { conversation = _conversation });
+        }
+        catch (System.Exception ex)
+        {
+            AddNotice("중지 요청 실패: " + ex.Message, error: true);
+        }
     }
 
     private UIElement Footer()
     {
         DockPanel footer = new() { Margin = new Thickness(12, 0, 10, 8) };
+
         Button refresh = SmallButton("↻", "계정 사용 한도를 새로 읽습니다.");
-        refresh.Click += async (_, _) => { if (_selected is not null) await RefreshUsageAsync(_selected, refreshQuota: true); };
+        refresh.Click += async (_, _) =>
+        {
+            if (_selected is not null)
+            {
+                await RefreshUsageAsync(_selected, refreshQuota: true);
+            }
+        };
         DockPanel.SetDock(refresh, Dock.Right);
         footer.Children.Add(refresh);
+
         _version.Foreground = _theme.Muted;
         DockPanel.SetDock(_version, Dock.Right);
         footer.Children.Add(_version);
+
         _members.Foreground = _theme.Ready;
         _members.MouseLeftButtonUp += async (_, _) =>
         {
-            if (_busy) return;
-            if (_selected is null) { AddNotice("AI를 하나 고른 뒤 /중앙 사용자 를 입력하세요."); return; }
+            if (_busy)
+            {
+                return;
+            }
+
+            if (_selected is null)
+            {
+                AddNotice("AI를 하나 고른 뒤 /중앙 사용자 를 입력하세요.");
+                return;
+            }
+
             _input.Text = "/중앙 사용자";
             await SendAsync();
         };
         DockPanel.SetDock(_members, Dock.Right);
         footer.Children.Add(_members);
+
         _usage.Foreground = _theme.Muted;
         _usage.FontSize = 11.5;
         _usage.VerticalAlignment = VerticalAlignment.Center;
         footer.Children.Add(_usage);
+
         UpdateFooter();
         return footer;
     }
@@ -307,34 +492,35 @@ internal sealed class ChatPanel : UserControl
     // AI 버튼을 눌렀을 때: 준비됐으면 고르고, 아니면 설치·로그인을 물어본다.
     private async Task ChooseAsync(string name)
     {
-        if (_busy) return;
+        if (_busy)
+        {
+            return;
+        }
+
         // 누를 때마다 다시 확인한다. 방금 설치·로그인한 CLI도 바로 잡힌다.
         if (_states[name] != "ready")
         {
-            SetBusy(true);
-            try
-            {
-                JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/provider/check", new { provider = name });
-                _states[name] = data["state"]?.ToString() ?? "unauthenticated";
-                ReadSession(name, data["session"]);
-            }
-            catch (System.Exception ex) { AddNotice("인증 확인 실패: " + ex.Message, error: true); }
-            finally { SetBusy(false); }
+            await CheckProviderAsync(name);
+
             if (_states[name] == "missing")
             {
                 AskSetup(name, "install",
-                    $"{Display(name)}가 이 PC에 설치되어 있지 않습니다. 설치할까요?\n설치 창이 열리고, 설치가 끝나면 로그인까지 이어 갑니다.");
+                    $"{Display(name)}가 이 PC에 설치되어 있지 않습니다. 설치할까요?\n" +
+                    "설치 창이 열리고, 설치가 끝나면 로그인까지 이어 갑니다.");
                 UpdateChips();
                 return;
             }
+
             if (_states[name] != "ready")
             {
                 AskSetup(name, "login",
-                    $"{Display(name)} 로그인이 확인되지 않았습니다. 로그인할까요?\n로그인 창이 열리고 브라우저에서 계정으로 로그인합니다. (터미널에서 {LoginCommand(name)}를 직접 실행해도 됩니다.)");
+                    $"{Display(name)} 로그인이 확인되지 않았습니다. 로그인할까요?\n" +
+                    $"로그인 창이 열리고 브라우저에서 계정으로 로그인합니다. (터미널에서 {LoginCommand(name)}를 직접 실행해도 됩니다.)");
                 UpdateChips();
                 return;
             }
         }
+
         _selected = name;
         UpdateChips();
         UpdateControls();
@@ -342,83 +528,151 @@ internal sealed class ChatPanel : UserControl
         _input.Focus();
     }
 
+    private async Task CheckProviderAsync(string name)
+    {
+        SetBusy(true);
+        try
+        {
+            JsonNode data = await PaletteApiClient.RequestAsync(
+                HttpMethod.Post, "/api/provider/check", new { provider = name });
+            _states[name] = data["state"]?.ToString() ?? "unauthenticated";
+            ReadSession(name, data["session"]);
+        }
+        catch (System.Exception ex)
+        {
+            AddNotice("인증 확인 실패: " + ex.Message, error: true);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
     // 질문 보내기: 진행 상황과 답 글자를 오는 대로 보여 주고, 끝나면 사용량·적용 내역을 붙인다.
     private async Task SendAsync()
     {
         string question = _input.Text.Trim();
-        if (_busy || _selected is null || question.Length == 0) return;
+        if (_busy || _selected is null || question.Length == 0)
+        {
+            return;
+        }
+
         string provider = _selected;
+
         // 질문하면 세션 시간이 처음부터 다시 시작된다(서비스도 똑같이 한다).
-        if (_sessionLengths.TryGetValue(provider, out TimeSpan sessionLength)) _sessionEnds[provider] = DateTime.UtcNow + sessionLength;
+        if (_sessionLengths.TryGetValue(provider, out TimeSpan sessionLength))
+        {
+            _sessionEnds[provider] = DateTime.UtcNow + sessionLength;
+        }
+
         AddBubble(question, fromUser: true);
         _input.Clear();
         (Border answer, TextBlock meta, Button copy) = AddAnswer("", Display(provider));
+
         // AI가 일하는 동안: 무엇을 하는지와 걸린 시간, 그다음 오는 대로 답 글자.
         TextBlock status = new() { Foreground = _theme.Muted, FontSize = 11.5 };
         TextBox draft = SelectableText("", _theme.Text);
         draft.Visibility = Visibility.Collapsed;
         answer.Child = new StackPanel { Children = { status, draft } };
+
         string step = "생각하는 중";
         Stopwatch clock = Stopwatch.StartNew();
-        void ShowStatus() => status.Text = $"{step} · {clock.Elapsed.TotalSeconds:0}초 · 답변 중에는 도면 편집이 잠깁니다";
+        void ShowStatus() =>
+            status.Text = $"{step} · {clock.Elapsed.TotalSeconds:0}초 · 답변 중에는 도면 편집이 잠깁니다";
+
         DispatcherTimer ticker = new() { Interval = TimeSpan.FromSeconds(1) };
         ticker.Tick += (_, _) => ShowStatus();
         ShowStatus();
         ticker.Start();
         SetBusy(true);
+
+        // 오는 대로: 적용 내역은 카드로, 진행 상황은 상태 줄로, 답 글자는 초안에 붙인다.
+        void OnEvent(JsonNode item)
+        {
+            string? type = item["type"]?.ToString();
+
+            if (type == "changes")
+            {
+                foreach (JsonNode? change in item["applied"] as JsonArray ?? [])
+                {
+                    if (change is not null)
+                    {
+                        AddAppliedNote(change);
+                    }
+                }
+
+                return;
+            }
+
+            string? text = item["text"]?.ToString();
+            if (text is null)
+            {
+                return;
+            }
+
+            if (type == "progress")
+            {
+                step = text;
+            }
+            else
+            {
+                step = "답변 쓰는 중";
+                draft.Visibility = Visibility.Visible;
+                draft.AppendText(text);
+                ScrollToEnd();
+            }
+
+            ShowStatus();
+        }
+
         // AI가 일하는 동안 AI가 읽는 도면이 바뀌면 안 된다(DrawingGuard).
         DrawingGuard.Begin();
         try
         {
-            JsonNode data = await PaletteApiClient.StreamAsync("/api/chat/stream", new { provider, message = question, conversation = _conversation }, item =>
-            {
-                if (item["type"]?.ToString() == "changes")
-                {
-                    foreach (JsonNode? change in item["applied"] as JsonArray ?? [])
-                        if (change is not null) AddAppliedNote(change);
-                    return;
-                }
-                string? text = item["text"]?.ToString();
-                if (text is null) return;
-                if (item["type"]?.ToString() == "progress") step = text;
-                else
-                {
-                    step = "답변 쓰는 중";
-                    draft.Visibility = Visibility.Visible;
-                    draft.AppendText(text);
-                    ScrollToEnd();
-                }
-                ShowStatus();
-            });
+            var body = new { provider, message = question, conversation = _conversation };
+            JsonNode data = await PaletteApiClient.StreamAsync("/api/chat/stream", body, OnEvent);
             ticker.Stop();
             ReadSession(provider, data["session"]);
+
+            // 답 본문과 복사·👎 버튼
             string text = data["answer"]?.ToString() ?? "답변이 없습니다.";
             answer.Child = MarkdownView.Render(text, _theme, ForwardWheel);
             copy.Tag = text;
             copy.Visibility = Visibility.Visible;
+
             if (data["requestId"]?.ToString() is { } requestId && copy.Parent is Panel answerFooter)
+            {
                 answerFooter.Children.Add(FeedbackButton(requestId));
+            }
+
+            // 답 아래 한 줄과 사용량 줄
             bool cached = data["cached"]?.GetValue<bool>() == true;
-            int recorded = (data["recorded"] as JsonArray)?.Count ?? 0;
-            int candidates = (data["candidates"] as JsonArray)?.Count ?? 0;
-            string tokens = cached
-                ? "저장된 답변 재사용 · 토큰 0"
-                : "입력 " + Tokens(data["usage"]?["inputTokens"]) + " · 출력 " + Tokens(data["usage"]?["outputTokens"]);
-            int summarized = data["conversation"]?["summarized"]?.GetValue<int>() ?? 0;
-            // 답 아래 한 줄: AI · 토큰 · 걸린 시간 · 기록한 지식 · 지식 후보 · 요약한 대화
-            meta.Text = $"{Display(provider)} · {tokens}"
-                + (cached ? "" : $" · {clock.Elapsed.TotalSeconds:0}초")
-                + (recorded > 0 ? $" · 도면 지식 {recorded}건 기록" : "")
-                + (candidates > 0 ? $" · 지식 후보 {candidates}건 (/후보)" : "")
-                + (summarized > 0 ? $" · 앞 대화 {summarized}개 요약됨" : "");
+            meta.Text = AnswerMeta(provider, data, cached, clock.Elapsed);
             _lastUsage = cached ? "이번 0" : "이번 " + Tokens(data["usage"]?["inputTokens"]);
             _totalUsage = Totals(data["totals"]);
             UpdateFooter();
+
+            // 수정안 카드와 적용 내역
             foreach (JsonNode? fix in data["fixes"] as JsonArray ?? [])
-                if (fix is not null) AddChangeCard(fix, false);
+            {
+                if (fix is not null)
+                {
+                    AddChangeCard(fix, false);
+                }
+            }
+
             foreach (JsonNode? change in data["applied"] as JsonArray ?? [])
-                if (change is not null) AddAppliedNote(change);
-            if (!cached) _ = RefreshUsageAsync(provider, refreshQuota: true);
+            {
+                if (change is not null)
+                {
+                    AddAppliedNote(change);
+                }
+            }
+
+            if (!cached)
+            {
+                _ = RefreshUsageAsync(provider, refreshQuota: true);
+            }
         }
         catch (System.Exception ex)
         {
@@ -435,16 +689,57 @@ internal sealed class ChatPanel : UserControl
         }
     }
 
+    // 답 아래 한 줄: AI · 토큰 · 걸린 시간 · 기록한 지식 · 지식 후보 · 요약한 대화
+    private static string AnswerMeta(string provider, JsonNode data, bool cached, TimeSpan elapsed)
+    {
+        int recorded = (data["recorded"] as JsonArray)?.Count ?? 0;
+        int candidates = (data["candidates"] as JsonArray)?.Count ?? 0;
+        int summarized = data["conversation"]?["summarized"]?.GetValue<int>() ?? 0;
+
+        string tokens = cached
+            ? "저장된 답변 재사용 · 토큰 0"
+            : "입력 " + Tokens(data["usage"]?["inputTokens"]) + " · 출력 " + Tokens(data["usage"]?["outputTokens"]);
+
+        string text = $"{Display(provider)} · {tokens}";
+
+        if (!cached)
+        {
+            text += $" · {elapsed.TotalSeconds:0}초";
+        }
+
+        if (recorded > 0)
+        {
+            text += $" · 도면 지식 {recorded}건 기록";
+        }
+
+        if (candidates > 0)
+        {
+            text += $" · 지식 후보 {candidates}건 (/후보)";
+        }
+
+        if (summarized > 0)
+        {
+            text += $" · 앞 대화 {summarized}개 요약됨";
+        }
+
+        return text;
+    }
+
     // 새 대화: 화면을 비우고 새 대화 id를 쓴다.
     private void StartNewConversation()
     {
-        if (_busy) return;
+        if (_busy)
+        {
+            return;
+        }
+
         string previous = _conversation;
         _conversation = Guid.NewGuid().ToString("N");
         _messages.Children.Clear();
         _refreshChangeButtons.Clear();
         _cards.Clear();
         AddNotice("새 대화를 시작합니다.");
+
         // 서비스는 몇 시간 뒤 옛 대화를 스스로 잊는다. 이건 조금 더 일찍 비우는 것뿐.
         _ = PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/conversation/clear", new { conversation = previous })
             .ContinueWith(_ => { }, TaskScheduler.Default);
@@ -458,15 +753,29 @@ internal sealed class ChatPanel : UserControl
         try
         {
             JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Get, "/api/providers");
+
             foreach (JsonNode? item in data["providers"]?.AsArray() ?? [])
-                if (item?["provider"]?.ToString() is { } name && _states.ContainsKey(name))
+            {
+                if (item?["provider"]?.ToString() is not { } name || !_states.ContainsKey(name))
                 {
-                    _states[name] = item["state"]?.ToString() ?? "unchecked";
-                    ReadSession(name, item["session"]);
+                    continue;
                 }
+
+                _states[name] = item["state"]?.ToString() ?? "unchecked";
+                ReadSession(name, item["session"]);
+            }
         }
-        catch (System.Exception ex) { AddNotice("AI 상태 확인 실패: " + ex.Message, error: true); }
-        if (_selected is not null && _states[_selected] != "ready") _selected = null;
+        catch (System.Exception ex)
+        {
+            AddNotice("AI 상태 확인 실패: " + ex.Message, error: true);
+        }
+
+        // 고른 AI가 준비되지 않았으면 풀고, 고른 것이 없으면 준비된 첫 AI를 고른다.
+        if (_selected is not null && _states[_selected] != "ready")
+        {
+            _selected = null;
+        }
+
         _selected ??= Providers.FirstOrDefault(name => _states[name] == "ready");
         UpdateChips();
         UpdateControls();
@@ -478,41 +787,94 @@ internal sealed class ChatPanel : UserControl
         try
         {
             JsonNode usage = await PaletteApiClient.RequestAsync(HttpMethod.Get, "/api/usage?provider=" + provider);
-            if (_selected == provider) _totalUsage = Totals(usage["totals"]);
-            UpdateFooter();
-            JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Get,
-                "/api/quota?provider=" + provider + (refreshQuota ? "&refresh=1" : ""));
-            if (_selected != provider) return;
-            JsonNode? quota = data["quota"];
-            if (quota?["limit"] is JsonNode limit)
-                _quota = (limit["message"]?.ToString() ?? "사용 한도에 도달했습니다.").Split('\n')[0]
-                    + (DateTimeOffset.TryParse(limit["resetsAt"]?.ToString(), out DateTimeOffset recovery)
-                        ? $" · 복구 예정 {recovery.ToLocalTime():MM/dd HH:mm}" : " · 복구 시각 확인 불가");
-            else if (quota?["status"]?.ToString() != "available")
-                _quota = "한도 정보 없음";
-            else
+            if (_selected == provider)
             {
-                IEnumerable<string> windows = (quota["windows"]?.AsArray() ?? []).Select(QuotaWindowText);
-                _quota = (quota["ordinaryUsageAllowed"]?.ToString() == "false" ? "사용 제한됨 · " : "") +
-                    "남은 한도 " + string.Join(" · ", windows);
+                _totalUsage = Totals(usage["totals"]);
             }
+
+            UpdateFooter();
+
+            string query = "/api/quota?provider=" + provider + (refreshQuota ? "&refresh=1" : "");
+            JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Get, query);
+            if (_selected != provider)
+            {
+                return;
+            }
+
+            _quota = QuotaText(data["quota"]);
         }
-        catch (System.Exception) { _quota = "한도 조회 실패"; }
+        catch (System.Exception)
+        {
+            _quota = "한도 조회 실패";
+        }
+
         UpdateFooter();
+    }
+
+    // 한도 한 줄: 한도에 걸렸으면 복구 예정 시각, 아니면 남은 한도(창마다).
+    private static string QuotaText(JsonNode? quota)
+    {
+        if (quota?["limit"] is JsonNode limit)
+        {
+            string message = (limit["message"]?.ToString() ?? "사용 한도에 도달했습니다.").Split('\n')[0];
+
+            if (DateTimeOffset.TryParse(limit["resetsAt"]?.ToString(), out DateTimeOffset recovery))
+            {
+                return message + $" · 복구 예정 {recovery.ToLocalTime():MM/dd HH:mm}";
+            }
+
+            return message + " · 복구 시각 확인 불가";
+        }
+
+        if (quota?["status"]?.ToString() != "available")
+        {
+            return "한도 정보 없음";
+        }
+
+        IEnumerable<string> windows = (quota["windows"]?.AsArray() ?? []).Select(QuotaWindowText);
+        string restricted = quota["ordinaryUsageAllowed"]?.ToString() == "false" ? "사용 제한됨 · " : "";
+        return restricted + "남은 한도 " + string.Join(" · ", windows);
     }
 
     private static string QuotaWindowText(JsonNode? window)
     {
-        double remaining = double.TryParse(window?["remainingPercent"]?.ToString(), System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out double value) ? value : 0;
-        string percent = remaining <= 0 ? "0" : remaining < 0.1 ? "<0.1" : remaining.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+        string? text = window?["remainingPercent"]?.ToString();
+        bool parsed = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value);
+        double remaining = parsed ? value : 0;
+
+        string percent;
+        if (remaining <= 0)
+        {
+            percent = "0";
+        }
+        else if (remaining < 0.1)
+        {
+            percent = "<0.1";
+        }
+        else
+        {
+            percent = remaining.ToString("0.#", CultureInfo.InvariantCulture);
+        }
+
         string result = $"{window?["label"]} {percent}%";
+
         if (DateTimeOffset.TryParse(window?["resetsAt"]?.ToString(), out DateTimeOffset reset))
         {
-            DateTimeOffset local = reset.ToLocalTime();
-            result += reset > DateTimeOffset.UtcNow ? $" · {(remaining <= 0 ? "복구" : "재설정")} {local:MM/dd HH:mm}" : " · 재설정 확인 필요";
+            if (reset > DateTimeOffset.UtcNow)
+            {
+                string word = remaining <= 0 ? "복구" : "재설정";
+                result += $" · {word} {reset.ToLocalTime():MM/dd HH:mm}";
+            }
+            else
+            {
+                result += " · 재설정 확인 필요";
+            }
         }
-        else if (remaining <= 0) result += " · 복구 시각 확인 불가";
+        else if (remaining <= 0)
+        {
+            result += " · 복구 시각 확인 불가";
+        }
+
         return result;
     }
 
@@ -523,13 +885,16 @@ internal sealed class ChatPanel : UserControl
     {
         Border bubble = new()
         {
-            CornerRadius = new CornerRadius(10), Padding = new Thickness(10, 6, 10, 7),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(10, 6, 10, 7),
             Margin = fromUser ? new Thickness(48, 6, 0, 2) : new Thickness(0, 6, 48, 2),
             HorizontalAlignment = fromUser ? HorizontalAlignment.Right : HorizontalAlignment.Left,
             Background = fromUser ? _theme.UserBubble : _theme.AssistantBubble,
-            BorderBrush = _theme.Border, BorderThickness = fromUser ? new Thickness(0) : new Thickness(1),
+            BorderBrush = _theme.Border,
+            BorderThickness = fromUser ? new Thickness(0) : new Thickness(1),
             Child = SelectableText(text, fromUser ? _theme.OnAccent : _theme.Text)
         };
+
         _messages.Children.Add(bubble);
         ScrollToEnd();
     }
@@ -539,25 +904,36 @@ internal sealed class ChatPanel : UserControl
     {
         Border bubble = new()
         {
-            CornerRadius = new CornerRadius(10), Padding = new Thickness(10, 7, 10, 8),
-            Margin = new Thickness(0, 6, 12, 2), HorizontalAlignment = HorizontalAlignment.Left,
-            Background = _theme.AssistantBubble, BorderBrush = _theme.Border, BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(10, 7, 10, 8),
+            Margin = new Thickness(0, 6, 12, 2),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Background = _theme.AssistantBubble,
+            BorderBrush = _theme.Border,
+            BorderThickness = new Thickness(1),
             Child = SelectableText(text, _theme.Muted)
         };
         _messages.Children.Add(bubble);
-        Button copy = new()
-        {
-            Content = "복사", ToolTip = "답변을 복사합니다. 표는 엑셀에 붙여 넣을 수 있는 형태로 복사됩니다.",
-            FontSize = 11, Padding = new Thickness(6, 0, 6, 1), Cursor = Cursors.Hand, Visibility = Visibility.Collapsed,
-            Background = Brushes.Transparent, Foreground = _theme.Muted, BorderBrush = _theme.Border,
-            BorderThickness = new Thickness(1), Template = FlatTemplate(), Margin = new Thickness(8, 0, 0, 0)
-        };
+
+        Button copy = TinyButton("복사", "답변을 복사합니다. 표는 엑셀에 붙여 넣을 수 있는 형태로 복사됩니다.");
+        copy.Padding = new Thickness(6, 0, 6, 1);
+        copy.Visibility = Visibility.Collapsed;
+        copy.Margin = new Thickness(8, 0, 0, 0);
         copy.Click += (_, _) => CopyAnswer(copy);
-        TextBlock line = new() { Text = meta, Foreground = _theme.Muted, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+
+        TextBlock line = new()
+        {
+            Text = meta,
+            Foreground = _theme.Muted,
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
         StackPanel footer = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 0, 0, 4) };
         footer.Children.Add(line);
         footer.Children.Add(copy);
         _messages.Children.Add(footer);
+
         ScrollToEnd();
         return (bubble, line, copy);
     }
@@ -566,213 +942,458 @@ internal sealed class ChatPanel : UserControl
     private UIElement FeedbackButton(string requestId)
     {
         StackPanel host = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 0, 0) };
-        Button bad = new()
-        {
-            Content = "👎", ToolTip = "답이 이상하면 눌러 주세요. 질문과 답이 개선 자료로 쓰입니다.",
-            FontSize = 11, Padding = new Thickness(5, 0, 5, 1), Cursor = Cursors.Hand,
-            Background = Brushes.Transparent, Foreground = _theme.Muted, BorderBrush = _theme.Border,
-            BorderThickness = new Thickness(1), Template = FlatTemplate()
-        };
+
+        Button bad = TinyButton("👎", "답이 이상하면 눌러 주세요. 질문과 답이 개선 자료로 쓰입니다.");
+        bad.Padding = new Thickness(5, 0, 5, 1);
         host.Children.Add(bad);
+
         bad.Click += (_, _) =>
         {
-            TextBox reason = new() { Width = 200, FontSize = 11, Margin = new Thickness(0, 0, 4, 0), ToolTip = "무엇이 이상했나요? (선택, 비워도 됨)" };
-            Button send = new()
+            TextBox reason = new()
             {
-                Content = "보내기", FontSize = 11, Padding = new Thickness(6, 0, 6, 1), Cursor = Cursors.Hand,
-                Background = Brushes.Transparent, Foreground = _theme.Muted, BorderBrush = _theme.Border,
-                BorderThickness = new Thickness(1), Template = FlatTemplate()
+                Width = 200,
+                FontSize = 11,
+                Margin = new Thickness(0, 0, 4, 0),
+                ToolTip = "무엇이 이상했나요? (선택, 비워도 됨)"
             };
+            Button send = TinyButton("보내기", null);
+            send.Padding = new Thickness(6, 0, 6, 1);
+
             async Task Send()
             {
                 send.IsEnabled = false;
                 try
                 {
-                    await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/feedback", new { requestId, reason = reason.Text });
+                    await PaletteApiClient.RequestAsync(
+                        HttpMethod.Post, "/api/feedback", new { requestId, reason = reason.Text });
+
                     host.Children.Clear();
-                    host.Children.Add(new TextBlock { Text = "의견을 보냈습니다", FontSize = 11, Foreground = _theme.Muted, VerticalAlignment = VerticalAlignment.Center });
+                    host.Children.Add(new TextBlock
+                    {
+                        Text = "의견을 보냈습니다",
+                        FontSize = 11,
+                        Foreground = _theme.Muted,
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
                 }
-                catch (System.Exception) { send.IsEnabled = true; send.Content = "다시 보내기"; }
+                catch (System.Exception)
+                {
+                    send.IsEnabled = true;
+                    send.Content = "다시 보내기";
+                }
             }
+
             send.Click += async (_, _) => await Send();
-            reason.KeyDown += async (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; await Send(); } };
+            reason.KeyDown += async (_, e) =>
+            {
+                if (e.Key != Key.Enter)
+                {
+                    return;
+                }
+
+                e.Handled = true;
+                await Send();
+            };
+
             host.Children.Clear();
             host.Children.Add(reason);
             host.Children.Add(send);
             reason.Focus();
         };
+
         return host;
     }
 
     private static void CopyAnswer(Button copy)
     {
-        if (copy.Tag is not string text) return;
+        if (copy.Tag is not string text)
+        {
+            return;
+        }
+
         try
         {
             Clipboard.SetText(MarkdownView.PlainText(text));
             copy.Content = "복사됨";
         }
-        // 다른 프로그램이 잠깐 클립보드를 잡고 있을 수 있다.
-        catch (System.Runtime.InteropServices.COMException) { copy.Content = "복사 실패"; }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // 다른 프로그램이 잠깐 클립보드를 잡고 있을 수 있다.
+            copy.Content = "복사 실패";
+        }
     }
 
-    private void ForwardWheel(MouseWheelEventArgs e) => _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset - e.Delta / 3.0);
+    private void ForwardWheel(MouseWheelEventArgs e) =>
+        _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset - e.Delta / 3.0);
 
     // 수정안과 적용 결과는 동일한 카드로 보여 준다. 버튼은 AI 비용 없이 로컬 API를 호출한다.
     private void AddAppliedNote(JsonNode change) => AddChangeCard(change, true);
 
+    // 버튼: 적용 전에는 [적용하기] (삭제 계획은 [진행]/[취소]).
+    //       작업이 끝나면 [되돌리기]/[확정].
+    //         [확정]: 도면은 그대로 두고 되돌리기용 작업 기록을 정리한다. 카드는 끝난다.
+    //       되돌린 뒤: 값 변경은 [다시 적용]. 삭제는 버튼 없이 끝난다(다시 지우려면 새로 요청 → 새 목록 확인).
+    //       같은 이름의 버튼이 상태에 따라 "확정"과 "다시 실행"을 오가면 안 된다(되돌린 삭제가 다시 실행되던 문제).
     private void AddChangeCard(JsonNode change, bool applied)
     {
         string? fixId = change["fixId"]?.ToString();
         string? operationId = change["operationId"]?.ToString();
-        if (fixId is null) return;
+        if (fixId is null)
+        {
+            return;
+        }
+
         // AI가 대화로 적용한 결과는 그 계획 카드를 고쳐 쓴다(같은 카드에 [되돌리기]·[확정]이 나타난다).
         if (_cards.TryGetValue(fixId, out Action<JsonNode>? update))
         {
-            if (applied) update(change);
+            if (applied)
+            {
+                update(change);
+            }
+
             return;
         }
+
         string state = applied ? change["state"]?.ToString() ?? "applied" : "planned";
         bool applicable = applied || change["applicable"]?.GetValue<bool>() == true;
-        string conversation = _conversation;
-        StackPanel body = new();
-        body.Children.Add(new TextBlock { Text = change["title"]?.ToString() ?? "도면 수정안", FontWeight = FontWeights.SemiBold, Foreground = _theme.Text });
-        foreach (JsonNode? label in change["labels"] as JsonArray ?? [])
-            body.Children.Add(new TextBlock { Text = "• " + label, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
-        TextBlock status = new() { Text = state == "applied" ? "도면 변경이 적용되었습니다." : state == "unknown" ? "변경 결과 확인이 필요합니다." : change["reason"]?.ToString() ?? "수정안을 확인한 뒤 적용해 주세요.", TextWrapping = TextWrapping.Wrap, Foreground = _theme.Muted, Margin = new Thickness(0, 4, 0, 4) };
-        // 커밋 뒤 재검토 실패는 적용 실패가 아니다. 되돌리기 버튼은 계속 제공한다.
-        if (applied && state == "applied" && change["recheck"]?["state"]?.ToString() == "failed")
-            status.Text = "변경이 적용되었습니다. 재검토에 실패하여 기준 만족 여부는 확인하지 못했습니다. 취소하려면 되돌리기를 눌러 주세요.";
-        body.Children.Add(status);
-        // 버튼: 적용 전에는 [적용하기] (삭제 계획은 [진행]/[취소]).
-        //       작업이 끝나면 [되돌리기]/[확정].
-        //         [확정]: 도면은 그대로 두고 되돌리기용 작업 기록을 정리한다. 카드는 끝난다.
-        //       되돌린 뒤: 값 변경은 [다시 적용]. 삭제는 버튼 없이 끝난다(다시 지우려면 새로 요청 → 새 목록 확인).
-        //       같은 이름의 버튼이 상태에 따라 "확정"과 "다시 실행"을 오가면 안 된다(되돌린 삭제가 다시 실행되던 문제).
         bool deleting = change["kind"]?.ToString() == "delete";
-        if (deleting && state == "planned") status.Text = "위 객체가 함께 삭제되거나 영향을 받습니다. 진행할까요?";
-        if (deleting && state == "applied") status.Text = "삭제했습니다. 복원하려면 되돌리기를 눌러 주세요.";
-        StackPanel buttons = new() { Orientation = Orientation.Horizontal };
+        string conversation = _conversation;
+
+        // ── 카드 본문: 제목, 항목들, 상태 줄
+        StackPanel body = new();
+        body.Children.Add(new TextBlock
+        {
+            Text = change["title"]?.ToString() ?? "도면 수정안",
+            FontWeight = FontWeights.SemiBold,
+            Foreground = _theme.Text
+        });
+
+        foreach (JsonNode? label in change["labels"] as JsonArray ?? [])
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = "• " + label,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 0)
+            });
+        }
+
+        TextBlock status = new()
+        {
+            Text = InitialCardStatus(change, applied, state, deleting),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = _theme.Muted,
+            Margin = new Thickness(0, 4, 0, 4)
+        };
+        body.Children.Add(status);
+
+        // ── 버튼
         Button apply = SmallButton("", "");
         Button cancel = SmallButton("취소", "삭제하지 않습니다. 이 계획은 다시 적용되지 않습니다.");
         Button undo = SmallButton("되돌리기", "이 작업 이후 다른 편집이 없을 때 적용 취소");
-        apply.Margin = cancel.Margin = undo.Margin = new Thickness(0, 0, 8, 0);
-        buttons.Children.Add(undo); buttons.Children.Add(apply); buttons.Children.Add(cancel);
+        apply.Margin = new Thickness(0, 0, 8, 0);
+        cancel.Margin = new Thickness(0, 0, 8, 0);
+        undo.Margin = new Thickness(0, 0, 8, 0);
+
+        StackPanel buttons = new() { Orientation = Orientation.Horizontal };
+        buttons.Children.Add(undo);
+        buttons.Children.Add(apply);
+        buttons.Children.Add(cancel);
         body.Children.Add(buttons);
+
+        // 상태에 맞게 버튼 글·툴팁·활성·보임을 다시 정한다.
         void Refresh()
         {
-            bool done = operationId is not null && state is "applied" or "undone" or "unknown";
-            apply.Content = state == "applied" ? "확정" : state == "undone" ? "다시 적용" : deleting ? "진행" : "적용하기";
-            apply.ToolTip = state == "applied" ? "도면은 그대로 두고 이 결과로 확정합니다. 이후에는 버튼으로 되돌릴 수 없습니다."
-                : state == "undone" ? "되돌린 변경을 같은 값으로 다시 적용합니다"
-                : deleting ? "위 목록대로 삭제 (Undo 한 번으로 되돌릴 수 있음)" : "이 수정안을 현재 도면에 적용";
-            apply.IsEnabled = !_busy && applicable && (state is "planned" or "undone" || (state == "applied" && operationId is not null));
+            bool hasOperation = operationId is not null;
+            bool done = hasOperation && state is "applied" or "undone" or "unknown";
+
+            apply.Content = state switch
+            {
+                "applied" => "확정",
+                "undone" => "다시 적용",
+                _ => deleting ? "진행" : "적용하기"
+            };
+            apply.ToolTip = state switch
+            {
+                "applied" => "도면은 그대로 두고 이 결과로 확정합니다. 이후에는 버튼으로 되돌릴 수 없습니다.",
+                "undone" => "되돌린 변경을 같은 값으로 다시 적용합니다",
+                _ => deleting ? "위 목록대로 삭제 (Undo 한 번으로 되돌릴 수 있음)" : "이 수정안을 현재 도면에 적용"
+            };
+
+            bool canApply = state is "planned" or "undone" || (state == "applied" && hasOperation);
+            apply.IsEnabled = !_busy && applicable && canApply;
+            cancel.IsEnabled = !_busy && state == "planned";
+            undo.IsEnabled = !_busy && hasOperation && state == "applied";
+
             // 되돌린 삭제는 끝난 카드다.
             apply.Visibility = deleting && state == "undone" ? Visibility.Collapsed : Visibility.Visible;
-            cancel.IsEnabled = !_busy && state == "planned";
-            undo.IsEnabled = !_busy && operationId is not null && state == "applied";
-            // 되돌리기는 작업이 끝난 뒤에, 취소는 삭제 계획이 아직 적용 전일 때만 보인다. 확정하면 버튼을 모두 숨긴다.
+
+            // 되돌리기는 작업이 끝난 뒤에, 취소는 삭제 계획이 아직 적용 전일 때만 보인다.
             undo.Visibility = done ? Visibility.Visible : Visibility.Collapsed;
             cancel.Visibility = deleting && state == "planned" ? Visibility.Visible : Visibility.Collapsed;
-            if (state is "confirmed" or "cancelled") apply.Visibility = undo.Visibility = cancel.Visibility = Visibility.Collapsed;
+
+            // 확정하거나 취소하면 버튼을 모두 숨긴다.
+            if (state is "confirmed" or "cancelled")
+            {
+                apply.Visibility = Visibility.Collapsed;
+                undo.Visibility = Visibility.Collapsed;
+                cancel.Visibility = Visibility.Collapsed;
+            }
         }
+
         _refreshChangeButtons.Add(Refresh);
         Refresh();
+
+        // AI가 대화 중에 적용했을 때 이 카드를 결과로 고쳐 쓴다.
         _cards[fixId] = next =>
         {
             operationId = next["operationId"]?.ToString() ?? operationId;
             state = next["state"]?.ToString() ?? "applied";
             applicable = true;
-            status.Text = state == "unknown" ? "변경 결과 확인이 필요합니다."
-                : deleting ? "삭제했습니다. 복원하려면 되돌리기를 눌러 주세요."
-                : next["recheck"]?["state"]?.ToString() == "failed"
-                    ? "변경이 적용되었습니다. 재검토에 실패하여 기준 만족 여부는 확인하지 못했습니다. 취소하려면 되돌리기를 눌러 주세요."
-                    : "도면 변경이 적용되었습니다.";
+
+            if (state == "unknown")
+            {
+                status.Text = UnknownMessage;
+            }
+            else if (deleting)
+            {
+                status.Text = DeletedMessage;
+            }
+            else if (next["recheck"]?["state"]?.ToString() == "failed")
+            {
+                status.Text = RecheckFailedMessage;
+            }
+            else
+            {
+                status.Text = AppliedMessage;
+            }
+
             Refresh();
         };
+
         // [확정]: 도면은 바꾸지 않고 작업 기록만 정리한다.
         async Task Confirm()
         {
-            if (_busy) return;
+            if (_busy)
+            {
+                return;
+            }
+
             SetBusy(true);
             try
             {
-                JsonNode result = await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/change/confirm", new { conversation, fixId, operationId });
+                JsonNode result = await PaletteApiClient.RequestAsync(
+                    HttpMethod.Post, "/api/change/confirm", new { conversation, fixId, operationId });
                 state = result["state"]?.ToString() ?? state;
                 status.Text = result["message"]?.ToString() ?? "변경을 확정했습니다.";
             }
-            catch (System.Exception ex) { status.Text = "확정 오류: " + ex.Message; }
-            finally { SetBusy(false); Refresh(); }
+            catch (System.Exception ex)
+            {
+                status.Text = "확정 오류: " + ex.Message;
+            }
+            finally
+            {
+                SetBusy(false);
+                Refresh();
+            }
         }
+
+        // [적용하기]/[다시 적용]/[진행] 또는 [되돌리기]. 적용된 카드의 [확정]은 Confirm으로.
         async Task Run(bool reverting)
         {
-            if (_busy) return;
-            if (!reverting && state == "applied") { await Confirm(); return; }
-            _changing = true; SetBusy(true); DrawingGuard.Begin();
+            if (_busy)
+            {
+                return;
+            }
+
+            if (!reverting && state == "applied")
+            {
+                await Confirm();
+                return;
+            }
+
+            _changing = true;
+            SetBusy(true);
+            DrawingGuard.Begin();
             try
             {
-                JsonNode result = await PaletteApiClient.RequestAsync(HttpMethod.Post,
-                    reverting ? "/api/change/undo" : "/api/change/apply",
-                    new { conversation, fixId, operationId });
+                string path = reverting ? "/api/change/undo" : "/api/change/apply";
+                JsonNode result = await PaletteApiClient.RequestAsync(
+                    HttpMethod.Post, path, new { conversation, fixId, operationId });
                 operationId = result["operationId"]?.ToString() ?? operationId;
+
                 if (reverting)
                 {
                     state = result["state"]?.ToString() ?? "unknown";
                     status.Text = result["message"]?.ToString() ?? "되돌리기 결과 확인이 필요합니다.";
-                    if (deleting && state == "undone") status.Text += "\n다시 삭제하려면 새로 요청해 주세요. 그때의 목록을 다시 보여 드립니다.";
+
+                    if (deleting && state == "undone")
+                    {
+                        status.Text += "\n다시 삭제하려면 새로 요청해 주세요. 그때의 목록을 다시 보여 드립니다.";
+                    }
                 }
                 else
                 {
                     foreach (JsonNode? next in result["fixes"] as JsonArray ?? [])
-                        if (next is not null) AddChangeCard(next, false);
+                    {
+                        if (next is not null)
+                        {
+                            AddChangeCard(next, false);
+                        }
+                    }
+
                     string before = state;
                     state = result["mutation"]?.ToString() ?? "unknown";
+
                     // 거절되면 도면은 그대로다: 누르기 전 상태(계획 또는 되돌림)로 둔다.
-                    if (state == "rejected") state = before;
-                    string? checkState = result["recheck"]?["state"]?.ToString();
-                    string? assessment = result["recheck"]?["assessment"]?.ToString();
-                    status.Text = result["applied"]?.GetValue<bool>() == true
-                        ? deleting ? "삭제했습니다. 복원하려면 되돌리기를 눌러 주세요."
-                        : checkState == "failed" ? "변경이 적용되었습니다. 재검토에 실패하여 기준 만족 여부는 확인하지 못했습니다. 취소하려면 되돌리기를 눌러 주세요."
-                        : assessment == "pass" ? "변경이 적용되었습니다. 검토한 항목은 기준을 만족합니다."
-                        : "변경이 적용되었습니다. 검토 결과: " + (assessment switch { "fail" => "기준 미달", "review" => "사람 검토 필요", "incomplete" => "검토 미완료", "not_applicable" => "검토 대상 아님", _ => "확인 필요" })
-                        : result["error"]?.ToString() ?? "변경 결과 확인이 필요합니다.";
+                    if (state == "rejected")
+                    {
+                        state = before;
+                    }
+
+                    status.Text = ApplyResultMessage(result, deleting);
                 }
             }
             catch (System.Exception ex)
             {
                 status.Text = "작업 오류: " + ex.Message;
+
                 // HTTP 응답을 잃었어도 같은 작업을 다시 실행하지 않는다. 영수증을 조회해 버튼 상태를 복원한다.
                 try
                 {
-                    JsonNode receipt = await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/change/status", new { conversation, fixId });
+                    JsonNode receipt = await PaletteApiClient.RequestAsync(
+                        HttpMethod.Post, "/api/change/status", new { conversation, fixId });
                     operationId = receipt["operationId"]?.ToString() ?? operationId;
                     state = receipt["state"]?.ToString() ?? "unknown";
-                    if (state == "applied") status.Text += "\n도면에는 적용되었습니다. 취소하려면 되돌리기를 눌러 주세요.";
-                    if (state == "undone") status.Text += "\n적용한 변경은 되돌려졌습니다.";
+
+                    if (state == "applied")
+                    {
+                        status.Text += "\n도면에는 적용되었습니다. 취소하려면 되돌리기를 눌러 주세요.";
+                    }
+
+                    if (state == "undone")
+                    {
+                        status.Text += "\n적용한 변경은 되돌려졌습니다.";
+                    }
                 }
-                catch { state = "unknown"; status.Text += "\n변경 결과를 확인하지 못했습니다. 재적용하지 말고 도면을 확인해 주세요."; }
+                catch
+                {
+                    state = "unknown";
+                    status.Text += "\n변경 결과를 확인하지 못했습니다. 재적용하지 말고 도면을 확인해 주세요.";
+                }
             }
-            finally { DrawingGuard.End(); _changing = false; SetBusy(false); Refresh(); }
+            finally
+            {
+                DrawingGuard.End();
+                _changing = false;
+                SetBusy(false);
+                Refresh();
+            }
         }
+
         apply.Click += async (_, _) => await Run(false);
         undo.Click += async (_, _) => await Run(true);
         cancel.Click += async (_, _) =>
         {
-            if (_busy) return;
+            if (_busy)
+            {
+                return;
+            }
+
             SetBusy(true);
             try
             {
-                JsonNode result = await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/change/cancel", new { conversation, fixId });
+                JsonNode result = await PaletteApiClient.RequestAsync(
+                    HttpMethod.Post, "/api/change/cancel", new { conversation, fixId });
                 state = "cancelled";
                 status.Text = result["message"]?.ToString() ?? "취소했습니다.";
             }
-            catch (System.Exception ex) { status.Text = "취소 오류: " + ex.Message; }
-            finally { SetBusy(false); Refresh(); }
+            catch (System.Exception ex)
+            {
+                status.Text = "취소 오류: " + ex.Message;
+            }
+            finally
+            {
+                SetBusy(false);
+                Refresh();
+            }
         };
-        _messages.Children.Add(new Border { Child = body, CornerRadius = new CornerRadius(8), Padding = new Thickness(10),
-            Margin = new Thickness(0, 2, 12, 8), Background = _theme.Surface, BorderBrush = _theme.Ready, BorderThickness = new Thickness(1) });
+
+        _messages.Children.Add(new Border
+        {
+            Child = body,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10),
+            Margin = new Thickness(0, 2, 12, 8),
+            Background = _theme.Surface,
+            BorderBrush = _theme.Ready,
+            BorderThickness = new Thickness(1)
+        });
         ScrollToEnd();
+    }
+
+    // 카드를 처음 만들 때의 상태 줄.
+    private static string InitialCardStatus(JsonNode change, bool applied, string state, bool deleting)
+    {
+        if (deleting && state == "planned")
+        {
+            return "위 객체가 함께 삭제되거나 영향을 받습니다. 진행할까요?";
+        }
+
+        if (deleting && state == "applied")
+        {
+            return DeletedMessage;
+        }
+
+        // 커밋 뒤 재검토 실패는 적용 실패가 아니다. 되돌리기 버튼은 계속 제공한다.
+        if (applied && state == "applied" && change["recheck"]?["state"]?.ToString() == "failed")
+        {
+            return RecheckFailedMessage;
+        }
+
+        return state switch
+        {
+            "applied" => AppliedMessage,
+            "unknown" => UnknownMessage,
+            _ => change["reason"]?.ToString() ?? "수정안을 확인한 뒤 적용해 주세요."
+        };
+    }
+
+    // [적용하기] 결과의 상태 줄: 적용됐으면 재검토 결과까지, 아니면 서비스가 준 오류.
+    private static string ApplyResultMessage(JsonNode result, bool deleting)
+    {
+        if (result["applied"]?.GetValue<bool>() != true)
+        {
+            return result["error"]?.ToString() ?? UnknownMessage;
+        }
+
+        if (deleting)
+        {
+            return DeletedMessage;
+        }
+
+        string? checkState = result["recheck"]?["state"]?.ToString();
+        string? assessment = result["recheck"]?["assessment"]?.ToString();
+
+        if (checkState == "failed")
+        {
+            return RecheckFailedMessage;
+        }
+
+        if (assessment == "pass")
+        {
+            return "변경이 적용되었습니다. 검토한 항목은 기준을 만족합니다.";
+        }
+
+        string verdict = assessment switch
+        {
+            "fail" => "기준 미달",
+            "review" => "사람 검토 필요",
+            "incomplete" => "검토 미완료",
+            "not_applicable" => "검토 대상 아님",
+            _ => "확인 필요"
+        };
+        return "변경이 적용되었습니다. 검토 결과: " + verdict;
     }
 
     // 안내·오류 한 줄.
@@ -780,8 +1401,12 @@ internal sealed class ChatPanel : UserControl
     {
         _messages.Children.Add(new TextBlock
         {
-            Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 11.5, Margin = new Thickness(4, 6, 4, 6),
-            Foreground = error ? _theme.Error : _theme.Muted, HorizontalAlignment = HorizontalAlignment.Center,
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 11.5,
+            Margin = new Thickness(4, 6, 4, 6),
+            Foreground = error ? _theme.Error : _theme.Muted,
+            HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center
         });
         ScrollToEnd();
@@ -792,41 +1417,58 @@ internal sealed class ChatPanel : UserControl
     // 이어서 로그인까지 하며, 로그인은 사용자가 자기 계정으로 직접 한다.
     private void AskSetup(string name, string action, string text)
     {
+        bool installing = action == "install";
+
         StackPanel body = new();
         body.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
-        Button yes = SmallButton(action == "install" ? "설치" : "로그인", "PowerShell 창이 열립니다.");
+
+        Button yes = SmallButton(installing ? "설치" : "로그인", "PowerShell 창이 열립니다.");
         Button no = SmallButton("취소", "아무것도 하지 않습니다.");
         yes.Background = _theme.Accent;
         yes.Foreground = Brushes.White;
         no.Margin = new Thickness(6, 0, 0, 0);
+
         StackPanel buttons = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 7, 0, 0) };
         buttons.Children.Add(yes);
         buttons.Children.Add(no);
         body.Children.Add(buttons);
+
         yes.Click += async (_, _) =>
         {
-            yes.IsEnabled = no.IsEnabled = false;
+            yes.IsEnabled = false;
+            no.IsEnabled = false;
             try
             {
-                JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Post, "/api/provider/setup", new { provider = name, action });
-                AddNotice(data["message"]?.ToString() ?? "창을 열었습니다.", error: data["opened"]?.GetValue<bool>() != true);
+                JsonNode data = await PaletteApiClient.RequestAsync(
+                    HttpMethod.Post, "/api/provider/setup", new { provider = name, action });
+                bool opened = data["opened"]?.GetValue<bool>() == true;
+                AddNotice(data["message"]?.ToString() ?? "창을 열었습니다.", error: !opened);
             }
             catch (System.Exception ex)
             {
                 AddNotice("창을 열지 못했습니다: " + ex.Message, error: true);
-                yes.IsEnabled = no.IsEnabled = true;
+                yes.IsEnabled = true;
+                no.IsEnabled = true;
             }
         };
+
         no.Click += (_, _) =>
         {
-            yes.IsEnabled = no.IsEnabled = false;
-            AddNotice($"{Display(name)} {(action == "install" ? "설치" : "로그인")}를 취소했습니다. 다시 누르면 다시 묻습니다.");
+            yes.IsEnabled = false;
+            no.IsEnabled = false;
+            AddNotice($"{Display(name)} {(installing ? "설치" : "로그인")}를 취소했습니다. 다시 누르면 다시 묻습니다.");
         };
+
         _messages.Children.Add(new Border
         {
-            Child = body, CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 7, 10, 8),
-            Margin = new Thickness(0, 2, 12, 8), HorizontalAlignment = HorizontalAlignment.Left,
-            Background = _theme.Surface, BorderBrush = _theme.Attention, BorderThickness = new Thickness(1)
+            Child = body,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 7, 10, 8),
+            Margin = new Thickness(0, 2, 12, 8),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Background = _theme.Surface,
+            BorderBrush = _theme.Attention,
+            BorderThickness = new Thickness(1)
         });
         ScrollToEnd();
     }
@@ -836,15 +1478,41 @@ internal sealed class ChatPanel : UserControl
     // 선택할 수 있는 글(값을 도면이나 보고서로 복사할 수 있게).
     private static TextBox SelectableText(string text, Brush foreground) => new()
     {
-        Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0),
-        Background = Brushes.Transparent, Foreground = foreground, Padding = new Thickness(0)
+        Text = text,
+        IsReadOnly = true,
+        TextWrapping = TextWrapping.Wrap,
+        BorderThickness = new Thickness(0),
+        Background = Brushes.Transparent,
+        Foreground = foreground,
+        Padding = new Thickness(0)
     };
 
     private Button SmallButton(string text, string tooltip) => new()
     {
-        Content = text, ToolTip = tooltip, Padding = new Thickness(8, 2, 8, 2), FontSize = 11.5,
-        Background = _theme.Surface, Foreground = _theme.Text, BorderBrush = _theme.Border, Cursor = Cursors.Hand,
-        BorderThickness = new Thickness(1), Template = FlatTemplate()
+        Content = text,
+        ToolTip = tooltip,
+        Padding = new Thickness(8, 2, 8, 2),
+        FontSize = 11.5,
+        Background = _theme.Surface,
+        Foreground = _theme.Text,
+        BorderBrush = _theme.Border,
+        Cursor = Cursors.Hand,
+        BorderThickness = new Thickness(1),
+        Template = FlatTemplate()
+    };
+
+    // 답 아래 줄에 붙는 더 작은 버튼(복사, 👎, 의견 보내기). 배경 없이 테두리만.
+    private Button TinyButton(string text, string? tooltip) => new()
+    {
+        Content = text,
+        ToolTip = tooltip,
+        FontSize = 11,
+        Cursor = Cursors.Hand,
+        Background = Brushes.Transparent,
+        Foreground = _theme.Muted,
+        BorderBrush = _theme.Border,
+        BorderThickness = new Thickness(1),
+        Template = FlatTemplate()
     };
 
     // 둥근 테두리만 있는 버튼 모양. 기본 Windows 버튼은 마우스를 올리거나 비활성일 때
@@ -853,25 +1521,34 @@ internal sealed class ChatPanel : UserControl
     {
         FrameworkElementFactory border = new(typeof(Border));
         border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+
         // 버튼의 색·테두리·여백을 그대로 테두리에 넘긴다.
         Bind(border, Border.BackgroundProperty, "Background");
         Bind(border, Border.BorderBrushProperty, "BorderBrush");
         Bind(border, Border.BorderThicknessProperty, "BorderThickness");
         Bind(border, Border.PaddingProperty, "Padding");
+
         FrameworkElementFactory content = new(typeof(ContentPresenter));
         Bind(content, ContentPresenter.HorizontalAlignmentProperty, "HorizontalContentAlignment");
         content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
         border.AppendChild(content);
+
         ControlTemplate template = new(typeof(Button)) { VisualTree = border };
+
         // 마우스를 올리면 조금, 비활성이면 많이 흐리게.
         template.Triggers.Add(new Trigger
         {
-            Property = UIElement.IsMouseOverProperty, Value = true, Setters = { new Setter(UIElement.OpacityProperty, 0.85) }
+            Property = UIElement.IsMouseOverProperty,
+            Value = true,
+            Setters = { new Setter(UIElement.OpacityProperty, 0.85) }
         });
         template.Triggers.Add(new Trigger
         {
-            Property = UIElement.IsEnabledProperty, Value = false, Setters = { new Setter(UIElement.OpacityProperty, 0.45) }
+            Property = UIElement.IsEnabledProperty,
+            Value = false,
+            Setters = { new Setter(UIElement.OpacityProperty, 0.45) }
         });
+
         return template;
     }
 
@@ -890,6 +1567,7 @@ internal sealed class ChatPanel : UserControl
         {
             string state = _states[name];
             bool selected = name == _selected;
+
             Brush dot = state switch
             {
                 "ready" => _theme.Ready,
@@ -897,25 +1575,39 @@ internal sealed class ChatPanel : UserControl
                 "unauthenticated" => _theme.Error,
                 _ => _theme.Attention
             };
+
+            string stateText = state switch
+            {
+                "ready" => (selected ? "사용 중" : "사용 가능") + SessionLeft(name),
+                "missing" => "미설치",
+                "unauthenticated" => "인증 실패",
+                _ => "눌러서 확인"
+            };
+
+            StackPanel label = new();
+            label.Children.Add(new TextBlock
+            {
+                Text = Display(name),
+                FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal
+            });
+            label.Children.Add(new TextBlock
+            {
+                FontSize = 10.5,
+                Foreground = selected ? _theme.Text : _theme.Muted,
+                Text = stateText
+            });
+
             StackPanel content = new() { Orientation = Orientation.Horizontal };
             content.Children.Add(new Ellipse
             {
-                Width = 8, Height = 8, Fill = dot, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center
-            });
-            StackPanel label = new();
-            label.Children.Add(new TextBlock { Text = Display(name), FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal });
-            label.Children.Add(new TextBlock
-            {
-                FontSize = 10.5, Foreground = selected ? _theme.Text : _theme.Muted,
-                Text = state switch
-                {
-                    "ready" => (selected ? "사용 중" : "사용 가능") + SessionLeft(name),
-                    "missing" => "미설치",
-                    "unauthenticated" => "인증 실패",
-                    _ => "눌러서 확인"
-                }
+                Width = 8,
+                Height = 8,
+                Fill = dot,
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center
             });
             content.Children.Add(label);
+
             chip.Content = content;
             chip.Background = selected ? _theme.AssistantBubble : _theme.Surface;
             chip.BorderBrush = selected ? _theme.Accent : _theme.Border;
@@ -934,20 +1626,34 @@ internal sealed class ChatPanel : UserControl
     // 입력칸·보내기 버튼: AI를 골랐고 답을 기다리는 중이 아닐 때만.
     private void UpdateControls()
     {
+        bool hasQuestion = _input.Text.Trim().Length > 0;
+
         _placeholder.Visibility = _input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        _send.Content = _busy && !_changing ? "중지" : "보내기";
-        _send.IsEnabled = !_changing && (_busy || (_selected is not null && _input.Text.Trim().Length > 0));
-        foreach (Action refresh in _refreshChangeButtons) refresh();
-        foreach (Button chip in _chips.Values) chip.IsEnabled = !_busy;
         _placeholder.Text = _selected is null
             ? "먼저 위에서 AI를 고르세요"
             : "도면에 대해 물어보세요 · Enter 보내기";
+
+        _send.Content = _busy && !_changing ? "중지" : "보내기";
+        _send.IsEnabled = !_changing && (_busy || (_selected is not null && hasQuestion));
+
+        foreach (Action refresh in _refreshChangeButtons)
+        {
+            refresh();
+        }
+
+        foreach (Button chip in _chips.Values)
+        {
+            chip.IsEnabled = !_busy;
+        }
     }
 
     // 사용량 줄: 이번 · 누적 · 한도.
-    private void UpdateFooter() => _usage.Text = _selected is null
-        ? "AI를 고르면 사용량과 한도가 표시됩니다."
-        : $"{_lastUsage} · {_totalUsage} · {_quota}";
+    private void UpdateFooter()
+    {
+        _usage.Text = _selected is null
+            ? "AI를 고르면 사용량과 한도가 표시됩니다."
+            : $"{_lastUsage} · {_totalUsage} · {_quota}";
+    }
 
     private void SetBusy(bool busy)
     {
@@ -956,7 +1662,7 @@ internal sealed class ChatPanel : UserControl
     }
 
     private void ScrollToEnd() =>
-        Dispatcher.BeginInvoke(() => _scroll.ScrollToEnd(), System.Windows.Threading.DispatcherPriority.Background);
+        Dispatcher.BeginInvoke(() => _scroll.ScrollToEnd(), DispatcherPriority.Background);
 
     private static void Add(Grid grid, UIElement element, int row)
     {
@@ -982,8 +1688,15 @@ internal sealed class ChatPanel : UserControl
     private static string Tokens(JsonNode? value)
     {
         if (!double.TryParse(value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double count))
+        {
             return "—";
-        return count < 1000 ? count.ToString("0", CultureInfo.InvariantCulture)
-            : (count / 1000).ToString("0.#", CultureInfo.InvariantCulture) + "k";
+        }
+
+        if (count < 1000)
+        {
+            return count.ToString("0", CultureInfo.InvariantCulture);
+        }
+
+        return (count / 1000).ToString("0.#", CultureInfo.InvariantCulture) + "k";
     }
 }
