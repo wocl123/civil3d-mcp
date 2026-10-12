@@ -14,7 +14,8 @@ internal static class DrawingPicker
 {
     public static PolylinePick PickPolyline(Document document, string? message, int timeoutSeconds)
     {
-        PromptEntityOptions options = new($"\n{(string.IsNullOrWhiteSpace(message) ? "폴리라인을 선택하세요" : message.Trim())} (ESC 취소): ")
+        string prompt = string.IsNullOrWhiteSpace(message) ? "폴리라인을 선택하세요" : message.Trim();
+        PromptEntityOptions options = new($"\n{prompt} (ESC 취소): ")
         {
             AllowNone = false
         };
@@ -30,13 +31,32 @@ internal static class DrawingPicker
             timedOut = true;
             document.SendStringToExecute("\x03\x03", true, false, false);
         };
+
         // 팔레트에 있던 포커스를 도면으로 옮겨 바로 클릭할 수 있게.
-        try { Autodesk.AutoCAD.Internal.Utils.SetFocusToDwgView(); } catch (System.Exception) { }
+        try
+        {
+            Autodesk.AutoCAD.Internal.Utils.SetFocusToDwgView();
+        }
+        catch (System.Exception)
+        {
+            // 포커스를 못 옮겨도 고르기는 된다.
+        }
+
         timer.Start();
         PromptEntityResult result;
-        try { result = document.Editor.GetEntity(options); }
-        finally { timer.Stop(); }
-        if (result.Status != PromptStatus.OK) return new PolylinePick(timedOut ? "timeout" : "cancelled", null);
+        try
+        {
+            result = document.Editor.GetEntity(options);
+        }
+        finally
+        {
+            timer.Stop();
+        }
+
+        if (result.Status != PromptStatus.OK)
+        {
+            return new PolylinePick(timedOut ? "timeout" : "cancelled", null);
+        }
 
         using Transaction transaction = document.Database.TransactionManager.StartTransaction();
         Polyline polyline = (Polyline)transaction.GetObject(result.ObjectId, OpenMode.ForRead);

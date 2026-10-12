@@ -14,9 +14,14 @@ internal static class DrawingGuard
     // 화면만 움직이거나 다시 그리는 명령(+ 이 플러그인의 조회 명령).
     private static readonly HashSet<string> ViewOnly = new(StringComparer.OrdinalIgnoreCase)
     {
-        "ZOOM", "PAN", "REDRAW", "REDRAWALL", "REGEN", "REGENALL", "3DORBIT", "3DFORBIT", "3DCORBIT",
-        "NAVVCUBE", "NAVSWHEEL", "NAVBAR", "VIEW", "-VIEW", "VIEWRES", "MYC3DCHAT", "MYC3DCONNECTION", "MYC3DSTATUS", "MYC3DOBJECTS"
+        "ZOOM", "PAN", "REDRAW", "REDRAWALL", "REGEN", "REGENALL",
+        "3DORBIT", "3DFORBIT", "3DCORBIT", "NAVVCUBE", "NAVSWHEEL", "NAVBAR",
+        "VIEW", "-VIEW", "VIEWRES",
+        "MYC3DCHAT", "MYC3DCONNECTION", "MYC3DSTATUS", "MYC3DOBJECTS"
     };
+
+    private const long MessageIntervalMs = 3000;
+
     private static int _active;
     private static long _lastMessage;
 
@@ -25,25 +30,54 @@ internal static class DrawingGuard
     // 답변 시작/끝. 겹쳐 불려도 되게 횟수로 센다.
     public static void Begin()
     {
-        if (_active++ == 0) App.DocumentManager.DocumentLockModeChanged += OnLockModeChanged;
+        if (_active == 0)
+        {
+            App.DocumentManager.DocumentLockModeChanged += OnLockModeChanged;
+        }
+
+        _active++;
     }
 
     public static void End()
     {
-        if (_active == 0) return;
-        if (--_active == 0) App.DocumentManager.DocumentLockModeChanged -= OnLockModeChanged;
+        if (_active == 0)
+        {
+            return;
+        }
+
+        _active--;
+
+        if (_active == 0)
+        {
+            App.DocumentManager.DocumentLockModeChanged -= OnLockModeChanged;
+        }
     }
 
     private static void OnLockModeChanged(object? sender, DocumentLockModeChangedEventArgs e)
     {
-        if (DrawingSelection.BridgeRunning) return;
+        if (DrawingSelection.BridgeRunning)
+        {
+            return;
+        }
+
         string command = e.GlobalCommandName.TrimStart('#', '\'', '_', '.').ToUpperInvariant();
+
         // 명령 이름이 없는 잠금은 AutoCAD 자체(화면, 자동 저장)에서 온 것이라 막지 않는다.
-        if (command.Length == 0 || ViewOnly.Contains(command)) return;
+        if (command.Length == 0 || ViewOnly.Contains(command))
+        {
+            return;
+        }
+
         e.Veto();
+
         // 안내는 몇 초에 한 줄만(키를 누르고 있어도 명령줄이 넘치지 않게).
-        if (Environment.TickCount64 - _lastMessage < 3000) return;
+        if (Environment.TickCount64 - _lastMessage < MessageIntervalMs)
+        {
+            return;
+        }
+
         _lastMessage = Environment.TickCount64;
-        e.Document?.Editor.WriteMessage($"\nAI가 답변하는 동안에는 도면을 바꿀 수 없습니다({command} 취소). 화면 이동·확대와 선택은 됩니다.\n");
+        e.Document?.Editor.WriteMessage(
+            $"\nAI가 답변하는 동안에는 도면을 바꿀 수 없습니다({command} 취소). 화면 이동·확대와 선택은 됩니다.\n");
     }
 }

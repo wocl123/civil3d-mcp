@@ -20,7 +20,9 @@ namespace MyCivil3DMcp.Plugin;
 internal static class DrawingSelection
 {
     private const int MaxItems = 20;
+    private const int MaxGroups = 15;
     private const long BridgeGraceMs = 2000;
+
     private static readonly ConditionalWeakTable<Document, ObjectId[]> Selected = new();
     private static bool _started;
     private static int _bridgeRequests;
@@ -38,14 +40,29 @@ internal static class DrawingSelection
     public static bool BridgeRunning => Volatile.Read(ref _bridgeRequests) > 0;
 
     // 지금 빈 선택 변경을 무시해야 하는지: 요청 중이거나 끝난 지 2초가 안 됨.
-    private static bool BridgeClearing =>
-        Volatile.Read(ref _bridgeRequests) > 0 || Environment.TickCount64 - Interlocked.Read(ref _bridgeEndedAt) < BridgeGraceMs;
+    private static bool BridgeClearing
+    {
+        get
+        {
+            long sinceBridgeEnded = Environment.TickCount64 - Interlocked.Read(ref _bridgeEndedAt);
+            return BridgeRunning || sinceBridgeEnded < BridgeGraceMs;
+        }
+    }
 
     public static void Start()
     {
-        if (_started) return;
+        if (_started)
+        {
+            return;
+        }
+
         _started = true;
-        foreach (Document document in App.DocumentManager) Track(document);
+
+        foreach (Document document in App.DocumentManager)
+        {
+            Track(document);
+        }
+
         App.DocumentManager.DocumentCreated += (_, e) => Track(e.Document);
     }
 
@@ -61,46 +78,86 @@ internal static class DrawingSelection
             PromptSelectionResult result = document.Editor.SelectImplied();
             ids = result.Status == PromptStatus.OK ? result.Value.GetObjectIds() : [];
         }
-        catch (System.Exception) { ids = []; }
-        if (ids.Length == 0 && BridgeClearing) return;
+        catch (System.Exception)
+        {
+            ids = [];
+        }
+
+        if (ids.Length == 0 && BridgeClearing)
+        {
+            return;
+        }
+
         Selected.AddOrUpdate(document, ids);
     }
-
-    private const int MaxGroups = 15;
 
     // 기억한 선택: 모두 종류별·레이어별로 세고(많은 것부터 15개), 앞 20개는 자세히.
     public static SelectionPage Get(Document document)
     {
         ObjectId[] ids = Selected.TryGetValue(document, out ObjectId[]? recorded) ? recorded : [];
         using Transaction transaction = document.Database.TransactionManager.StartTransaction();
+
         List<SelectedObject> items = new();
-        Dictionary<string, int> byType = new(), byLayer = new();
+        Dictionary<string, int> byType = new();
+        Dictionary<string, int> byLayer = new();
         int count = 0;
+
         foreach (ObjectId id in ids)
         {
-            if (!id.IsValid || id.IsErased || id.Database != document.Database) continue;
-            if (transaction.GetObject(id, OpenMode.ForRead) is not Entity entity) continue;
+            bool usable = id.IsValid && !id.IsErased && id.Database == document.Database;
+            if (!usable)
+            {
+                continue;
+            }
+
+            if (transaction.GetObject(id, OpenMode.ForRead) is not Entity entity)
+            {
+                continue;
+            }
+
             count++;
             string type = entity.GetType().Name;
             byType[type] = byType.GetValueOrDefault(type) + 1;
             byLayer[entity.Layer] = byLayer.GetValueOrDefault(entity.Layer) + 1;
-            if (items.Count >= MaxItems) continue;
-            items.Add(new SelectedObject(entity.Handle.ToString(), type, entity.Layer, NameOf(entity),
-                entity is Polyline polyline ? DrawingQueries.Summarize(polyline) : null));
+
+            if (items.Count >= MaxItems)
+            {
+                continue;
+            }
+
+            PolylineSummary? polyline = entity is Polyline line ? DrawingQueries.Summarize(line) : null;
+            items.Add(new SelectedObject(entity.Handle.ToString(), type, entity.Layer, NameOf(entity), polyline));
         }
+
         return new SelectionPage(document.Name, count, Groups(byType), Groups(byLayer), items);
     }
 
-    private static List<SelectionGroup> Groups(Dictionary<string, int> counts) =>
-        counts.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key).Take(MaxGroups)
-            .Select(pair => new SelectionGroup(pair.Key, pair.Value)).ToList();
+    private static List<SelectionGroup> Groups(Dictionary<string, int> counts)
+    {
+        return counts
+            .OrderByDescending(pair => pair.Value)
+            .ThenBy(pair => pair.Key)
+            .Take(MaxGroups)
+            .Select(pair => new SelectionGroup(pair.Key, pair.Value))
+            .ToList();
+    }
 
     // 어떤 Civil 객체(구획 세그먼트 등)는 이름이 없으면 이름을 물을 때 예외를 낸다.
     // 그 때문에 나머지 선택까지 잃으면 안 된다.
     private static string? NameOf(Entity entity)
     {
-        if (entity is not CivilEntity civil) return null;
-        try { return string.IsNullOrWhiteSpace(civil.Name) ? null : civil.Name; }
-        catch (System.Exception) { return null; }
+        if (entity is not CivilEntity civil)
+        {
+            return null;
+        }
+
+        try
+        {
+            return string.IsNullOrWhiteSpace(civil.Name) ? null : civil.Name;
+        }
+        catch (System.Exception)
+        {
+            return null;
+        }
     }
 }
