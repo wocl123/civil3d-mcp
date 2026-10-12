@@ -107,6 +107,12 @@ try {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   # 번들(파일 수천 개)은 zip 하나로 묶는다. 사용자는 설치 파일 몇 개만 풀고, 번들은 설치 프로그램이 .NET으로 빠르게 푼다.
   [IO.Compression.ZipFile]::CreateFromDirectory($bundle,(Join-Path $release 'MyCivil3DMcp.bundle.zip'),[IO.Compression.CompressionLevel]::Optimal,$true)
+  # 사용자에게 배포하는 설치 EXE(Inno Setup)는 검증한 번들 폴더로 만든다.
+  $builtExe = Join-Path $work "MyCivil3DMcp-$($package.version)-win-x64.exe"
+  $installerArguments = @{ Bundle = $bundle; Version = $package.version; Output = $builtExe }
+  $teamFile = Join-Path $release 'team.json'
+  if (Test-Path -LiteralPath $teamFile) { $installerArguments.TeamFile = $teamFile }
+  & (Join-Path $PSScriptRoot 'build-installer.ps1') @installerArguments
   Remove-Item -LiteralPath $bundle -Recurse -Force
   $zip = Join-Path $work "MyCivil3DMcp-$($package.version)-win-x64.zip"
   # 안의 번들 zip은 이미 압축되어 있으므로 바깥은 압축하지 않는다(만들기·풀기 모두 빠르다).
@@ -127,7 +133,7 @@ try {
   # zip 전체 서명(.sig): 중앙 서버가 받을 때 확인한다.
   if ($signing) { Run $node @((Join-Path $PSScriptRoot 'release-signing.mjs'),'sign-file',$finalZip) }
   $finalExe = Join-Path $dist "MyCivil3DMcp-$($package.version)-win-x64.exe"
-  & (Join-Path $PSScriptRoot 'build-installer.ps1') -Archive $finalZip -Output $finalExe
+  Copy-Item -LiteralPath $builtExe -Destination $finalExe -Force
   if ($signing) { Run $node @((Join-Path $PSScriptRoot 'release-signing.mjs'),'sign-file',$finalExe) }
   Run $node @((Join-Path $repo 'server/scripts/installer-exe.mjs'),$finalExe)
   if ($signing -and $env:MY_CIVIL3D_GITHUB_REPO) { Run $node @((Join-Path $repo 'server/scripts/github-publish.mjs'),$finalExe) }

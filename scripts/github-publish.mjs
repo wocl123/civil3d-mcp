@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { sandboxInstall } from './installer-sandbox.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 const run = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, '..');
@@ -25,9 +26,7 @@ export async function prepareGitHubRelease(config, artifactRoot = join(repoRoot,
   // A signed artifact must also contain the intended updater and data intake settings.
   const work = await mkdtemp(join(tmpdir(), 'mycivil3d-github-publish-'));
   try {
-    const unpacked = join(work, 'payload');
-    await run(exe, ['--extract', unpacked], { windowsHide: true, timeout: 120000 });
-    const team = JSON.parse((await readFile(join(unpacked, 'team.json'), 'utf8')).replace(/^\uFEFF/, ''));
+    const team = sandboxInstall(exe, work).team ?? {};
     if (team.githubRepo !== repo || team.ingestUrl !== ingestUrl || team.adminEmail !== adminEmail || team.releaseManifestId)
       throw Error('EXE 내부 업데이트 저장소/자동 수신 설정이 다릅니다. 다시 빌드하세요.');
   } finally {

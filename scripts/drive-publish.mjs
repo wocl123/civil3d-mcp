@@ -3,8 +3,7 @@ import { createHash, createPrivateKey, sign, verify } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile, copyFile, mkdtemp, rm } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { sandboxInstall } from './installer-sandbox.mjs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,9 +52,7 @@ export async function publishDrive(config, { waitMs = 15 * 60 * 1000, artifactRo
   // Check the actual embedded channel: a valid but wrongly configured installer must not be published.
   const work = await mkdtemp(join(tmpdir(), 'mycivil3d-publish-'));
   try {
-    const unpacked = join(work, 'payload');
-    await promisify(execFile)(exe, ['--extract', unpacked], { windowsHide: true, timeout: 120000 });
-    const team = JSON.parse((await readFile(join(unpacked, 'team.json'), 'utf8')).replace(/^\uFEFF/, ''));
+    const team = sandboxInstall(exe, work).team ?? {};
     if (team.adminEmail !== adminEmail || team.releaseManifestId !== manifestId || (config.ingestUrl && team.ingestUrl !== config.ingestUrl))
       throw new Error('EXE 내부 관리자 메일/업데이트 링크가 배포 설정과 다릅니다. 설정을 반영하여 다시 빌드하세요.');
   } finally { await rm(work, { recursive: true, force: true }); }

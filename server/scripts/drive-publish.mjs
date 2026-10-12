@@ -1,16 +1,15 @@
 // Real signed installer over a simulated public Drive; never touches the live Drive.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { spawnSync } from 'node:child_process';
 import { createPrivateKey, sign } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, copyFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join, basename } from 'node:path';
+import { sandboxInstall } from '../../scripts/installer-sandbox.mjs';
 const exe = resolve(process.argv[2]);
 const temp = await mkdtemp(join(tmpdir(), 'mycivil3d-publish-test-'));
-const payload = join(temp, 'payload');
-assert.equal(spawnSync(exe, ['--extract', payload], { windowsHide: true }).status, 0);
-const team = JSON.parse((await readFile(join(payload, 'team.json'), 'utf8')).replace(/^\uFEFF/, ''));
+const team = sandboxInstall(exe, join(temp, 'sandbox')).team;
+assert.ok(team, 'installer contains team.json');
 const version = /^MyCivil3DMcp-(\d+\.\d+\.\d+)-win-x64\.exe$/.exec(basename(exe))[1];
 const artifacts = join(temp, 'artifacts'), driveRoot = join(temp, 'drive');
 const releaseFolder = join(driveRoot, 'MyCivil3DMcp-release');

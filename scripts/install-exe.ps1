@@ -1,26 +1,50 @@
-﻿# Trusted helper from the installed bundle. Verify EXE before extracting/running anything from it.
-param([Parameter(Mandatory=$true)][string]$Archive, [Parameter(Mandatory=$true)][string]$DataDir,
-      [string]$DestinationRoot, [switch]$SkipRunningCheck)
+﻿# 자동 업데이트에서 설치 EXE를 실행한다(update.ps1이 부른다).
+# 설치된 번들에 들어 있는 공개 키로 EXE 서명을 먼저 확인한 뒤에만 실행한다.
+param(
+  [Parameter(Mandatory=$true)][string]$Archive,
+  [Parameter(Mandatory=$true)][string]$DataDir,
+  [string]$DestinationRoot,
+  [switch]$SkipRunningCheck   # 시험용: 실행 중 확인과 "앱 및 기능" 등록을 건너뛴다
+)
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'package-common.ps1')
+
 $metadata = Get-Content -LiteralPath ($Archive + '.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $bytes = [IO.File]::ReadAllBytes($Archive)
-if ($bytes.LongLength -ne $metadata.size -or (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $metadata.sha256) { throw 'Installer EXE hash mismatch.' }
+$hash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($bytes.LongLength -ne $metadata.size -or $hash -ne $metadata.sha256) {
+  throw 'Installer EXE hash mismatch.'
+}
+
 $rsa = New-Object Security.Cryptography.RSACryptoServiceProvider
 try {
   $rsa.FromXmlString([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'release-public-key.xml')))
-  if (-not $rsa.VerifyData($bytes, 'SHA256', [Convert]::FromBase64String($metadata.signature))) { throw 'Installer EXE signature mismatch.' }
-} finally { $rsa.Dispose() }
-$work = Join-Path ([IO.Path]::GetTempPath()) ('MyCivil3DMcp-update-' + [guid]::NewGuid().ToString('N'))
-try {
-  $process = Start-Process -FilePath $Archive -ArgumentList @('--extract', ('"' + $work + '"')) -WindowStyle Hidden -PassThru -Wait
-  if ($process.ExitCode -ne 0) { throw 'Installer extraction failed.' }
-  $arguments = @{ Archive = (Join-Path $work 'MyCivil3DMcp.bundle.zip'); DataDir = $DataDir; TrustedKeyFile = (Join-Path $PSScriptRoot 'release-public-key.xml') }
-  if ($DestinationRoot) { $arguments.DestinationRoot = $DestinationRoot }
-  if ($SkipRunningCheck) { $arguments.SkipRunningCheck = $true }
-  # Reuse the installed installer, rather than the downloaded script.
-  & (Join-Path $PSScriptRoot 'install.ps1') @arguments
-  Save-TeamInfo (Join-Path $work 'team.json') $DataDir
+  $signature = [Convert]::FromBase64String($metadata.signature)
+  if (-not $rsa.VerifyData($bytes, 'SHA256', $signature)) {
+    throw 'Installer EXE signature mismatch.'
+  }
 } finally {
-  if (Test-Path -LiteralPath $work) { Remove-OwnedDirectory $work ([IO.Path]::GetTempPath()) }
+  $rsa.Dispose()
+}
+
+if (-not $DestinationRoot) {
+  $DestinationRoot = Join-Path $env:APPDATA 'Autodesk\ApplicationPlugins'
+}
+
+$logFolder = Join-Path $DataDir ('logs\' + (Get-Date -Format 'yyyy-MM-dd'))
+New-Item -ItemType Directory -Path $logFolder -Force | Out-Null
+$log = Join-Path $logFolder 'installer.log'
+
+$arguments = @(
+  '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+  ('/DIR="' + (Join-Path $DestinationRoot 'MyCivil3DMcp.bundle') + '"'),
+  ('/DataDir="' + $DataDir + '"'),
+  ('/LOG="' + $log + '"')
+)
+if ($SkipRunningCheck) {
+  $arguments += '/Sandbox=1'
+}
+
+$process = Start-Process -FilePath $Archive -ArgumentList $arguments -PassThru -Wait
+if ($process.ExitCode -ne 0) {
+  throw "Installer failed (exit code $($process.ExitCode)). See $log"
 }
