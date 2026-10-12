@@ -206,13 +206,25 @@ try {
   assert.equal(post({ ...base, action: 'pull' }).code, 'MEMBER_DAILY_LIMIT');
   assert.equal(post({ ...base, action: 'register' }).code, 'MEMBER_DAILY_LIMIT');
   assert.equal(props.get('MC_INTAKE_DAILY'), budgetBefore, 'per-install refusal does not drain everyone else\'s budget');
+  // The administrator deleted this member's folder (with .receiver-auth.json): re-register with the same key and keep sending.
+  rmSync(member, { recursive: true, force: true });
+  for (const map of [folders, files]) for (const key of [...map.keys()]) if (key.startsWith(member)) map.delete(key);
+  await logFeedback({ requestId: 'test-turn-0001', rating: 'bad', reason: '폴더 삭제 후 다시 보내기' });
+  const resent = await runSync();
+  assert.equal(resent.error, undefined, String(resent.error));
+  assert.equal(resent.sent, 1);
+  assert.ok(existsSync(join(member, '.receiver-auth.json')), 'member re-registered after its folder was deleted');
+  assert.equal(storedPackages().length, 1);
+  // A folder registered with a different key stays protected.
+  const hijack = post({ ...base, token: 'e'.repeat(64), action: 'register' });
+  assert.equal(hijack.code, 'AUTH_FAILED');
   const { exportLogs } = await import('../build/sync/exporter.js');
   for (let i = 0; i < 140; i++) await logTurn({ requestId: 'large-turn-' + String(i).padStart(8, '0'), question: '큰 답변', answer: 'x'.repeat(7800), ms: 1 });
   const big = await exportLogs(await loadState());
   assert.equal(big.records, 140);
   assert.ok(big.packages >= 2, 'large logs are split for the web transport');
   for (const name of readdirSync(pending)) assert.ok(Buffer.byteLength(readFileSync(join(pending, name), 'utf8')) < 540 * 1024);
-  console.log('ingest e2e ok: no user Drive/login, automatic registration, actual receiver validation, privacy, lost-reply retry/dedup, candidate ack, multi-user isolation, admin import, approved knowledge, offline/HTML retry, blocking and quotas');
+  console.log('ingest e2e ok: no user Drive/login, automatic registration, actual receiver validation, privacy, lost-reply retry/dedup, candidate ack, multi-user isolation, admin import, approved knowledge, offline/HTML retry, blocking and quotas, re-registration after the member folder was deleted');
 } finally {
   server.closeAllConnections(); await new Promise(r => server.close(r));
   rmSync(temp, { recursive: true, force: true });

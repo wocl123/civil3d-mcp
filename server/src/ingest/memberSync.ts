@@ -19,6 +19,14 @@ type Credentials = { schema: 1; installId: string; endpoint: string; token: stri
 const MAX_BYTES = 2 * 1024 * 1024;
 const credentialsFile = () => join(dataDir(), "state", "ingest-credentials.json");
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+
+// 웹앱이 거절한 요청. code는 Code.gs의 intakeFail 코드(AUTH_FAILED 등).
+class Rejected extends Error {
+  constructor(readonly code: string) {
+    super("자동 수신 거절: " + code);
+  }
+}
+
 async function credentials(endpoint: string): Promise<Credentials> {
   const { installId } = await install();
   let existingToken: string | undefined;
@@ -107,10 +115,33 @@ async function request(
   }
 
   if (result.schema !== 1 || result.installId !== auth.installId || result.ok !== true) {
-    throw new Error("자동 수신 거절: " + String(result.code ?? "잘못된 수신 확인"));
+    throw new Rejected(String(result.code ?? "잘못된 수신 확인"));
   }
 
   return result;
+}
+
+async function register(auth: Credentials): Promise<void> {
+  await request(auth, "register");
+  auth.registered = true;
+  await writeAtomic(credentialsFile(), JSON.stringify(auth));
+}
+
+// 관리자가 수신 폴더에서 이 PC의 폴더(등록 정보 포함)를 지웠으면 웹앱은 AUTH_FAILED로 거절한다.
+// 그때는 같은 키로 한 번 다시 등록하고 이어서 보낸다. 다른 키로 등록된 폴더가 남아 있으면 등록도 거절되어 멈춘다.
+async function sendWithRegistration(
+  auth: Credentials, action: string, extra: Record<string, unknown> = {}
+): Promise<Record<string, unknown>> {
+  try {
+    return await request(auth, action, extra);
+  } catch (error) {
+    if (!(error instanceof Rejected) || error.code !== "AUTH_FAILED") {
+      throw error;
+    }
+
+    await register(auth);
+    return request(auth, action, extra);
+  }
 }
 
 export async function webMemberSync(
@@ -118,9 +149,7 @@ export async function webMemberSync(
 ): Promise<{ sent: number; candidates: number; official?: number }> {
   const auth = await credentials(endpoint);
   if (!auth.registered) {
-    await request(auth, "register");
-    auth.registered = true;
-    await writeAtomic(credentialsFile(), JSON.stringify(auth));
+    await register(auth);
   }
 
   const result = { sent: 0, candidates: 0, official: state.officialVersion };
@@ -144,7 +173,7 @@ export async function webMemberSync(
     }
 
     const digest = sha256(JSON.stringify(item));
-    const receipt = await request(auth, "package", { package: item });
+    const receipt = await sendWithRegistration(auth, "package", { package: item });
     if (receipt.packageId !== item.packageId || receipt.sha256 !== digest) {
       throw new Error("수신 확인의 묶음 ID/해시가 맞지 않습니다. 재시도용 파일을 보존했습니다.");
     }
@@ -164,7 +193,7 @@ export async function webMemberSync(
     at: item.at.slice(0, 10), localStatus: item.status
   })).filter(item => !leak(JSON.stringify(item), terms));
   if (ready.length) {
-    const receipt = await request(auth, "candidates", { candidates: ready });
+    const receipt = await sendWithRegistration(auth, "candidates", { candidates: ready });
     const expected = ready.map(item => item.localId).sort();
     if (receipt.sha256 !== sha256(JSON.stringify(ready)) || !Array.isArray(receipt.candidateIds)
       || JSON.stringify([...receipt.candidateIds].sort()) !== JSON.stringify(expected)) {
@@ -178,7 +207,7 @@ export async function webMemberSync(
     await (await import("../sync/syncState.js")).saveState(state);
   }
 
-  const received = await request(auth, "pull");
+  const received = await sendWithRegistration(auth, "pull");
   if (received.official !== undefined) {
     const official = validOfficial(received.official);
     if (!official) {
