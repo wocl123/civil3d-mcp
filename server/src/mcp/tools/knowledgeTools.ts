@@ -15,10 +15,15 @@ export function registerKnowledgeTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async ({ name }) => {
     // 이름이 없으면 규칙 파일 목록
-    if (!name) return toolResult((await listRules()).map(rule => ({ name: rule.name, description: rule.description })));
+    if (!name) {
+      return toolResult((await listRules()).map(rule => ({ name: rule.name, description: rule.description })));
+    }
 
     const rule = await readRule(name);
-    if (!rule) throw new Error(`Rule file "${name}" was not found. Call without a name to list the rule files.`);
+    if (!rule) {
+      throw new Error(`Rule file "${name}" was not found. Call without a name to list the rule files.`);
+    }
+
     return { content: [{ type: "text" as const, text: rule.body }] };
   });
 }

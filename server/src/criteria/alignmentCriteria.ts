@@ -108,11 +108,17 @@ async function checkAlignmentCriteriaInternal(given: AlignmentCriteriaInput): Pr
     report.notes.push(`선형 설명에 기록된 조건을 썼다: ${used}`);
   }
 
-  if (input.designSpeed !== undefined) report.conditions.designSpeed = { value: input.designSpeed, from: "input" };
-  else if (speeds.length) report.conditions.designSpeed = describeSpeeds(undefined, speeds)!;
-  else report.need("designSpeed", [radius, length, spiral].map(label).join(", "), options(radius, "designSpeed"));
+  if (input.designSpeed !== undefined) {
+    report.conditions.designSpeed = { value: input.designSpeed, from: "input" };
+  } else if (speeds.length) {
+    report.conditions.designSpeed = describeSpeeds(undefined, speeds)!;
+  } else {
+    report.need("designSpeed", [radius, length, spiral].map(label).join(", "), options(radius, "designSpeed"));
+  }
 
-  if (input.area) report.conditions.area = { value: input.area, from: given.area ? "input" : "drawing" };
+  if (input.area) {
+    report.conditions.area = { value: input.area, from: given.area ? "input" : "drawing" };
+  }
 
   // 5) 제8조: 설계속도가 도로 구분·지역에 맞는지.
   checkDesignSpeed(report, set, input, speeds, given.roadClass ? "input" : "drawing");
@@ -122,19 +128,27 @@ async function checkAlignmentCriteriaInternal(given: AlignmentCriteriaInput): Pr
   const emax = found && {
     value: found.value,
     from: found.fromTable ? "criteria" as const
-      : given.maxSuperelevation !== undefined ? "input" as const
-      : "drawing" as const
+    : given.maxSuperelevation !== undefined ? "input" as const
+    : "drawing" as const
   };
-  if (emax) report.conditions.maxSuperelevation = emax;
-  else report.need("maxSuperelevation", label(radius), options(radius, "maxSuperelevation"));
-  if (emax?.from === "criteria")
+  if (emax) {
+    report.conditions.maxSuperelevation = emax;
+  } else {
+    report.need("maxSuperelevation", label(radius), options(radius, "maxSuperelevation"));
+  }
+
+  if (emax?.from === "criteria") {
     report.notes.push(`적용 최대 편경사는 ${superTable.article}의 ${input.area} 최대값 ${emax.value}%를 썼다.`);
+  }
 
   // 7) 곡선마다 반지름(제19조), 곡선 길이(제20조), 완화곡선(제23조)을 비교한다.
   for (const curve of curves) {
     const target = `곡선 ${curve.number} (${curve.startStationText}~${curve.endStationText})`;
     const speed = speedAt(curve.startStation, input.designSpeed, speeds);
-    if (!speed) continue;
+    if (!speed) {
+      continue;
+    }
+
     const when = { designSpeed: speed.value };
     const context: CurveContext = { handle: key, curve, elements };
 
@@ -143,8 +157,11 @@ async function checkAlignmentCriteriaInternal(given: AlignmentCriteriaInput): Pr
       report.skip(radius, target, "원곡선 반지름이 없음");
     } else if (emax) {
       const row = findRow(radius, { ...when, maxSuperelevation: emax.value });
-      if (row) report.compare(radius, target, curve.minRadius, row.value, { fixes: limit => radiusFixes(context, limit) });
-      else report.skip(radius, target, `표에 없는 조건 (설계속도 ${speed.value}, 최대 편경사 ${emax.value}%)`);
+      if (row) {
+        report.compare(radius, target, curve.minRadius, row.value, { fixes: limit => radiusFixes(context, limit) });
+      } else {
+        report.skip(radius, target, `표에 없는 조건 (설계속도 ${speed.value}, 최대 편경사 ${emax.value}%)`);
+      }
     }
 
     // 제20조 곡선 최소 길이 (교각 5도 미만/이상으로 표가 나뉜다)
@@ -208,7 +225,10 @@ async function checkAlignmentCriteriaInternal(given: AlignmentCriteriaInput): Pr
     }
   }
 
-  if (curves.length === 0) report.notes.push("곡선이 없는 선형이다.");
+  if (curves.length === 0) {
+    report.notes.push("곡선이 없는 선형이다.");
+  }
+
   return report.build();
 }
 
@@ -217,7 +237,9 @@ async function checkAlignmentCriteriaInternal(given: AlignmentCriteriaInput): Pr
 // 공동주택 단지 내 도로는 LH 지침의 상한과 비교한다.
 function checkDesignSpeed(report: ReportBuilder, set: CriteriaSet, input: AlignmentCriteriaInput,
   speeds: AlignmentDesignSpeed[], from: "input" | "drawing"): void {
-  if (!input.roadClass || !input.region) return;
+  if (!input.roadClass || !input.region) {
+    return;
+  }
 
   report.conditions.roadClass = { value: input.roadClass, from };
   report.conditions.region = { value: input.region, from };
@@ -237,7 +259,10 @@ function checkDesignSpeed(report: ReportBuilder, set: CriteriaSet, input: Alignm
       ? `표 값보다 낮으면 단서(지형·경제성 등)로 ${limits.lowest} km/h까지 감속 가능. 적용 여부는 사람이 판단`
       : undefined;
 
-    if (entries.length === 0) report.skip(source, "선형 설계속도", "선형에 설계속도가 없음");
+    if (entries.length === 0) {
+      report.skip(source, "선형 설계속도", "선형에 설계속도가 없음");
+    }
+
     for (const entry of entries) {
       report.compare(source, `설계속도 ${entry.stationText}`, entry.speed, limits.highest ?? limits.standard,
         { proviso, ...(note && entry.speed < limits.standard ? { note } : {}) });

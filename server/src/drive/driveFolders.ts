@@ -36,17 +36,30 @@ export type MemberFolder = { path: string; name: string; installId: string };
 // 스트리밍(드라이브 문자 G: 등)의 "내 드라이브"/"My Drive", 미러링(사용자 폴더 아래).
 export function findDriveRoot(configured?: string): string | undefined {
   const fixed = process.env.MY_CIVIL3D_DRIVE_DIR ?? configured;
-  if (fixed) return existsSync(fixed) ? fixed : undefined;
+  if (fixed) {
+    return existsSync(fixed) ? fixed : undefined;
+  }
+
   const names = ["내 드라이브", "My Drive"];
   const letters = "GHIJKLMNOPQRSTUVWXYZDEF".split("");
-  for (const letter of letters) for (const name of names) {
-    const path = `${letter}:\\${name}`;
-    if (existsSync(path)) return path;
+  for (const letter of letters) {
+    for (const name of names) {
+      const path = `${letter}:\\${name}`;
+      if (existsSync(path)) {
+        return path;
+      }
+    }
   }
-  for (const name of names) for (const base of [homedir(), join(homedir(), "Google Drive")]) {
-    const path = join(base, name);
-    if (existsSync(path)) return path;
+
+  for (const name of names) {
+    for (const base of [homedir(), join(homedir(), "Google Drive")]) {
+      const path = join(base, name);
+      if (existsSync(path)) {
+        return path;
+      }
+    }
   }
+
   return undefined;
 }
 
@@ -58,6 +71,7 @@ export async function ensureMemberFolder(root: string, installId: string): Promi
     await mkdir(join(folder, "candidates"), { recursive: true });
     await writeAtomic(join(folder, MEMBER_FILE), JSON.stringify({ schema: 1, app: "my-civil3d-mcp", installId, createdAt: new Date().toISOString() }, null, 1));
   }
+
   return folder;
 }
 
@@ -78,13 +92,20 @@ export async function findMemberFolders(root: string): Promise<MemberFolder[]> {
   for (const entry of await children(root)) {
     const path = join(root, entry.name);
     const installId = await readMember(path);
-    if (installId) { found.push({ path, name: entry.name, installId }); continue; }
+    if (installId) {
+      found.push({ path, name: entry.name, installId });
+      continue;
+    }
+
     for (const inner of await children(path)) {
       const innerPath = join(path, inner.name);
       const innerId = await readMember(innerPath);
-      if (innerId) found.push({ path: innerPath, name: `${entry.name}\\${inner.name}`, installId: innerId });
+      if (innerId) {
+        found.push({ path: innerPath, name: `${entry.name}\\${inner.name}`, installId: innerId });
+      }
     }
   }
+
   return found;
 }
 

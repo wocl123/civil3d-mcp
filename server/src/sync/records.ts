@@ -31,10 +31,14 @@ const id = (value: unknown) =>
 // 자유 글: 가리고 max 글자까지
 let terms: string[] = [];
 const text = (value: unknown, max: number) => {
-  if (typeof value !== "string" || !value.trim()) return undefined;
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+
   const masked = blank(value, terms);
   return masked.length > max ? masked.slice(0, max) + "…" : masked;
 };
+
 // 목록이면 개수만
 const count = (value: unknown) => Array.isArray(value) ? value.length : 0;
 // undefined 항목 빼기
@@ -43,16 +47,31 @@ const clean = <T extends Record<string, unknown>>(record: T): T =>
 
 // 오류는 원문이 아니라 종류만 보낸다.
 export function errorKind(message: unknown): string | undefined {
-  if (typeof message !== "string" || !message) return undefined;
-  if (/usage limit|rate limit|quota|429|사용 한도|요청 한도/i.test(message)) return "ai_limit";
-  if (/account is not verified|Check its account login|로그인이 만료|인증에 실패/.test(message)) return "ai_login";
-  if (/returned no (final )?answer/.test(message)) return "ai_no_answer";
+  if (typeof message !== "string" || !message) {
+    return undefined;
+  }
+
+  if (/usage limit|rate limit|quota|429|사용 한도|요청 한도/i.test(message)) {
+    return "ai_limit";
+  }
+
+  if (/account is not verified|Check its account login|로그인이 만료|인증에 실패/.test(message)) {
+    return "ai_login";
+  }
+
+  if (/returned no (final )?answer/.test(message)) {
+    return "ai_no_answer";
+  }
+
   const kind = failureGuide(message).kind;
   return kind === "unexpected" && /timed out|ETIMEDOUT/.test(message) ? "ai_timeout" : kind;
 }
 
 function usage(value: unknown) {
-  if (!value || typeof value !== "object") return undefined;
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
   const item = value as Record<string, unknown>;
   return clean({
     inputTokens: num(item.inputTokens),
@@ -141,10 +160,15 @@ function conditions(value: unknown) {
 
 // 수정 추적 결과 1건 (AI가 만든 값을 사람이 어떻게 했는지).
 function event(line: Line): OutRecord | undefined {
-  if (line.type !== "modification") return undefined;
+  if (line.type !== "modification") {
+    return undefined;
+  }
+
   const outcomes = ["modified", "kept", "deleted", "restructured"];
   const properties = ["radius", "spiralLength", "elevation", "curveLength"];
-  if (!outcomes.includes(String(line.outcome)) || !properties.includes(String(line.property))) return undefined;
+  if (!outcomes.includes(String(line.outcome)) || !properties.includes(String(line.property))) {
+    return undefined;
+  }
 
   return clean({
     type: "modification" as const,
@@ -169,13 +193,19 @@ const appVersion = (value: unknown) =>
 // 사용자가 답을 이상하다고 표시함(팔레트 👎). 이유는 가린다.
 function feedback(line: Line): OutRecord | undefined {
   const turnId = id(line.requestId);
-  if (!turnId) return undefined;
+  if (!turnId) {
+    return undefined;
+  }
+
   return clean({ type: "feedback" as const, at: hour(String(line.at)), turnId, rating: line.rating === "good" ? "good" : "bad", reason: text(line.reason, 500) });
 }
 
 // privateTerms: 가릴 낱말(도면 이름, 사용자·PC 이름)
 export function outRecord(file: LogFile, line: Line, privateTerms: string[] = []): OutRecord | undefined {
-  if (typeof line.at !== "string") return undefined;
+  if (typeof line.at !== "string") {
+    return undefined;
+  }
+
   terms = privateTerms;
   const record = file === "turns.jsonl" ? turn(line)
     : file === "tools.jsonl" ? tool(line)

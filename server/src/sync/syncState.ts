@@ -24,10 +24,13 @@ const file = () => join(dataDir(), "sync-state.json");
 export async function loadState(): Promise<SyncState> {
   try {
     const parsed = JSON.parse(await readFile(file(), "utf8")) as Partial<SyncState>;
-    if (parsed.schema === 1 && parsed.cursors) return parsed as SyncState;
+    if (parsed.schema === 1 && parsed.cursors) {
+      return parsed as SyncState;
+    }
   } catch {
     // 처음 실행.
   }
+
   return { schema: 1, cursors: {} };
 }
 

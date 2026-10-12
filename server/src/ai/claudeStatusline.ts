@@ -33,8 +33,11 @@ export function parseClaudeStatusline(value: unknown, now = Date.now()): ClaudeQ
     const reset = window.resets_at;
     const validUsed = typeof used === "number" && Number.isFinite(used) && used >= 0 && used <= 100;
     const validReset = typeof reset === "number" && Number.isFinite(reset) && reset * 1000 > now;
-    if (validUsed && validReset) windows[name] = { used_percentage: used, resets_at: reset };
+    if (validUsed && validReset) {
+      windows[name] = { used_percentage: used, resets_at: reset };
+    }
   }
+
   return Object.keys(windows).length ? { capturedAt: now, rate_limits: windows } : null;
 }
 
@@ -43,7 +46,9 @@ export async function runClaudeStatusline(): Promise<void> {
   let input = "";
   for await (const chunk of process.stdin) {
     input += chunk.toString();
-    if (input.length > 1024 * 1024) return;
+    if (input.length > 1024 * 1024) {
+      return;
+    }
   }
 
   let value: unknown;
@@ -52,8 +57,11 @@ export async function runClaudeStatusline(): Promise<void> {
   } catch {
     return;
   }
+
   const snapshot = parseClaudeStatusline(value);
-  if (!snapshot) return;
+  if (!snapshot) {
+    return;
+  }
 
   // 2) 파일에 저장 (임시 파일에 쓰고 바꿔치기)
   await mkdir(dirname(claudeQuotaFile), { recursive: true });
@@ -70,5 +78,6 @@ export async function runClaudeStatusline(): Promise<void> {
 }
 
 // 이 파일을 직접 실행했을 때만 돈다. 상태줄은 어떤 경우에도 Claude Code를 방해하면 안 되므로 오류를 삼킨다.
-if (process.argv[1] && fileURLToPath(import.meta.url).toLowerCase() === resolve(process.argv[1]).toLowerCase())
+if (process.argv[1] && fileURLToPath(import.meta.url).toLowerCase() === resolve(process.argv[1]).toLowerCase()) {
   runClaudeStatusline().catch(() => { /* 무시 */ });
+}

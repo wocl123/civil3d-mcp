@@ -38,7 +38,9 @@ export function registerChangeTools(server: McpServer): void {
     // 3) 새 선형을 만들었으면 캡처를 붙인다(AI가 직접 보고 확인하도록).
     const created = "created" in result ? result.created as { handle?: string } | undefined : undefined;
     const image = created?.handle ? await captureCreated(fixId, created.handle) : undefined;
-    if (!image) return toolResult(result);
+    if (!image) {
+      return toolResult(result);
+    }
 
     return {
       content: [

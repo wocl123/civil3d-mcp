@@ -30,7 +30,9 @@ export async function readSelection(): Promise<{ outline: string; count: number;
 
 // 프롬프트용 글 (AI가 읽으므로 머리말은 영어).
 function outline(selection: Selection): string {
-  if (!selection.totalCount) return "";
+  if (!selection.totalCount) {
+    return "";
+  }
 
   // 많이 선택했으면 개수 요약 + 예시 5개, 적으면 전부.
   const large = selection.totalCount > selection.items.length;

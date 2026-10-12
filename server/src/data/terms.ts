@@ -36,12 +36,16 @@ function variants(name: string): string[] {
 // 이름들을 가릴 낱말에 더한다(새 것만, 최근 것이 앞).
 export async function addTerms(names: (string | undefined)[]): Promise<void> {
   const wanted = names.filter((name): name is string => !!name).flatMap(variants);
-  if (!wanted.length) return;
+  if (!wanted.length) {
+    return;
+  }
 
   writing = writing.then(async () => {
     const list = await load();
     const fresh = wanted.filter(term => !list.includes(term));
-    if (fresh.length) await writeAtomic(file(), JSON.stringify([...fresh, ...list].slice(0, MAX_TERMS)));
+    if (fresh.length) {
+      await writeAtomic(file(), JSON.stringify([...fresh, ...list].slice(0, MAX_TERMS)));
+    }
   }).catch(error => process.stderr.write(`MyCivil3DMcp terms were not saved: ${String(error)}\n`));
   await writing;
 }
@@ -55,6 +59,7 @@ export async function privateTerms(): Promise<string[]> {
   } catch {
     // 사용자 이름을 알 수 없다.
   }
+
   own.push(hostname());
   return [...new Set([...own, ...await load()])]
     .filter(term => term.length >= MIN_LENGTH)

@@ -26,13 +26,19 @@ const BASIS_LABEL: Record<KnowledgeFact["basis"], string> = { user_answer: "사�
 let writing: Promise<void> = Promise.resolve();
 
 export function knowledgeDir(): string {
-  if (process.env.MY_CIVIL3D_KNOWLEDGE_DIR) return process.env.MY_CIVIL3D_KNOWLEDGE_DIR;
+  if (process.env.MY_CIVIL3D_KNOWLEDGE_DIR) {
+    return process.env.MY_CIVIL3D_KNOWLEDGE_DIR;
+  }
+
   return join(dataDir(), "knowledge");
 }
 
 // 도면의 지식 파일 경로. 도면 이름(파일에 쓸 수 없는 글자는 _) + 도면 경로의 해시 8자리.
 export function knowledgeFile(scope: DrawingScope): string | undefined {
-  if (!scope.key) return undefined;
+  if (!scope.key) {
+    return undefined;
+  }
+
   const name = scope.label.replace(/\.dwg$/i, "").replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "drawing";
   return join(knowledgeDir(), "drawings", `${name}_${hashKey(scope.key).slice(0, 8)}.md`);
 }
@@ -64,7 +70,10 @@ export function parseKnowledge(text: string): KnowledgeFact[] {
 
 export async function readKnowledge(scope: DrawingScope): Promise<KnowledgeFact[]> {
   const file = knowledgeFile(scope);
-  if (!file) return [];
+  if (!file) {
+    return [];
+  }
+
   try {
     return parseKnowledge(await readFile(file, "utf8"));
   } catch {
@@ -78,10 +87,14 @@ export function knowledgePrompt(facts: KnowledgeFact[]): string {
   let size = 0;
   for (const fact of facts.filter(item => !item.replaced).reverse().slice(0, MAX_PROMPT_FACTS)) {
     const line = `- [${fact.id}] ${fact.title}: ${fact.content}`;
-    if (size + line.length > MAX_PROMPT_CHARS) break;
+    if (size + line.length > MAX_PROMPT_CHARS) {
+      break;
+    }
+
     lines.push(line);
     size += line.length;
   }
+
   return lines.join("\n");
 }
 
@@ -90,18 +103,31 @@ const HEDGED = /추정|보인다|보임|것\s*같|듯하|아마|가능성|추측
 
 // AI가 <facts>에 쓴 항목 하나를 검사해 받는다. 형식이 틀리거나 추측이면 버린다.
 function validProposal(value: unknown): FactProposal | undefined {
-  if (!value || typeof value !== "object") return undefined;
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
   const item = value as Record<string, unknown>;
-  if (typeof item.title !== "string" || typeof item.content !== "string") return undefined;
-  if (item.basis !== "user_answer" && item.basis !== "drawing") return undefined;
+  if (typeof item.title !== "string" || typeof item.content !== "string") {
+    return undefined;
+  }
+
+  if (item.basis !== "user_answer" && item.basis !== "drawing") {
+    return undefined;
+  }
 
   const title = oneLine(item.title, 80);
   const content = oneLine(item.content, 400);
-  if (!title || !content || HEDGED.test(content)) return undefined;
+  if (!title || !content || HEDGED.test(content)) {
+    return undefined;
+  }
 
   // 일반 관행(scope: general)은 사용자 말에서만 나온다. 설정값은 일반 관행에만 붙는다.
   const general = item.scope === "general";
-  if (general && item.basis !== "user_answer") return undefined;
+  if (general && item.basis !== "user_answer") {
+    return undefined;
+  }
+
   const parameter = general ? validParameter(item.parameter) : undefined;
 
   return {
@@ -126,7 +152,10 @@ export function readProposals(value: unknown): FactProposal[] {
 // 지금 사실과 똑같으면 건너뛴다(같은 답이 반복돼도 파일이 커지지 않게). 새 id들을 돌려준다.
 export async function appendFacts(scope: DrawingScope, proposals: FactProposal[], source: string): Promise<string[]> {
   const file = knowledgeFile(scope);
-  if (!file || !proposals.length) return [];
+  if (!file || !proposals.length) {
+    return [];
+  }
+
   const added: string[] = [];
 
   writing = writing.then(async () => {
@@ -145,9 +174,14 @@ export async function appendFacts(scope: DrawingScope, proposals: FactProposal[]
     let next = parseKnowledge(text).filter(fact => fact.id.startsWith(`F-${stamp}-`)).length + 1;
 
     for (const proposal of proposals) {
-      if (current.some(fact => fact.title === proposal.title && fact.content === proposal.content)) continue;
+      if (current.some(fact => fact.title === proposal.title && fact.content === proposal.content)) {
+        continue;
+      }
+
       const id = `F-${stamp}-${next++}`;
-      if (proposal.replaces) text = markReplaced(text, proposal.replaces, id);
+      if (proposal.replaces) {
+        text = markReplaced(text, proposal.replaces, id);
+      }
 
       const evidence = proposal.evidence ? ` · ${proposal.evidence}` : "";
       text = text.trimEnd() +
@@ -158,7 +192,10 @@ export async function appendFacts(scope: DrawingScope, proposals: FactProposal[]
       added.push(id);
     }
 
-    if (!added.length) return;
+    if (!added.length) {
+      return;
+    }
+
     await writeAtomic(file, text);
   }).catch(error => {
     added.length = 0;
@@ -172,10 +209,16 @@ export async function appendFacts(scope: DrawingScope, proposals: FactProposal[]
 // 절 id의 끝에 "- 상태: 정정됨 (새 id)"를 붙인다. 이미 붙어 있으면 그대로.
 function markReplaced(text: string, id: string, by: string): string {
   const start = text.indexOf(`## ${id} `);
-  if (start < 0) return text;
+  if (start < 0) {
+    return text;
+  }
+
   const end = text.indexOf("\n## ", start + 3);
   const section = text.slice(start, end < 0 ? undefined : end);
-  if (section.includes("- 상태: 정정됨")) return text;
+  if (section.includes("- 상태: 정정됨")) {
+    return text;
+  }
+
   const marked = section.trimEnd() + `\n- 상태: 정정됨 (${by})\n`;
   return text.slice(0, start) + marked + (end < 0 ? "" : text.slice(end));
 }

@@ -23,10 +23,13 @@ export function loadAdminConfig(): AdminConfig {
   const file = join(adminDir(), "config.json");
   try {
     const parsed = JSON.parse(readFileSync(file, "utf8").replace(/^﻿/, "")) as Partial<AdminConfig>;
-    if (parsed.schema === 1) return { ...DEFAULTS, ...parsed };
+    if (parsed.schema === 1) {
+      return { ...DEFAULTS, ...parsed };
+    }
   } catch {
     // 아래에서 만든다.
   }
+
   writeFileSync(file, JSON.stringify(DEFAULTS, null, 1), "utf8");
   return { ...DEFAULTS };
 }

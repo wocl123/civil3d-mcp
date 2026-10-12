@@ -51,26 +51,37 @@ async function installDefaultRules(): Promise<void> {
     let changed = false;
 
     for (const name of await readdir(defaultsDir)) {
-      if (!name.endsWith(".md")) continue;
+      if (!name.endsWith(".md")) {
+        continue;
+      }
+
       const shipped = await readFile(join(defaultsDir, name), "utf8");
       const target = join(rulesDir(), name);
 
       // 처음 보는 규칙: 없으면 설치. 사람이 먼저 만들어 둔 같은 이름 파일은 건드리지 않는다.
       if (!installed.has(name)) {
-        if (!present.has(name)) await writeFile(target, shipped, "utf8");
+        if (!present.has(name)) {
+          await writeFile(target, shipped, "utf8");
+        }
+
         installed.set(name, present.has(name) ? undefined : sha(shipped));
         changed = true;
         continue;
       }
 
       // 사람이 지운 규칙은 다시 설치하지 않는다.
-      if (!present.has(name)) continue;
+      if (!present.has(name)) {
+        continue;
+      }
 
       const current = sha(await readFile(target, "utf8"));
       const recorded = installed.get(name);
       if (current === sha(shipped)) {
         // 이미 배포본과 같다: 기록만 맞춘다.
-        if (recorded !== current) { installed.set(name, current); changed = true; }
+        if (recorded !== current) {
+          installed.set(name, current);
+          changed = true;
+        }
       } else if (recorded && current === recorded) {
         // 설치한 뒤 아무도 안 고쳤고 배포본이 바뀌었다: 새 내용으로.
         await writeFile(target, shipped, "utf8");

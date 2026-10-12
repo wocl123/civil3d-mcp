@@ -13,7 +13,10 @@ export function appDataDir(): string {
 // 설치 폴더에는 두지 않는다. 그래서 데이터가 두 곳으로 갈라지지 않고, Program Files 설치도 똑같이 동작한다.
 // MY_CIVIL3D_DATA_DIR 로 옮길 수 있다(테스트는 임시 폴더를 쓴다). docs/데이터관리_설계.md 참고.
 export function dataDir(): string {
-  if (resolved) return resolved;
+  if (resolved) {
+    return resolved;
+  }
+
   resolved = process.env.MY_CIVIL3D_DATA_DIR ?? join(appDataDir(), "data");
   mkdirSync(resolved, { recursive: true });
   return resolved;

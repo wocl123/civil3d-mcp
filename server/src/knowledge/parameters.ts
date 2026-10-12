@@ -43,9 +43,15 @@ export const isParameterKey = (key: unknown): key is ParameterKey => typeof key 
 
 // { key, value } 가 있는 키이고 허용 값이면 받는다.
 export function validParameter(value: unknown): { key: ParameterKey; value: number } | undefined {
-  if (!value || typeof value !== "object") return undefined;
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
   const item = value as Record<string, unknown>;
-  if (!isParameterKey(item.key) || typeof item.value !== "number") return undefined;
+  if (!isParameterKey(item.key) || typeof item.value !== "number") {
+    return undefined;
+  }
+
   const allowed = PARAMETERS[item.key].allowed as readonly number[];
   return allowed.includes(item.value) ? { key: item.key, value: item.value } : undefined;
 }
@@ -61,8 +67,11 @@ async function read(file: string): Promise<ParameterFile> {
     for (const [key, entry] of Object.entries(parsed)) {
       const stored = entry as ParameterValue;
       const checked = validParameter({ key, value: stored?.value });
-      if (checked) out[checked.key] = { value: checked.value, from: String(stored.from ?? ""), at: String(stored.at ?? "") };
+      if (checked) {
+        out[checked.key] = { value: checked.value, from: String(stored.from ?? ""), at: String(stored.at ?? "") };
+      }
     }
+
     return out;
   } catch {
     return {};
@@ -83,7 +92,10 @@ export type ResolvedParameter = { key: ParameterKey; value: number; source: "이
 // 지금 적용되는 설정값(이 PC 승인 > 중앙 승인). 없으면 undefined(코드 기본값).
 export function param(key: ParameterKey): ResolvedParameter | undefined {
   const local = loaded.local[key];
-  if (local) return { key, value: local.value, source: "이 PC 승인", from: local.from };
+  if (local) {
+    return { key, value: local.value, source: "이 PC 승인", from: local.from };
+  }
+
   const central = loaded.central[key];
   return central ? { key, value: central.value, source: "중앙 승인", from: central.from } : undefined;
 }
@@ -91,10 +103,16 @@ export function param(key: ParameterKey): ResolvedParameter | undefined {
 // 올림 단위. 승인된 값이면 notes에 출처를 한 줄 남긴다(계획·수정안 메모에 보이게).
 export function step(key: ParameterKey, fallback: number, notes?: string[]): number {
   const found = param(key);
-  if (!found) return fallback;
+  if (!found) {
+    return fallback;
+  }
+
   const from = found.from ? ` ${found.from}` : "";
   const note = `${PARAMETERS[key].label} ${found.value}을(를) 썼다(${found.source}${from}).`;
-  if (notes && !notes.includes(note)) notes.push(note);
+  if (notes && !notes.includes(note)) {
+    notes.push(note);
+  }
+
   return found.value;
 }
 
@@ -110,8 +128,11 @@ export async function writeCentralParameters(values: Record<string, number>, ver
   const out: ParameterFile = {};
   for (const [key, value] of Object.entries(values)) {
     const checked = validParameter({ key, value });
-    if (checked) out[checked.key] = { value: checked.value, from: `중앙 v${version}`, at: new Date().toISOString() };
+    if (checked) {
+      out[checked.key] = { value: checked.value, from: `중앙 v${version}`, at: new Date().toISOString() };
+    }
   }
+
   await writeAtomic(centralFile(), JSON.stringify(out, null, 1));
 }
 

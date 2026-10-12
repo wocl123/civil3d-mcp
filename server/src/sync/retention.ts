@@ -29,6 +29,7 @@ async function removeOlder(folder: string, maxAgeMs: number): Promise<number> {
       removed++;
     }
   }
+
   return removed;
 }
 

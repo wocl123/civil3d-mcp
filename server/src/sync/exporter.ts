@@ -36,7 +36,9 @@ export const outboxDir = (kind: "pending" | "blocked") => join(dataDir(), "outbo
 // 파일이 커서보다 작아졌으면(지웠다 새로 생김) 처음부터 읽는다.
 async function newLines(path: string, from: number): Promise<{ lines: string[]; to: number }> {
   const size = (await stat(path)).size;
-  if (size <= from) return { lines: [], to: size < from ? 0 : from };
+  if (size <= from) {
+    return { lines: [], to: size < from ? 0 : from };
+  }
 
   const handle = await open(path, "r");
   try {
@@ -44,7 +46,10 @@ async function newLines(path: string, from: number): Promise<{ lines: string[]; 
     const buffer = Buffer.alloc(length);
     await handle.read(buffer, 0, length, from);
     const end = buffer.lastIndexOf(0x0a);
-    if (end < 0) return { lines: [], to: from };
+    if (end < 0) {
+      return { lines: [], to: from };
+    }
+
     return { lines: buffer.subarray(0, end).toString("utf8").split("\n"), to: from + end + 1 };
   } finally {
     await handle.close();
@@ -65,23 +70,32 @@ export async function exportLogs(state: SyncState): Promise<{ packages: number; 
       const key = `${day}/${file}`;
       const path = join(logsDir(), day, file);
       const found = await newLines(path, state.cursors[key] ?? 0).catch(() => undefined);
-      if (!found) continue;
+      if (!found) {
+        continue;
+      }
 
       seen.add(key);
       for (const line of found.lines) {
         try {
           const record = outRecord(file, JSON.parse(line) as Record<string, unknown>, terms);
-          if (record) records.push(record);
+          if (record) {
+            records.push(record);
+          }
         } catch {
           // 깨진 줄은 건너뛴다.
         }
       }
+
       state.cursors[key] = found.to;
     }
   }
 
   // 보관 기한으로 지워진 로그의 커서는 버린다.
-  for (const key of Object.keys(state.cursors)) if (!seen.has(key)) delete state.cursors[key];
+  for (const key of Object.keys(state.cursors)) {
+    if (!seen.has(key)) {
+      delete state.cursors[key];
+    }
+  }
 
   // 2) MAX_RECORDS 개씩 묶고, 묶음 전체를 마지막으로 검사한다.
   const { installId } = await install();
@@ -93,9 +107,15 @@ export async function exportLogs(state: SyncState): Promise<{ packages: number; 
     let bytes = 0;
     while (index < records.length && batch.length < MAX_RECORDS) {
       const next = records[index], size = Buffer.byteLength(JSON.stringify(next)) + 1;
-      if (batch.length && bytes + size > MAX_PACKAGE_BYTES) break;
-      batch.push(next); bytes += size; index++;
+      if (batch.length && bytes + size > MAX_PACKAGE_BYTES) {
+        break;
+      }
+
+      batch.push(next);
+      bytes += size;
+      index++;
     }
+
     const packageId = `${installId}-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
     const item: Package = {
       schema: 1,

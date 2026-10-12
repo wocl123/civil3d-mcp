@@ -87,13 +87,17 @@ async function planAlignmentLayoutInternal(input: AlignmentLayoutInput) {
   // 1) 폴리라인을 IP 경로로 읽는다.
   const path = await readPath(input.polyline, input.reverse);
   const uses = orderUses(input.uses);
-  if (uses.length === 0) throw new Error("용도를 하나 이상 정해야 한다.");
+  if (uses.length === 0) {
+    throw new Error("용도를 하나 이상 정해야 한다.");
+  }
+
   const road = uses[0] === "도로";
 
   // 거의 되돌아가는 IP(교각 179° 초과)에는 곡선을 넣을 수 없다.
   const cusp = path.angles.findIndex(angle => Math.abs(angle) > 179);
-  if (cusp >= 0)
+  if (cusp >= 0) {
     throw new Error(`IP${cusp + 1}에서 폴리라인이 거의 되돌아간다(교각 ${round(Math.abs(path.angles[cusp]), 2)}°).`);
+  }
 
   // 2) 도로면 설계 조건과 한계값을 정하고, IP마다 곡선을 정한다.
   const design: RoadDesign = road
@@ -127,7 +131,10 @@ async function planAlignmentLayoutInternal(input: AlignmentLayoutInput) {
   };
 
   // 조건이 빠졌으면 아직 만들 수 없다(수정안 없음). 빠진 조건을 물어야 한다.
-  if (design.missing.length) return { ...result, option: undefined, source: undefined };
+  if (design.missing.length) {
+    return { ...result, option: undefined, source: undefined };
+  }
+
   return { ...result, ...await createOption(input, path, uses, design, ips, curves, overlaps, length) };
 }
 
@@ -136,15 +143,22 @@ async function readPath(handle: string, reverse?: boolean): Promise<Path> {
   const object = await callPlugin("drawing.object", { handle }) as PolylineObject;
   const geometry = object.geometry;
 
-  if (object.type !== "Polyline" || !geometry)
+  if (object.type !== "Polyline" || !geometry) {
     throw new Error(`${handle}은(는) ${object.type}이다. 선형은 2D 폴리라인으로만 만들 수 있다.`);
-  if (geometry.closed)
+  }
+
+  if (geometry.closed) {
     throw new Error("닫힌 폴리라인은 선형으로 만들지 않는다. 열린 폴리라인을 쓰세요.");
-  if (geometry.verticesTruncated)
+  }
+
+  if (geometry.verticesTruncated) {
     throw new Error(`꼭짓점이 ${geometry.vertexCount}개라 100개 이하만 처리할 수 있다.`);
+  }
 
   const points = polylinePath(geometry.vertices, reverse);
-  if (points.length < 2) throw new Error("폴리라인 길이가 0이다.");
+  if (points.length < 2) {
+    throw new Error("폴리라인 길이가 0이다.");
+  }
 
   return {
     object,
@@ -160,14 +174,22 @@ async function readPath(handle: string, reverse?: boolean): Promise<Path> {
 async function roadDesign(input: AlignmentLayoutInput): Promise<RoadDesign> {
   const set = await loadCriteria(input.criteria ?? "도로구조규칙");
   const design: RoadDesign = { set, conditions: {}, missing: [], warnings: [], notes: [] };
-  if (!set.reviewed) design.notes.push("기준표는 원문에서 옮긴 값이며 사람 검토 전이다.");
+  if (!set.reviewed) {
+    design.notes.push("기준표는 원문에서 옮긴 값이며 사람 검토 전이다.");
+  }
+
   design.notes.push(...(set.notes ?? []));
 
   const [radiusTable, lengthTable, superTable, spiralTable] =
     ["min_curve_radius", "min_curve_length", "max_superelevation", "min_spiral_length"].map(id => table(set, id));
 
-  if (input.roadClass) design.conditions.roadClass = { value: input.roadClass, from: "input" };
-  if (input.region) design.conditions.region = { value: input.region, from: "input" };
+  if (input.roadClass) {
+    design.conditions.roadClass = { value: input.roadClass, from: "input" };
+  }
+
+  if (input.region) {
+    design.conditions.region = { value: input.region, from: "input" };
+  }
 
   // 1) 설계속도 (제8조)
   const speed = designSpeed(set, input, design);
@@ -184,6 +206,7 @@ async function roadDesign(input: AlignmentLayoutInput): Promise<RoadDesign> {
       design.notes.push(`적용 최대 편경사는 ${label(superTable)}의 ${area} 최대값 ${emax.value}%를 썼다.`);
     }
   }
+
   design.emax = emax?.value;
 
   // 편경사를 정할 수 없으면 지역을 물어야 한다(지방지역이면 지방지역 선택지만).
@@ -195,12 +218,17 @@ async function roadDesign(input: AlignmentLayoutInput): Promise<RoadDesign> {
         .filter(item => !input.region?.startsWith("지방지역") || String(item).startsWith("지방지역"))
     });
   }
-  if (speed === undefined || !emax) return design;
+
+  if (speed === undefined || !emax) {
+    return design;
+  }
 
   // 3) 한계값.
   const radiusRow = findRow(radiusTable, { designSpeed: speed, maxSuperelevation: emax.value });
-  if (typeof radiusRow?.value !== "number")
+  if (typeof radiusRow?.value !== "number") {
     throw new Error(`${label(radiusTable)} 표에 설계속도 ${speed} km/h, 최대 편경사 ${emax.value}% 행이 없다.`);
+  }
+
   const spiralRow = findRow(spiralTable, { designSpeed: speed });
 
   design.limits = {
@@ -213,7 +241,10 @@ async function roadDesign(input: AlignmentLayoutInput): Promise<RoadDesign> {
     // 곡선 최소 길이: 교각 5도 미만이면 "상수 ÷ 교각" 형태.
     minLength: deltaDeg => {
       const row = findRow(lengthTable, { designSpeed: speed, deltaRange: deltaDeg < 5 ? "5도 미만" : "5도 이상" });
-      if (row === undefined) return undefined;
+      if (row === undefined) {
+        return undefined;
+      }
+
       return typeof row.value === "number" ? row.value : row.value.divideByDeltaDeg / deltaDeg;
     }
   };
@@ -222,6 +253,7 @@ async function roadDesign(input: AlignmentLayoutInput): Promise<RoadDesign> {
     design.notes.push(`설계속도 ${speed} km/h는 완화곡선 설치 대상(${label(spiralTable)}, ` +
       `${SPIRAL_REQUIRED_FROM} km/h 이상)이 아니라 원곡선만 넣었다.`);
   }
+
   return design;
 }
 
@@ -243,6 +275,7 @@ function designSpeed(set: CriteriaSet, input: AlignmentLayoutInput, design: Road
       design.notes.push(`설계속도 ${speed} km/h는 ${limits.label} 표 값 ${limits.standard} km/h보다 낮아 ` +
         "단서(지형·경제성 등으로 필요한 경우 20 km/h 이내 감속)를 적용한 것이다. 감속 사유를 설계에 남겨야 한다.");
     }
+
     return speed;
   }
 
@@ -260,8 +293,14 @@ function designSpeed(set: CriteriaSet, input: AlignmentLayoutInput, design: Road
   const speedTable = table(set, "design_speed");
   const classes = ROAD_CLASSES.filter(item =>
     item !== APARTMENT_ROAD || set.tables.some(other => other.id === "apartment_road_speed"));
-  if (!input.roadClass) design.missing.push({ name: "roadClass", neededFor: label(speedTable), options: [...classes] });
-  if (!input.region) design.missing.push({ name: "region", neededFor: label(speedTable), options: [...REGIONS] });
+  if (!input.roadClass) {
+    design.missing.push({ name: "roadClass", neededFor: label(speedTable), options: [...classes] });
+  }
+
+  if (!input.region) {
+    design.missing.push({ name: "region", neededFor: label(speedTable), options: [...REGIONS] });
+  }
+
   return undefined;
 }
 
@@ -305,10 +344,13 @@ function planCurves(path: Path, road: boolean, design: RoadDesign, radii: { ip: 
       //   ③ 완화곡선 두 개가 교각 안에 들어가는 반지름
       const minLength = limits.minLength(deltaDeg);
       const needs: [number, string][] = [[limits.minRadius, "제19조 최소 평면곡선 반지름"]];
-      if (minLength !== undefined)
+      if (minLength !== undefined) {
         needs.push([(minLength - limits.spiral) / deltaRad, `제20조 곡선 최소 길이 ${round(minLength)} m`]);
-      if (limits.spiral)
+      }
+
+      if (limits.spiral) {
         needs.push([limits.spiral / deltaRad * 1.001, "완화곡선 두 개가 들어갈 교각"]);
+      }
 
       const [governing, why] = needs.reduce((a, b) => (b[0] > a[0] ? b : a));
       // 계획 반지름은 5 m 단위(승인된 설정값이 있으면 그 단위)로 올린다.
@@ -346,9 +388,11 @@ function planCurves(path: Path, road: boolean, design: RoadDesign, radii: { ip: 
       planned.radius = curve.radius;
       planned.tangent = round(curveTangent(curve, deltaRad));
       planned.curveLength = round(curveLength(curve, deltaRad));
-      if (curve.spiral)
+      if (curve.spiral) {
         Object.assign(planned, { spiralLength: curve.spiral, spiralA: round(Math.sqrt(curve.radius * curve.spiral), 1) });
+      }
     }
+
     ips.push(planned);
     curves.push(curve);
   });
@@ -366,10 +410,14 @@ function fitCurves({ points, straights }: Path, ips: PlannedIp[], curves: (Curve
   // 1) 짧은 직선 찾기
   straights.forEach((length, index) => {
     const need = tangent(index) + tangent(index + 1);
-    if (need <= length + 1e-6) return;
+    if (need <= length + 1e-6) {
+      return;
+    }
 
     const ends = [index, index + 1].filter(point => point >= 1 && point <= ips.length && curves[point - 1]);
-    ends.forEach(point => { ips[point - 1].status = "overlap"; });
+    ends.forEach(point => {
+      ips[point - 1].status = "overlap";
+    });
 
     const from = index === 0 ? "시점" : `IP${index}`;
     const to = index + 1 === points.length - 1 ? "종점" : `IP${index + 1}`;
@@ -379,7 +427,9 @@ function fitCurves({ points, straights }: Path, ips: PlannedIp[], curves: (Curve
   // 2) IP마다, 앞뒤 곡선을 그대로 둘 때 들어가는 최대 반지름
   ips.forEach((planned, index) => {
     const curve = curves[index];
-    if (!curve) return;
+    if (!curve) {
+      return;
+    }
 
     const room = Math.min(straights[index] - tangent(index), straights[index + 1] - tangent(index + 2));
     const smallest = curve.spiral ? curve.spiral / radians(planned.deflectionDeg) * 1.001 : 0.001;
@@ -400,15 +450,24 @@ function fitCurves({ points, straights }: Path, ips: PlannedIp[], curves: (Curve
 // 가장 작은 반지름도 안 들어가면 undefined.
 function largestFitting(spiral: number, deltaRad: number, room: number, smallest: number): number | undefined {
   const fits = (radius: number) => curveTangent({ radius, spiral }, deltaRad) <= room;
-  if (!fits(smallest)) return undefined;
-  if (fits(MAX_SEARCH_RADIUS)) return MAX_SEARCH_RADIUS;
+  if (!fits(smallest)) {
+    return undefined;
+  }
+
+  if (fits(MAX_SEARCH_RADIUS)) {
+    return MAX_SEARCH_RADIUS;
+  }
 
   let [low, high] = [smallest, MAX_SEARCH_RADIUS];
   for (let step = 0; step < 60; step++) {
     const middle = (low + high) / 2;
-    if (fits(middle)) low = middle;
-    else high = middle;
+    if (fits(middle)) {
+      low = middle;
+    } else {
+      high = middle;
+    }
   }
+
   return low;
 }
 
@@ -423,7 +482,13 @@ async function createOption(input: AlignmentLayoutInput, path: Path, uses: Align
   const names = await alignmentNames();
   let name = input.name?.trim();
   const nameTaken = name !== undefined && names.has(name);
-  if (!name) for (let number = 1; ; number++) if (!names.has(name = `${NAME_PREFIX}${number}`)) break;
+  if (!name) {
+    for (let number = 1; ; number++) {
+      if (!names.has(name = `${NAME_PREFIX}${number}`)) {
+        break;
+      }
+    }
+  }
 
   // 2) 플러그인에 보낼 생성 요청. 설계 조건은 선형 설명에 기록해, 나중 검토가 다시 묻지 않게 한다.
   const create: AlignmentCreateRequest = {
@@ -490,7 +555,9 @@ async function alignmentNames(): Promise<Set<string>> {
   for (let offset = 0; ; offset += 200) {
     const page = await callPlugin("alignment.list", { offset, limit: 200 }) as { totalCount: number; items: { name: string }[] };
     page.items.forEach(item => names.add(item.name));
-    if (names.size >= page.totalCount || page.items.length === 0) return names;
+    if (names.size >= page.totalCount || page.items.length === 0) {
+      return names;
+    }
   }
 }
 

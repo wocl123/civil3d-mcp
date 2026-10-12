@@ -22,7 +22,9 @@ export function criteriaDir(): string {
 // 다른 기준을 따르는 기준(예: LH 지침 → 도로구조규칙)은 자기에게 없는 표를 따르는 기준에서 가져오고,
 // 표마다 어느 문서의 표인지(document) 적어 둔다.
 export async function loadCriteria(id: string): Promise<CriteriaSet> {
-  if (!/^[\w가-힣.-]{1,80}$/.test(id)) throw new Error(`Invalid criteria id "${id}".`);
+  if (!/^[\w가-힣.-]{1,80}$/.test(id)) {
+    throw new Error(`Invalid criteria id "${id}".`);
+  }
 
   // 데이터 폴더의 사본이 먼저, 없으면 배포된 기본값.
   let set: CriteriaSet | undefined;
@@ -34,8 +36,14 @@ export async function loadCriteria(id: string): Promise<CriteriaSet> {
       // 다음 위치를 본다.
     }
   }
-  if (!set) throw new Error(`Criteria "${id}" was not found.`);
-  if (!set.extends) return set;
+
+  if (!set) {
+    throw new Error(`Criteria "${id}" was not found.`);
+  }
+
+  if (!set.extends) {
+    return set;
+  }
 
   // 따르는 기준의 표를 합친다. 같은 id의 표는 자기 것이 이긴다.
   const base = await loadCriteria(set.extends);
@@ -58,7 +66,10 @@ export async function loadCriteria(id: string): Promise<CriteriaSet> {
 // 기준에서 id로 표 하나를 찾는다. 없으면 오류(기준 데이터 문제).
 export function table(set: CriteriaSet, id: string): CriteriaTable {
   const found = set.tables.find(item => item.id === id);
-  if (!found) throw new Error(`Criteria "${set.id}" has no table "${id}".`);
+  if (!found) {
+    throw new Error(`Criteria "${set.id}" has no table "${id}".`);
+  }
+
   return found;
 }
 

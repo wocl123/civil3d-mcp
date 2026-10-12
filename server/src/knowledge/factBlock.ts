@@ -10,7 +10,9 @@ export function splitFacts(text: string): { answer: string; proposals: FactPropo
   const blocks = [...text.matchAll(/<facts>([\s\S]*?)<\/facts>/gi)];
   const answer = text.replace(/<facts>[\s\S]*?<\/facts>/gi, "").trim();
   const last = blocks.at(-1)?.[1].replace(/```(?:json)?/gi, "").trim();
-  if (!last) return { answer, proposals: [] };
+  if (!last) {
+    return { answer, proposals: [] };
+  }
 
   try {
     // 배열이거나 { facts: [...] } 모양을 받는다.

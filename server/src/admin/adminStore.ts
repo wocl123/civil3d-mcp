@@ -76,7 +76,10 @@ function writeJson(file: string, value: unknown): void {
 
 // 한 줄에 JSON 하나인 파일. 깨진 줄은 건너뛴다.
 function readLines<T>(file: string): T[] {
-  if (!existsSync(path(file))) return [];
+  if (!existsSync(path(file))) {
+    return [];
+  }
+
   return readFileSync(path(file), "utf8").split("\n").filter(Boolean).flatMap(line => {
     try {
       return [JSON.parse(line) as T];
@@ -124,6 +127,7 @@ export class AdminStore {
       const lines = rows.map(row => JSON.stringify(row)).join("\n") + "\n";
       appendFileSync(path("records", `${receivedAt.slice(0, 7)}.jsonl`), lines, "utf8");
     }
+
     appendFileSync(path("packages.txt"), packageId + "\n", "utf8");
     this.packages.add(packageId);
     this.records.push(...rows);
@@ -159,22 +163,48 @@ export class AdminStore {
       const id = record.id ?? record.turnId;
       return typeof id === "string" ? `${row.installId}:${id}` : undefined;
     };
+
     const hasContent = (row: StoredRecord) => CONTENT_FIELDS.some(field => field in (row.record as Record<string, unknown>));
-    const target = (row: StoredRecord) => { const key = keyOf(row); return !!key && hasContent(row) && match(key); };
-    const strip = (row: StoredRecord) => { for (const field of CONTENT_FIELDS) delete (row.record as Record<string, unknown>)[field]; };
+    const target = (row: StoredRecord) => {
+      const key = keyOf(row);
+      return !!key && hasContent(row) && match(key);
+    };
+
+    const strip = (row: StoredRecord) => {
+      for (const field of CONTENT_FIELDS) {
+        delete (row.record as Record<string, unknown>)[field];
+      }
+    };
+
     let scrubbed = 0;
-    for (const row of this.records) if (target(row)) { strip(row); scrubbed++; }
-    if (!scrubbed) return 0;
+    for (const row of this.records) {
+      if (target(row)) {
+        strip(row);
+        scrubbed++;
+      }
+    }
+
+    if (!scrubbed) {
+      return 0;
+    }
+
     for (const name of readdirSync(path("records")).filter(file => file.endsWith(".jsonl"))) {
       const lines = readLines<StoredRecord>(join("records", name));
       let changed = false;
-      for (const row of lines) if (target(row)) { strip(row); changed = true; }
+      for (const row of lines) {
+        if (target(row)) {
+          strip(row);
+          changed = true;
+        }
+      }
+
       if (changed) {
         const file = path("records", name);
         writeFileSync(file + ".tmp", lines.map(row => JSON.stringify(row)).join("\n") + "\n", "utf8");
         renameSync(file + ".tmp", file);
       }
     }
+
     return scrubbed;
   }
 

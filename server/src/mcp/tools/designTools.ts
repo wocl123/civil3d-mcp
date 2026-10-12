@@ -61,7 +61,10 @@ export function registerDesignTools(server: McpServer): void {
     annotations: { readOnlyHint: true, openWorldHint: false }
   }, async args => {
     const { option, source, ...plan } = await planAlignmentLayout(args);
-    if (option && source) await storeFix(option, `선형 ${option.create!.name}`, "선형 생성", source);
+    if (option && source) {
+      await storeFix(option, `선형 ${option.create!.name}`, "선형 생성", source);
+    }
+
     return toolResult({ ...plan, ...(option ? { option: fixView(option) } : {}) });
   });
 }

@@ -24,10 +24,19 @@ const PALETTE_WRITE_TOOLS = new Set(["apply_drawing_change"]);
 export function paletteServer(server: McpServer): McpServer {
   return new Proxy(server, {
     get(target, property, receiver) {
-      if (property !== "registerTool") return Reflect.get(target, property, receiver);
+      if (property !== "registerTool") {
+        return Reflect.get(target, property, receiver);
+      }
+
       return (name: string, config: ToolConfig, callback: unknown) => {
-        if (config.annotations?.openWorldHint !== false) return undefined;
-        if (config.annotations.readOnlyHint !== true && !PALETTE_WRITE_TOOLS.has(name)) return undefined;
+        if (config.annotations?.openWorldHint !== false) {
+          return undefined;
+        }
+
+        if (config.annotations.readOnlyHint !== true && !PALETTE_WRITE_TOOLS.has(name)) {
+          return undefined;
+        }
+
         return (target.registerTool as (...args: unknown[]) => unknown)(name, config, callback);
       };
     }

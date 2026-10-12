@@ -61,7 +61,10 @@ const save = (list: Candidate[]) => writeAtomic(file(), JSON.stringify(list, nul
 
 // 새 후보를 저장한다. 대기·승인된 후보와 내용이 같으면 건너뛴다. 새로 붙인 id들을 돌려준다.
 export async function addCandidates(proposals: FactProposal[], drawing: string, provider: string): Promise<string[]> {
-  if (!proposals.length) return [];
+  if (!proposals.length) {
+    return [];
+  }
+
   const added: string[] = [];
 
   writing = writing.then(async () => {
@@ -70,7 +73,10 @@ export async function addCandidates(proposals: FactProposal[], drawing: string, 
     let next = list.filter(item => item.id.startsWith(`C-${stamp}-`)).length + 1;
 
     for (const proposal of proposals) {
-      if (list.some(item => item.status !== "rejected" && item.content === proposal.content)) continue;
+      if (list.some(item => item.status !== "rejected" && item.content === proposal.content)) {
+        continue;
+      }
+
       const id = `C-${stamp}-${next++}`;
       list.push({
         id,
@@ -85,7 +91,10 @@ export async function addCandidates(proposals: FactProposal[], drawing: string, 
       });
       added.push(id);
     }
-    if (added.length) await save(list);
+
+    if (added.length) {
+      await save(list);
+    }
   }).catch(error => {
     added.length = 0;
     process.stderr.write(`MyCivil3DMcp knowledge candidates were not saved: ${String(error)}\n`);
@@ -114,7 +123,10 @@ export async function decideCandidates(ids: string[], decision: "approved" | "re
         decided.push(item);
       }
     }
-    if (!decided.length) return;
+
+    if (!decided.length) {
+      return;
+    }
 
     if (decision === "approved") {
       const rule = join(rulesDir(), `${APPROVED_RULE}.md`);
@@ -123,9 +135,13 @@ export async function decideCandidates(ids: string[], decision: "approved" | "re
       const lines = decided.map(item => `- ${item.content} (${item.id}, 승인 ${date})`).join("\n");
       await writeAtomic(rule, text.trimEnd() + "\n\n" + lines + "\n");
 
-      for (const item of decided)
-        if (item.parameter) await setLocalParameter(item.parameter.key, item.parameter.value, item.id);
+      for (const item of decided) {
+        if (item.parameter) {
+          await setLocalParameter(item.parameter.key, item.parameter.value, item.id);
+        }
+      }
     }
+
     await save(list);
   }).catch(error => {
     decided.length = 0;
@@ -146,7 +162,12 @@ export async function markSubmitted(ids: string[]): Promise<void> {
   writing = writing.then(async () => {
     const list = await load();
     const now = new Date().toISOString();
-    for (const item of list) if (ids.includes(item.id)) item.submittedAt = now;
+    for (const item of list) {
+      if (ids.includes(item.id)) {
+        item.submittedAt = now;
+      }
+    }
+
     await save(list);
   }).catch(error => process.stderr.write(`MyCivil3DMcp knowledge candidates were not updated: ${String(error)}\n`));
   await writing;
@@ -161,7 +182,9 @@ export async function pruneCandidates(maxAgeMs: number): Promise<number> {
     const kept = list.filter(item =>
       item.status === "pending" || !item.decidedAt || now - Date.parse(item.decidedAt) < maxAgeMs);
     removed = list.length - kept.length;
-    if (removed) await save(kept);
+    if (removed) {
+      await save(kept);
+    }
   }).catch(error => process.stderr.write(`MyCivil3DMcp knowledge candidates were not pruned: ${String(error)}\n`));
   await writing;
   return removed;

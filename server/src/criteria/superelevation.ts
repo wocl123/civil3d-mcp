@@ -8,8 +8,13 @@ import type { CriteriaTable } from "./types/CriteriaTable.js";
 // 지역도 모르면 정할 수 없다(undefined).
 export function maxSuperelevation(superTable: CriteriaTable, given: number | undefined, area: string | undefined):
   { value: number; fromTable: boolean } | undefined {
-  if (given !== undefined) return { value: given, fromTable: false };
-  if (!area) return undefined;
+  if (given !== undefined) {
+    return { value: given, fromTable: false };
+  }
+
+  if (!area) {
+    return undefined;
+  }
 
   const row = findRow(superTable, { area });
   return typeof row?.value === "number" ? { value: row.value, fromTable: true } : undefined;

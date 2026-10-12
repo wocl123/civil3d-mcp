@@ -19,6 +19,7 @@ export async function contentVersion(): Promise<string> {
       hash.update(name).update(lf(await readFile(join(folder, name), "utf8")));
     }
   }
+
   const rules = (await listRules()).map(rule => JSON.parse(lf(JSON.stringify(rule)).replace(/\\r\\n/g, "\\n")));
   hash.update(JSON.stringify(rules));
   hash.update(JSON.stringify(await parameterSummary()));

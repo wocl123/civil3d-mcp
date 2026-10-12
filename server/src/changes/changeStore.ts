@@ -34,17 +34,25 @@ const requestId = currentRequestId;
 async function removeOld(folder: string): Promise<void> {
   const now = Date.now();
   for (const name of await readdir(folder).catch(() => [] as string[])) {
-    if (!/^fx-[a-f\d]{10}\.json$/.test(name)) continue;
+    if (!/^fx-[a-f\d]{10}\.json$/.test(name)) {
+      continue;
+    }
+
     const path = join(folder, name);
     const info = await stat(path).catch(() => undefined);
-    if (info && now - info.mtimeMs > KEEP_MS) await rm(path, { force: true });
+    if (info && now - info.mtimeMs > KEEP_MS) {
+      await rm(path, { force: true });
+    }
   }
 }
 
 // 검토 결과의 모든 수정안에 id를 붙이고, 그 수정안을 만든 검토와 함께 저장한다.
 export async function registerFixes(items: CheckItem[], source: FixSource): Promise<void> {
-  for (const item of items)
-    for (const fix of item.fixes ?? []) await storeFix(fix, item.target, `${item.article} ${item.check}`, source, item.targetRef);
+  for (const item of items) {
+    for (const fix of item.fixes ?? []) {
+      await storeFix(fix, item.target, `${item.article} ${item.check}`, source, item.targetRef);
+    }
+  }
 }
 
 // 수정안(또는 선형 생성 계획) 하나를 저장하고, id와 자동 적용 가능 여부를 채운다.
@@ -80,11 +88,20 @@ export async function storeFix(fix: FixOption, target: string, check: string, so
 
 // id로 수정안을 읽는다. 없거나 기간이 지났으면 다시 검토하라고 알린다.
 export async function loadFix(id: string): Promise<StoredFix> {
-  if (!/^fx-[a-f\d]{10}$/.test(id)) throw new Error(`Unknown fix id "${id}".`);
+  if (!/^fx-[a-f\d]{10}$/.test(id)) {
+    throw new Error(`Unknown fix id "${id}".`);
+  }
+
   const text = await readFile(dir("fixes", `${id}.json`), "utf8").catch(() => undefined);
-  if (!text) throw new Error(`Fix ${id} was not found or has expired. Run the check again.`);
+  if (!text) {
+    throw new Error(`Fix ${id} was not found or has expired. Run the check again.`);
+  }
+
   const fix = JSON.parse(text) as StoredFix;
-  if (Date.now() - Date.parse(fix.createdAt) >= KEEP_MS) throw new Error(`Fix ${id} has expired. Run the check again.`);
+  if (Date.now() - Date.parse(fix.createdAt) >= KEEP_MS) {
+    throw new Error(`Fix ${id} has expired. Run the check again.`);
+  }
+
   return fix;
 }
 
@@ -93,12 +110,21 @@ export async function loadFix(id: string): Promise<StoredFix> {
 export async function fixesFor(id: string): Promise<StoredFix[]> {
   const found: StoredFix[] = [];
   for (const name of await readdir(dir("fixes")).catch(() => [] as string[])) {
-    if (!/^fx-[a-f\d]{10}\.json$/.test(name)) continue;
+    if (!/^fx-[a-f\d]{10}\.json$/.test(name)) {
+      continue;
+    }
+
     const text = await readFile(dir("fixes", name), "utf8").catch(() => undefined);
-    if (!text) continue;
+    if (!text) {
+      continue;
+    }
+
     const fix = JSON.parse(text) as StoredFix;
-    if (fix.requestId === id) found.push(fix);
+    if (fix.requestId === id) {
+      found.push(fix);
+    }
   }
+
   return found.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 

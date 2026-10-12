@@ -28,8 +28,9 @@ const multiple = (value: number, step: number) => Math.abs(value / step - Math.r
 // 대기 중인 후보를 내용으로 묶는다. 이미 중앙 지식에 있는 내용은 뺀다.
 function candidateGroups(store: Store): ReviewItem[] {
   const groups = new Map<string, CandidateRow[]>();
-  for (const row of store.candidates.filter(item => item.status === "pending"))
+  for (const row of store.candidates.filter(item => item.status === "pending")) {
     groups.set(row.groupKey, [...groups.get(row.groupKey) ?? [], row]);
+  }
 
   const official = new Set(store.official.items.map(item => normalize(item.content)));
 
@@ -68,7 +69,9 @@ function parameterProposals(store: Store, config: Config): ReviewItem[] {
       row.record.type === "modification" && row.record.outcome === "modified" &&
       `${row.record.objectKind}.${row.record.property}` === definition.observe &&
       typeof row.record.aiValue === "number" && typeof row.record.userValue === "number");
-    if (cases.length < config.minCases) continue;
+    if (cases.length < config.minCases) {
+      continue;
+    }
 
     // 큰 단위부터 본다(1은 제안하지 않는다).
     for (const step of [...definition.allowed].sort((a, b) => b - a).filter(value => value > 1)) {
@@ -80,10 +83,14 @@ function parameterProposals(store: Store, config: Config): ReviewItem[] {
 
       const enough = eligible.length > 0 && hits.length / eligible.length >= config.minShare &&
         hits.length >= config.minCases && installs >= config.minInstalls;
-      if (!enough) continue;
+      if (!enough) {
+        continue;
+      }
 
       // 이미 적용 중이거나 반려된 제안이면 더 작은 단위도 제안하지 않는다.
-      if (store.official.parameters[key] === step || rejected.has(id)) break;
+      if (store.official.parameters[key] === step || rejected.has(id)) {
+        break;
+      }
 
       items.push({
         id,
@@ -99,6 +106,7 @@ function parameterProposals(store: Store, config: Config): ReviewItem[] {
       break;
     }
   }
+
   return items;
 }
 
@@ -120,22 +128,36 @@ export function decide(store: Store, config: Config,
   // ── 철회: 중앙 지식에서 빼고(그 항목이 정한 설정값도 빼고) 새 버전 발행.
   if (decision === "retract") {
     const item = store.official.items.find(entry => entry.id === id);
-    if (!item) throw new ReviewError(`${id}은(는) 중앙 지식에 없습니다.`);
+    if (!item) {
+      throw new ReviewError(`${id}은(는) 중앙 지식에 없습니다.`);
+    }
+
     const next: Official = {
       ...store.official,
       items: store.official.items.filter(entry => entry !== item),
       parameters: { ...store.official.parameters }
     };
-    if (item.parameter && next.parameters[item.parameter.key] === item.parameter.value) delete next.parameters[item.parameter.key];
+    if (item.parameter && next.parameters[item.parameter.key] === item.parameter.value) {
+      delete next.parameters[item.parameter.key];
+    }
+
     store.publish(next, { id, decision, reason });
     return `${id} 철회: ${item.content}`;
   }
 
-  if (decision !== "approve" && decision !== "reject") throw new ReviewError("decision은 approve, reject, retract 중 하나입니다.");
-  if (decision === "reject" && !reason) throw new ReviewError("반려에는 사유가 필요합니다.");
+  if (decision !== "approve" && decision !== "reject") {
+    throw new ReviewError("decision은 approve, reject, retract 중 하나입니다.");
+  }
+
+  if (decision === "reject" && !reason) {
+    throw new ReviewError("반려에는 사유가 필요합니다.");
+  }
 
   const item = reviewItems(store, config).find(entry => entry.id === id);
-  if (!item) throw new ReviewError(`${id}은(는) 검토 목록에 없습니다. /검토로 목록을 다시 보세요.`);
+  if (!item) {
+    throw new ReviewError(`${id}은(는) 검토 목록에 없습니다. /검토로 목록을 다시 보세요.`);
+  }
+
   const rows = item.kind === "candidate"
     ? store.candidates.filter(row => `G-${row.groupKey}` === id && row.status === "pending")
     : [];
@@ -143,7 +165,10 @@ export function decide(store: Store, config: Config,
 
   // ── 반려: 묶음의 후보들을 반려로 표시. 중앙 지식은 그대로.
   if (decision === "reject") {
-    for (const row of rows) Object.assign(row, { status: "rejected", decidedAt: now, reason });
+    for (const row of rows) {
+      Object.assign(row, { status: "rejected", decidedAt: now, reason });
+    }
+
     store.saveCandidates();
     store.decide({ id, decision, reason });
     return `${id} 반려: ${item.content}`;
@@ -158,7 +183,10 @@ export function decide(store: Store, config: Config,
     items: [...store.official.items, { id: `K-${number}`, content, approvedAt: now, ...(parameter ? { parameter } : {}), from: id }],
     parameters: { ...store.official.parameters, ...(parameter ? { [parameter.key]: parameter.value } : {}) }
   };
-  for (const row of rows) Object.assign(row, { status: "approved", decidedAt: now });
+  for (const row of rows) {
+    Object.assign(row, { status: "approved", decidedAt: now });
+  }
+
   store.saveCandidates();
   store.publish(next, { id, decision, content: content !== item.content ? content : undefined });
   return `K-${number} 승인: ${content}`;
@@ -173,7 +201,9 @@ export function report(store: Store, config: Config) {
   const turns = rows.filter(row => row.record.type === "turn");
   const failedTurns: Record<string, number> = {};
   for (const row of turns) {
-    if (row.record.errorKind) failedTurns[String(row.record.errorKind)] = (failedTurns[String(row.record.errorKind)] ?? 0) + 1;
+    if (row.record.errorKind) {
+      failedTurns[String(row.record.errorKind)] = (failedTurns[String(row.record.errorKind)] ?? 0) + 1;
+    }
   }
 
   // 도구별 통계
@@ -182,7 +212,10 @@ export function report(store: Store, config: Config) {
     const name = String(row.record.tool ?? "?");
     const entry = tools.get(name) ?? { calls: 0, failed: 0, ms: 0 };
     entry.calls++;
-    if (row.record.ok !== true) entry.failed++;
+    if (row.record.ok !== true) {
+      entry.failed++;
+    }
+
     entry.ms += Number(row.record.ms ?? 0);
     tools.set(name, entry);
   }
@@ -201,7 +234,10 @@ export function report(store: Store, config: Config) {
     const version = String(row.record.appVersion ?? "?");
     const entry = versions.get(version) ?? { turns: 0, failed: 0, installs: new Set<string>() };
     entry.turns++;
-    if (row.record.errorKind) entry.failed++;
+    if (row.record.errorKind) {
+      entry.failed++;
+    }
+
     entry.installs.add(row.installId);
     versions.set(version, entry);
   }
@@ -239,29 +275,43 @@ export function problemCases(store: Store, status: CaseStatus = "new", limit = 1
   const caseOf = (installId: string, id: string, at: string) => {
     const key = `${installId}:${id}`;
     let found = cases.get(key);
-    if (!found) cases.set(key, found = { key, id, at, signals: [], feedback: [], changes: [], tools: [] });
+    if (!found) {
+      cases.set(key, found = { key, id, at, signals: [], feedback: [], changes: [], tools: [] });
+    }
+
     return found;
   };
+
   for (const { installId, record } of rows) {
     const r = record as Record<string, unknown>;
     const at = String(r.at ?? "");
     if (r.type === "turn" && typeof r.id === "string") {
       const item = caseOf(installId, r.id, at);
       Object.assign(item, { at, appVersion: r.appVersion, provider: r.provider, model: r.model, errorKind: r.errorKind, question: r.question, answer: r.answer });
-      if (r.errorKind) item.signals.push(`실패(${r.errorKind})`);
+      if (r.errorKind) {
+        item.signals.push(`실패(${r.errorKind})`);
+      }
     } else if (r.type === "feedback" && typeof r.turnId === "string") {
       const item = caseOf(installId, r.turnId, at);
       item.signals.push(r.rating === "good" ? "👍" : "👎");
-      if (typeof r.reason === "string") item.feedback.push(r.reason);
+      if (typeof r.reason === "string") {
+        item.feedback.push(r.reason);
+      }
     } else if (r.type === "change" && typeof r.turnId === "string") {
       const item = caseOf(installId, r.turnId, at);
       item.changes.push({ state: String(r.state), title: r.title as string | undefined, labels: r.labels as string | undefined });
-      if (r.state === "undone") item.signals.push("되돌림");
-      if (r.state === "failed") item.signals.push("변경 실패");
+      if (r.state === "undone") {
+        item.signals.push("되돌림");
+      }
+
+      if (r.state === "failed") {
+        item.signals.push("변경 실패");
+      }
     } else if (r.type === "tool" && typeof r.turnId === "string") {
       caseOf(installId, r.turnId, at).tools.push(String(r.tool));
     }
   }
+
   return [...cases.values()]
     .filter(item => item.signals.some(signal => signal !== "👍"))
     .map(item => ({ ...item, signals: [...new Set(item.signals)], ...(store.cases[item.key] ? { triage: store.cases[item.key] } : {}) }))
@@ -273,17 +323,29 @@ export function problemCases(store: Store, status: CaseStatus = "new", limit = 1
 // 사례 분류: todo(처리하기로 함, 분류 필수) / done(처리 끝, 고친 버전) / discard(버림: 내용 삭제) / reopen(분류 취소)
 export function decideCase(store: Store, input: { key: string; action: string; category?: string; note?: string; version?: string }): CaseTriage | undefined {
   const match = /^([a-f\d]{16}):([\w-]{8,64})$/.exec(input.key);
-  if (!match) throw new ReviewError("사례 키가 맞지 않습니다.");
+  if (!match) {
+    throw new ReviewError("사례 키가 맞지 않습니다.");
+  }
+
   const current = store.cases[input.key];
   const now = new Date().toISOString();
   const note = input.note?.trim().slice(0, 500) || undefined;
   if (input.action === "todo") {
     const categories: CaseCategory[] = ["knowledge", "code", "ai", "other"];
-    if (!categories.includes(input.category as CaseCategory)) throw new ReviewError("분류는 지식·코드·AI·기타 중 하나여야 합니다.");
-    if (current?.status === "discarded") throw new ReviewError("버린 사례입니다(내용이 지워짐).");
+    if (!categories.includes(input.category as CaseCategory)) {
+      throw new ReviewError("분류는 지식·코드·AI·기타 중 하나여야 합니다.");
+    }
+
+    if (current?.status === "discarded") {
+      throw new ReviewError("버린 사례입니다(내용이 지워짐).");
+    }
+
     store.cases[input.key] = { status: "todo", category: input.category as CaseCategory, note: note ?? current?.note, decidedAt: now };
   } else if (input.action === "done") {
-    if (current?.status === "discarded") throw new ReviewError("버린 사례입니다.");
+    if (current?.status === "discarded") {
+      throw new ReviewError("버린 사례입니다.");
+    }
+
     const version = input.version && /^\d+\.\d+\.\d+$/.test(input.version) ? input.version : undefined;
     store.cases[input.key] = { ...(current ?? {}), status: "done", ...(version ? { version } : {}), ...(note ? { note } : {}), decidedAt: now };
     // 처리가 끝났으면 내용은 지운다(분류·메모·고친 버전은 남는다). 사용자 데이터 → 검토 → 수정 → 재배포 → 삭제.
@@ -292,11 +354,15 @@ export function decideCase(store: Store, input: { key: string; action: string; c
     store.scrubCase(match[1], match[2]);
     store.cases[input.key] = { status: "discarded", ...(note ? { note } : {}), decidedAt: now };
   } else if (input.action === "reopen") {
-    if (current?.status === "discarded") throw new ReviewError("버린 사례는 되돌릴 수 없습니다(내용이 지워짐).");
+    if (current?.status === "discarded") {
+      throw new ReviewError("버린 사례는 되돌릴 수 없습니다(내용이 지워짐).");
+    }
+
     delete store.cases[input.key];
   } else {
     throw new ReviewError("action은 todo, done, discard, reopen 중 하나여야 합니다.");
   }
+
   store.saveCases();
   return store.cases[input.key];
 }
@@ -324,11 +390,23 @@ export function casesMarkdown(cases: ProblemCase[], status: CaseStatus): string 
   cases.forEach((item, index) => {
     lines.push(`## 사례 ${index + 1} · ${name[item.triage?.category ?? ""] ?? "분류 없음"} · ${item.signals.join(", ")}`);
     lines.push("", `- 키: \`${item.key}\``, `- 시각: ${item.at}, 버전 ${item.appVersion ?? "?"}, ${item.provider ?? "?"} ${item.model ?? ""}${item.errorKind ? `, 실패 ${item.errorKind}` : ""}`);
-    if (item.triage?.note) lines.push(`- 검토자 메모: ${item.triage.note}`);
-    if (item.tools.length) lines.push(`- 사용한 도구: ${[...new Set(item.tools)].join(", ")}`);
+    if (item.triage?.note) {
+      lines.push(`- 검토자 메모: ${item.triage.note}`);
+    }
+
+    if (item.tools.length) {
+      lines.push(`- 사용한 도구: ${[...new Set(item.tools)].join(", ")}`);
+    }
+
     lines.push("", "**질문**", "", "```text", item.question ?? "(내용 없음)", "```", "", "**답**", "", "```text", item.answer ?? "(내용 없음)", "```");
-    if (item.feedback.length) lines.push("", "**사용자 의견**", "", ...item.feedback.map(text => `- ${text}`));
-    if (item.changes.length) lines.push("", "**도면 변경**", "", ...item.changes.map(change => `- ${change.state}: ${change.title ?? ""} ${change.labels ?? ""}`));
+    if (item.feedback.length) {
+      lines.push("", "**사용자 의견**", "", ...item.feedback.map(text => `- ${text}`));
+    }
+
+    if (item.changes.length) {
+      lines.push("", "**도면 변경**", "", ...item.changes.map(change => `- ${change.state}: ${change.title ?? ""} ${change.labels ?? ""}`));
+    }
+
     lines.push("");
   });
   return lines.join("\n");

@@ -21,9 +21,15 @@ function answerStart(text: string, final: boolean): number | undefined {
   let at = 0;
   for (;;) {
     const end = text.indexOf("\n", at);
-    if (end < 0) return final || text.length - at > MAX_HELD ? at : undefined;
+    if (end < 0) {
+      return final || text.length - at > MAX_HELD ? at : undefined;
+    }
+
     const line = text.slice(at, end);
-    if (line.trim() && !isSelfNote(line)) return at;
+    if (line.trim() && !isSelfNote(line)) {
+      return at;
+    }
+
     at = end + 1;
   }
 }
@@ -48,7 +54,9 @@ export class FactsFilter {
     // 답이 어디서 시작하는지 정해질 때까지 붙잡아 둔다.
     if (this.sent === undefined) {
       this.sent = answerStart(this.text, false);
-      if (this.sent === undefined) return "";
+      if (this.sent === undefined) {
+        return "";
+      }
     }
 
     // 보내도 되는 끝: <facts 앞까지. 끝이 "<fac"처럼 그 앞부분과 같으면 그 앞까지.

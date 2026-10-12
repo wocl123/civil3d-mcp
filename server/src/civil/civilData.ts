@@ -17,7 +17,9 @@ export async function readSection<T>(
   for (let offset = 0; ; offset += PAGE) {
     const page = await callPlugin(method, { ...params, section, offset, limit: PAGE }) as SectionPage;
     items.push(...page.items as T[]);
-    if (items.length >= page.totalCount || page.items.length === 0) return items;
+    if (items.length >= page.totalCount || page.items.length === 0) {
+      return items;
+    }
   }
 }
 

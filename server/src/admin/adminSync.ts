@@ -31,13 +31,21 @@ import { Invalid, validCandidates, validPackage, type CandidateIn } from "./vali
 export type AdminResult = { sent: number; candidates: number; official: number; members: number; refused: number; linkFailures: number; problems: string[] };
 
 const readJson = async <T>(file: string): Promise<T | undefined> => {
-  try { return JSON.parse((await readFile(file, "utf8")).replace(/^﻿/, "")) as T; } catch { return undefined; }
+  try {
+    return JSON.parse((await readFile(file, "utf8")).replace(/^﻿/, "")) as T;
+  } catch {
+    return undefined;
+  }
 };
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 // 후보 하나를 보관함에 더한다(같은 설치·후보 id는 한 번만).
 function addCandidate(store: AdminStore, installId: string, item: CandidateIn): boolean {
-  if (store.candidates.some(row => row.installId === installId && row.localId === item.localId)) return false;
+  if (store.candidates.some(row => row.installId === installId && row.localId === item.localId)) {
+    return false;
+  }
+
   store.candidates.push({ id: `S-${store.candidates.length + 1}`, installId, ...item, groupKey: groupKey(item.content), receivedAt: new Date().toISOString(), status: "pending" });
   return true;
 }
@@ -53,29 +61,46 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
     const text = await readFile(from, "utf8");
     try {
       const { packageId, records } = validPackage(JSON.parse(text), own);
-      if (!store.packages.has(packageId)) store.addPackage(own, packageId, records);
+      if (!store.packages.has(packageId)) {
+        store.addPackage(own, packageId, records);
+      }
+
       result.sent++;
     } catch (error) {
-      if (!(error instanceof Invalid)) throw error;
+      if (!(error instanceof Invalid)) {
+        throw error;
+      }
+
       const report = { reason: `관리자 검사: ${error.message}`, blockedAt: new Date().toISOString(), package: JSON.parse(text) };
       await writeAtomic(join(outboxDir("blocked"), name), JSON.stringify(report, null, 1));
     }
+
     await rm(from, { force: true });
   }
+
   const terms = await privateTerms();
   const mine = (await unsentCandidates()).map(item => ({ id: item.id, body: { localId: item.id, title: blank(item.title, terms), content: blank(item.content, terms),
     ...(item.parameter ? { parameter: item.parameter } : {}), provider: item.provider, at: item.at.slice(0, 10), localStatus: item.status } }))
     .filter(item => !leak(JSON.stringify(item.body), terms));
   if (mine.length) {
-    for (const item of validCandidates({ candidates: mine.map(entry => entry.body) })) if (addCandidate(store, own, item)) result.candidates++;
+    for (const item of validCandidates({ candidates: mine.map(entry => entry.body) })) {
+      if (addCandidate(store, own, item)) {
+        result.candidates++;
+      }
+    }
+
     store.saveCandidates();
     await markSubmitted(mine.map(item => item.id));
   }
+
   state.lastPush = new Date().toISOString();
 
   // 2) 사용자 폴더
   const root = findDriveRoot(drive.root);
-  if (!root) throw new DriveError(NO_DRIVE);
+  if (!root) {
+    throw new DriveError(NO_DRIVE);
+  }
+
   const live = current();
   const { downloadId } = loadAdminConfig();
   if (live) {
@@ -85,14 +110,25 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
       result.problems.push(`공용 배포 폴더: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+
   for (const folder of await findMemberFolders(root)) {
-    if (folder.installId === own) continue;
+    if (folder.installId === own) {
+      continue;
+    }
+
     const known = store.members[folder.installId];
     // 같은 설치 ID를 다른 폴더가 주장하면(복사·위조) 가져오지 않는다.
-    if (known && known.folder !== folder.name) { result.problems.push(`${folder.name}: 이미 다른 폴더(${known.folder})가 쓰는 설치 ID라 건너뜀`); continue; }
+    if (known && known.folder !== folder.name) {
+      result.problems.push(`${folder.name}: 이미 다른 폴더(${known.folder})가 쓰는 설치 ID라 건너뜀`);
+      continue;
+    }
+
     const member = store.members[folder.installId] ??= { installId: folder.installId, folder: folder.name, firstSeen: today(), lastSeen: today(), seen: false };
     member.lastSeen = today();
-    if (member.blocked) continue;
+    if (member.blocked) {
+      continue;
+    }
+
     result.members++;
     try {
       const taken = await importFolder(store, folder, result);
@@ -101,6 +137,7 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
       result.problems.push(`${folder.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+
   store.saveMembers();
   store.saveCandidates();
 
@@ -109,6 +146,7 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
     await applyOfficial(store.official);
     state.officialVersion = store.official.version;
   }
+
   state.lastPull = new Date().toISOString();
   return result;
 }
@@ -118,33 +156,60 @@ async function importFolder(store: AdminStore, folder: MemberFolder, result: Adm
   const taken = { packages: [] as string[], candidates: [] as string[] };
   for (const name of await jsonFiles(join(folder.path, "packages"))) {
     const id = name.slice(0, -5);
-    if (store.packages.has(id)) { taken.packages.push(id); continue; }
+    if (store.packages.has(id)) {
+      taken.packages.push(id);
+      continue;
+    }
+
     const body = await readJson(join(folder.path, "packages", name));
-    if (body === undefined) continue;   // 아직 동기화 중일 수 있다: 다음 번에
+    if (body === undefined) {
+      continue;
+    }   // 아직 동기화 중일 수 있다: 다음 번에
+
     try {
       const { packageId, records } = validPackage(body, folder.installId);
-      if (packageId !== id) throw new Invalid("파일 이름과 묶음 id가 다릅니다.");
+      if (packageId !== id) {
+        throw new Invalid("파일 이름과 묶음 id가 다릅니다.");
+      }
+
       store.addPackage(folder.installId, packageId, records);
       result.sent++;
     } catch (error) {
-      if (!(error instanceof Invalid)) throw error;
+      if (!(error instanceof Invalid)) {
+        throw error;
+      }
+
       result.refused++;
       result.problems.push(`${folder.name}/${name}: ${error.message}`);
     }
+
     taken.packages.push(id);
   }
+
   for (const name of await jsonFiles(join(folder.path, "candidates"))) {
     const id = name.slice(0, -5);
     const body = await readJson(join(folder.path, "candidates", name));
-    if (body === undefined) continue;
+    if (body === undefined) {
+      continue;
+    }
+
     try {
-      for (const item of validCandidates({ candidates: [body] })) if (addCandidate(store, folder.installId, item)) result.candidates++;
+      for (const item of validCandidates({ candidates: [body] })) {
+        if (addCandidate(store, folder.installId, item)) {
+          result.candidates++;
+        }
+      }
     } catch (error) {
-      if (!(error instanceof Invalid)) throw error;
+      if (!(error instanceof Invalid)) {
+        throw error;
+      }
+
       result.refused++;
     }
+
     taken.candidates.push(id);
   }
+
   return taken;
 }
 
@@ -154,7 +219,10 @@ async function updateSharedRelease(root: string, live: NonNullable<ReturnType<ty
   await mkdir(dir, { recursive: true });
   const info = await readJson<{ version?: string; sha256?: string }>(join(dir, "release.json"));
   const zip = join(dir, LATEST_ZIP);
-  if (info?.version === live.release.version && info.sha256 === live.release.sha256 && (await stat(zip).catch(() => undefined))?.size === live.release.size) return;
+  if (info?.version === live.release.version && info.sha256 === live.release.sha256 && (await stat(zip).catch(() => undefined))?.size === live.release.size) {
+    return;
+  }
+
   await pipeline(createReadStream(releaseFile(live.release)), createWriteStream(zip, { flags: "w" }));
   await writeAtomic(join(dir, "release.json"), JSON.stringify({ version: live.release.version, sha256: live.release.sha256, size: live.release.size }, null, 1));
 }
@@ -171,10 +239,15 @@ async function shareBack(folder: MemberFolder, store: AdminStore, live: ReturnTy
   const dir = join(folder.path, "admin");
   const write = async (name: string, value: unknown) => {
     const text = JSON.stringify(value, null, 1);
-    if ((await readFile(join(dir, name), "utf8").catch(() => undefined)) !== text) await writeAtomic(join(dir, name), text);
+    if ((await readFile(join(dir, name), "utf8").catch(() => undefined)) !== text) {
+      await writeAtomic(join(dir, name), text);
+    }
   };
+
   await write("received.json", taken);
-  if (store.official.version > 0) await write("official.json", store.official);
+  if (store.official.version > 0) {
+    await write("official.json", store.official);
+  }
 
   let keepZip: string | undefined;
   if (!live) {
@@ -189,20 +262,31 @@ async function shareBack(folder: MemberFolder, store: AdminStore, live: ReturnTy
         await copyFile(releaseFile(live.release), target + ".part");
         await rename(target + ".part", target);
       }
-      if (downloadId) result.linkFailures++;
+
+      if (downloadId) {
+        result.linkFailures++;
+      }
     }
+
     const { version, sha256, size, file } = live.release;
     await write("release.json", { version, sha256, size, file, publishedAt: live.publishedAt, ...(live.minVersion ? { minVersion: live.minVersion } : {}),
       ...(downloadId && !copy ? { downloadId } : {}) });
   }
-  for (const name of await readdir(dir).catch(() => [] as string[]))
-    if (/^MyCivil3DMcp-.*\.zip(\.part)?$/.test(name) && name !== keepZip) await rm(join(dir, name), { force: true });
+
+  for (const name of await readdir(dir).catch(() => [] as string[])) {
+    if (/^MyCivil3DMcp-.*\.zip(\.part)?$/.test(name) && name !== keepZip) {
+      await rm(join(dir, name), { force: true });
+    }
+  }
 }
 
 // 팔레트 아래 줄: 아직 /중앙 사용자 로 보지 않은 새 사용자 폴더 수(차단한 것은 빼고).
 export async function newMemberCount(drive: DriveSettings): Promise<number> {
   const root = findDriveRoot(drive.root);
-  if (!root) return 0;
+  if (!root) {
+    return 0;
+  }
+
   const store = adminStore();
   const own = (await install()).installId;
   return (await findMemberFolders(root)).filter(folder => folder.installId !== own && !store.members[folder.installId]?.seen && !store.members[folder.installId]?.blocked).length;

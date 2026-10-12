@@ -39,10 +39,14 @@ async function main(): Promise<void> {
   // Ctrl+C / 종료 신호에 한 번만 닫는다.
   let closing = false;
   const shutdown = async (): Promise<void> => {
-    if (closing) return;
+    if (closing) {
+      return;
+    }
+
     closing = true;
     await server.close();
   };
+
   process.once("SIGINT", () => void shutdown());
   process.once("SIGTERM", () => void shutdown());
 }

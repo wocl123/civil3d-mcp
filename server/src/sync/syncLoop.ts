@@ -42,14 +42,22 @@ let soon: NodeJS.Timeout | undefined;
 
 // 동기화 한 번. 이미 돌고 있으면 그 결과를 같이 기다린다.
 export function runSync(): Promise<SyncResult> {
-  running ??= syncOnce().finally(() => { running = undefined; });
+  running ??= syncOnce().finally(() => {
+    running = undefined;
+  });
   return running;
 }
 
 // 답변이 끝나면 조금 뒤에 한 번. 그사이에 답변이 여러 번 와도 한 번만 돈다.
 export function syncSoon(): void {
-  if (soon) clearTimeout(soon);
-  soon = setTimeout(() => { soon = undefined; void runSync().catch(error => process.stderr.write(`MyCivil3DMcp sync failed: ${String(error)}\n`)); }, AFTER_TURN_MS);
+  if (soon) {
+    clearTimeout(soon);
+  }
+
+  soon = setTimeout(() => {
+    soon = undefined;
+    void runSync().catch(error => process.stderr.write(`MyCivil3DMcp sync failed: ${String(error)}\n`));
+  }, AFTER_TURN_MS);
   soon.unref();
 }
 
@@ -57,7 +65,11 @@ export function syncSoon(): void {
 export function startSyncLoop(): void {
   const run = () => void runSync().catch(error => process.stderr.write(`MyCivil3DMcp sync failed: ${String(error)}\n`));
   const clean = () => void cleanUp().catch(error => process.stderr.write(`MyCivil3DMcp clean-up failed: ${String(error)}\n`));
-  setTimeout(() => { clean(); run(); void watch(); }, START_DELAY_MS).unref();
+  setTimeout(() => {
+    clean();
+    run();
+    void watch();
+  }, START_DELAY_MS).unref();
   setInterval(run, INTERVAL_MS).unref();
   setInterval(clean, CLEANUP_MS).unref();
   setInterval(() => void watch().catch(() => undefined), WATCH_MS).unref();
@@ -68,7 +80,11 @@ let newMembers = 0;
 export const newMemberFolders = () => newMembers;
 export async function watch(): Promise<void> {
   const drive = await driveSettings();
-  if (!drive?.admin || !drive.enabled) { newMembers = 0; return; }
+  if (!drive?.admin || !drive.enabled) {
+    newMembers = 0;
+    return;
+  }
+
   try {
     newMembers = await newMemberCount(drive);
   } catch {
@@ -81,7 +97,9 @@ async function syncOnce(): Promise<SyncResult> {
 
   // 1) 수정 추적
   try {
-    if (process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") result.tracked = await checkTracked(await currentDrawingScope());
+    if (process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") {
+      result.tracked = await checkTracked(await currentDrawingScope());
+    }
   } catch (error) {
     process.stderr.write(`MyCivil3DMcp tracking check failed: ${String(error)}\n`);
   }
@@ -96,10 +114,16 @@ async function syncOnce(): Promise<SyncResult> {
   // 3) 구글 드라이브
   const drive = await driveSettings();
   const team = await loadTeam();
-  if (!drive?.enabled) return result;
+  if (!drive?.enabled) {
+    return result;
+  }
+
   try {
     if (drive.admin) {
-      if (process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") throw new Error("관리자 수집은 관리자실행.bat에서 실행하세요.");
+      if (process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") {
+        throw new Error("관리자 수집은 관리자실행.bat에서 실행하세요.");
+      }
+
       const done = await adminSync(drive, state);
       Object.assign(result, { sent: done.sent, candidates: done.candidates, official: done.official, members: done.members, linkFailures: done.linkFailures, problems: done.problems });
     } else if (team?.ingestUrl) {
@@ -107,6 +131,7 @@ async function syncOnce(): Promise<SyncResult> {
     } else {
       Object.assign(result, await memberSync(drive, state));
     }
+
     delete state.lastError;
   } catch (error) {
     state.lastError = error instanceof Error ? error.message : String(error);
@@ -118,6 +143,7 @@ async function syncOnce(): Promise<SyncResult> {
     state.sentPackages = (state.sentPackages ?? 0) + result.sent;
     state.sentCandidates = (state.sentCandidates ?? 0) + result.candidates;
   }
+
   await saveState(state);
   return result;
 }

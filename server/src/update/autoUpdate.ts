@@ -40,7 +40,12 @@ const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
 const updatesDir = () => join(dataDir(), "updates");
 const newer = (a: string, b: string) => {
   const left = a.split(".").map(Number), right = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if (left[i] !== right[i]) return left[i] > right[i];
+  for (let i = 0; i < 3; i++) {
+    if (left[i] !== right[i]) {
+      return left[i] > right[i];
+    }
+  }
+
   return false;
 };
 
@@ -52,21 +57,36 @@ export const updateState = (): UpdateState => state;
 
 // 한 번에 하나만 확인한다.
 export function checkForUpdate(): Promise<UpdateState> {
-  running ??= check().finally(() => { running = undefined; });
+  running ??= check().finally(() => {
+    running = undefined;
+  });
   return running;
 }
 
 async function check(): Promise<UpdateState> {
-  if (!isRelease) return state = { current: productVersion, state: "dev" };
+  if (!isRelease) {
+    return state = { current: productVersion, state: "dev" };
+  }
+
   const drive = await driveSettings();
-  if (!(await loadTeam())?.githubRepo && !(await loadTeam())?.releaseManifestId && !drive?.enabled) return state = { current: productVersion, state: "offline" };
+  if (!(await loadTeam())?.githubRepo && !(await loadTeam())?.releaseManifestId && !drive?.enabled) {
+    return state = { current: productVersion, state: "offline" };
+  }
+
   try {
     const release = await publishedRelease(drive);
-    if (!release) return state = { current: productVersion, state: "offline" };
-    if (!release.version || !release.sha256 || !release.size || !newer(release.version, productVersion))
+    if (!release) {
+      return state = { current: productVersion, state: "offline" };
+    }
+
+    if (!release.version || !release.sha256 || !release.size || !newer(release.version, productVersion)) {
       return state = { current: productVersion, state: "latest" };
+    }
+
     const required = !!release.minVersion && newer(release.minVersion, productVersion);
-    if (scheduled === release.version) return state = { current: productVersion, latest: release.version, state: "scheduled", required };
+    if (scheduled === release.version) {
+      return state = { current: productVersion, latest: release.version, state: "scheduled", required };
+    }
 
     // 복사: 이미 받아 둔 파일이 맞으면 다시 받지 않는다(드라이브 파일은 여기서 내려받아진다)
     await mkdir(updatesDir(), { recursive: true });
@@ -75,7 +95,10 @@ async function check(): Promise<UpdateState> {
     const existing = existsSync(zip) ? await readFile(zip) : undefined;
     if (!existing || existing.length !== release.size || sha(existing) !== release.sha256) {
       const local = existsSync(release.path);
-      if (!local && !release.downloadId && !release.downloadUrl) throw new Error("배포 파일이 아직 드라이브에 다 내려오지 않았습니다. 다음 확인 때 다시 합니다.");
+      if (!local && !release.downloadId && !release.downloadUrl) {
+        throw new Error("배포 파일이 아직 드라이브에 다 내려오지 않았습니다. 다음 확인 때 다시 합니다.");
+      }
+
       let data: Buffer | undefined;
       try {
         data = local ? await readFile(release.path) : release.downloadUrl ? await downloadGitHubAsset(release.downloadUrl, release.size!) : await download(release.downloadId!, release.size);
@@ -83,19 +106,28 @@ async function check(): Promise<UpdateState> {
         await reportLinkFailure(release);
         throw error;
       }
+
       if (data.length !== release.size || sha(data) !== release.sha256) {
-        if (!local) await reportLinkFailure(release);
+        if (!local) {
+          await reportLinkFailure(release);
+        }
+
         throw new Error(local ? "설치 파일이 배포 정보와 다릅니다(아직 동기화 중이거나 손상)."
           : "링크로 받은 설치 파일이 배포 정보와 다릅니다(관리자가 올리는 중이거나 링크가 바뀜). 다음 확인 때 다시 합니다.");
       }
+
       await writeFile(zip, data);
     }
+
     if (release.signature) {
       const bytes = await readFile(zip);
-      if (!verify("sha256", bytes, await trustedReleaseKey(), Buffer.from(release.signature, "base64")))
+      if (!verify("sha256", bytes, await trustedReleaseKey(), Buffer.from(release.signature, "base64"))) {
         throw new Error("설치 EXE 서명이 맞지 않습니다.");
+      }
+
       await writeAtomic(zip + ".json", JSON.stringify({ size: release.size, sha256: release.sha256, signature: release.signature }));
     }
+
     await removeOldDownloads(release.version);
 
     await scheduleInstall(zip, release.version);
@@ -120,28 +152,52 @@ async function download(id: string, size?: number): Promise<Buffer> {
 
 // 링크로 받지 못했다고 보내기 폴더에 알린다(배포하고 1시간이 지난 뒤에만). 관리자 PC가 이 폴더에 zip을 따로 넣어 준다.
 async function reportLinkFailure(release: Published): Promise<void> {
-  if (!release.status || !release.downloadId || !release.version) return;
+  if (!release.status || !release.downloadId || !release.version) {
+    return;
+  }
+
   const published = Date.parse(release.publishedAt ?? "");
-  if (Number.isFinite(published) && Date.now() - published < LINK_GRACE_MS) return;
+  if (Number.isFinite(published) && Date.now() - published < LINK_GRACE_MS) {
+    return;
+  }
+
   await writeAtomic(release.status, JSON.stringify({ linkFailed: release.version, at: new Date().toISOString() }, null, 1)).catch(() => undefined);
 }
+
 async function publishedRelease(drive: DriveSettings | undefined): Promise<Published | undefined> {
   const team = await loadTeam();
-  if (team?.githubRepo) { const release = await readGitHubRelease(team.githubRepo); return release && { ...release, path: "" }; }
-  if (team?.releaseManifestId) return { ...await readDriveRelease(team.releaseManifestId), path: "" };
-  if (!drive?.enabled) return undefined;
+  if (team?.githubRepo) {
+    const release = await readGitHubRelease(team.githubRepo);
+    return release && { ...release, path: "" };
+  }
+
+  if (team?.releaseManifestId) {
+    return { ...await readDriveRelease(team.releaseManifestId), path: "" };
+  }
+
+  if (!drive?.enabled) {
+    return undefined;
+  }
+
   if (drive.admin) {
     const live = current();
     return live && { version: live.release.version, sha256: live.release.sha256, size: live.release.size, minVersion: live.minVersion, path: releaseFile(live.release) };
   }
+
   const root = findDriveRoot(drive.root);
-  if (!root) return undefined;
+  if (!root) {
+    return undefined;
+  }
+
   const member = join(root, memberFolderName((await install()).installId));
   const folder = join(member, "admin");
   try {
     const info = JSON.parse(await readFile(join(folder, "release.json"), "utf8")) as Record<string, unknown>;
     const version = typeof info.version === "string" && /^\d+\.\d+\.\d+$/.test(info.version) ? info.version : undefined;
-    if (!version) return undefined;
+    if (!version) {
+      return undefined;
+    }
+
     return { version, sha256: typeof info.sha256 === "string" ? info.sha256 : undefined, size: typeof info.size === "number" ? info.size : undefined,
       minVersion: typeof info.minVersion === "string" ? info.minVersion : undefined, path: join(folder, `MyCivil3DMcp-${version}-win-x64.zip`),
       downloadId: typeof info.downloadId === "string" && /^[\w-]{10,200}$/.test(info.downloadId) ? info.downloadId : undefined,
@@ -154,7 +210,10 @@ async function publishedRelease(drive: DriveSettings | undefined): Promise<Publi
 // 다른 버전의 받아 둔 파일과 도우미 폴더는 지운다.
 async function removeOldDownloads(keep: string): Promise<void> {
   for (const name of await readdir(updatesDir()).catch(() => [] as string[])) {
-    if (name.includes(keep) || name.startsWith(`installer-${productVersion}`)) continue;
+    if (name.includes(keep) || name.startsWith(`installer-${productVersion}`)) {
+      continue;
+    }
+
     await rm(join(updatesDir(), name), { recursive: true, force: true }).catch(() => undefined);
   }
 }
@@ -166,11 +225,18 @@ async function scheduleInstall(zip: string, version: string): Promise<void> {
   const helper = join(updatesDir(), `installer-${productVersion}`);
   await mkdir(helper, { recursive: true });
   for (const name of ["install.ps1", "package-common.ps1", "release-public-key.xml", "update.ps1", ...(zip.endsWith(".exe") ? ["install-exe.ps1"] : [])]) {
-    if (!existsSync(join(source, name))) throw new Error(`업데이트 도우미 파일이 없습니다: ${name}`);
+    if (!existsSync(join(source, name))) {
+      throw new Error(`업데이트 도우미 파일이 없습니다: ${name}`);
+    }
+
     await copyFile(join(source, name), join(helper, name));
   }
+
   const waitPid = Number(process.env.MY_CIVIL3D_PARENT_PID ?? "0");
-  if (!Number.isInteger(waitPid) || waitPid <= 0) throw new Error("기다릴 Civil 3D 프로세스를 알 수 없습니다.");
+  if (!Number.isInteger(waitPid) || waitPid <= 0) {
+    throw new Error("기다릴 Civil 3D 프로세스를 알 수 없습니다.");
+  }
+
   const quote = (text: string) => `"${text}"`;
   const destination = process.env.MY_CIVIL3D_INSTALL_ROOT;   // 테스트용(기본: %APPDATA%\Autodesk\ApplicationPlugins)
   const command = ["start", '""', "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
@@ -181,7 +247,10 @@ async function scheduleInstall(zip: string, version: string): Promise<void> {
 }
 
 export function startUpdateLoop(): void {
-  if (!isRelease || process.env.MY_CIVIL3D_AUTO_UPDATE === "off") return;
+  if (!isRelease || process.env.MY_CIVIL3D_AUTO_UPDATE === "off") {
+    return;
+  }
+
   const run = () => void checkForUpdate();
   setTimeout(run, FIRST_CHECK_MS).unref();
   setInterval(run, CHECK_EVERY_MS).unref();

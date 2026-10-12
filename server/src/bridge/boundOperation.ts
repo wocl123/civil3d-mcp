@@ -9,17 +9,27 @@ export async function withDrawing<T>(work: () => Promise<T>): Promise<T> {
   const existing = drawingContext();
   const status = existing ?? await callPlugin("drawing.status") as Partial<DrawingContext>;
   const expected = process.env.MY_CIVIL3D_DRAWING_ID;
-  if (expected && expected !== status.drawingId) throw changed("drawing_mismatch", "Drawing changed since the palette request started.");
-  if (!status.drawingId || !status.revision) return work();
+  if (expected && expected !== status.drawingId) {
+    throw changed("drawing_mismatch", "Drawing changed since the palette request started.");
+  }
+
+  if (!status.drawingId || !status.revision) {
+    return work();
+  }
+
   const context: DrawingContext = { drawingId: status.drawingId, revision: status.revision,
     criteriaVersion: existing?.criteriaVersion ?? await contentVersion() };
   return inDrawingContext(context, async () => {
     const result = await work();
     const after = await callPlugin("drawing.status") as DrawingContext;
-    if (after.drawingId !== context.drawingId || after.revision !== context.revision)
+    if (after.drawingId !== context.drawingId || after.revision !== context.revision) {
       throw changed("revision_mismatch", "Drawing changed since the calculation started. Run the check again.");
-    if (context.criteriaVersion !== await contentVersion())
+    }
+
+    if (context.criteriaVersion !== await contentVersion()) {
       throw changed("criteria_changed", "Criteria changed during the calculation. Run the check again.");
+    }
+
     return result;
   });
 }

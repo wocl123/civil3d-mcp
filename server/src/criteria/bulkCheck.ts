@@ -69,7 +69,9 @@ async function allAlignments(): Promise<AlignmentRow[]> {
   for (let offset = 0; ; offset += PAGE) {
     const page = await callPlugin("alignment.list", { offset, limit: PAGE }) as { totalCount: number; items: AlignmentRow[] };
     rows.push(...page.items);
-    if (rows.length >= page.totalCount || page.items.length === 0) return rows;
+    if (rows.length >= page.totalCount || page.items.length === 0) {
+      return rows;
+    }
   }
 }
 
@@ -84,13 +86,15 @@ async function checkOne(row: AlignmentRow, input: BulkInput) {
   // 1) 평면선형 검토
   try {
     const plan = await checkAlignmentCriteria({ alignment: row.handle, ...criteria });
-    if (plan.notes.some(note => note.includes("도로 기준으로 검토하지 않음")))
+    if (plan.notes.some(note => note.includes("도로 기준으로 검토하지 않음"))) {
       return { ...out, plan: "도로가 아니라 검토 안 함" };
+    }
 
     if (plan.conditions.designSpeed) {
       const speed = plan.conditions.designSpeed;
       out.designSpeed = typeof speed === "string" ? speed : speed.value;
     }
+
     out.plan = counts(plan.summary);
     out.planSummary = plan.summary;
     plan.missing.forEach(item => missing.add(item.name));
@@ -115,13 +119,17 @@ async function checkOne(row: AlignmentRow, input: BulkInput) {
   }
 
   // 3) 빠진 조건과 첫 미달 몇 건
-  if (missing.size) out.missing = [...missing];
+  if (missing.size) {
+    out.missing = [...missing];
+  }
+
   if (fails.length) {
     out.fails = [
       ...fails.slice(0, MAX_FAILS),
       ...(fails.length > MAX_FAILS ? [`그 밖에 ${fails.length - MAX_FAILS}건`] : [])
     ];
   }
+
   return out;
 }
 
@@ -145,8 +153,11 @@ export async function checkAllAlignments(input: BulkInput) {
   const plan = results.reduce<Summary>((sum, row) => row.planSummary ? add(sum, row.planSummary as Summary) : sum, empty());
   const profile = results.reduce<Summary>((sum, row) => row.profileSummary ? add(sum, row.profileSummary as Summary) : sum, empty());
   const missing: Record<string, number> = {};
-  for (const row of results)
-    for (const name of (row.missing as string[] | undefined) ?? []) missing[name] = (missing[name] ?? 0) + 1;
+  for (const row of results) {
+    for (const name of (row.missing as string[] | undefined) ?? []) {
+      missing[name] = (missing[name] ?? 0) + 1;
+    }
+  }
 
   return {
     alignments: everything.length,

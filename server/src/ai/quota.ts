@@ -37,7 +37,9 @@ export function parseCodexQuota(value: unknown): QuotaInfo {
   for (const key of ["primary", "secondary"] as const) {
     const window = record(snapshot[key]);
     const used = window.usedPercent;
-    if (typeof used !== "number" || !Number.isFinite(used)) continue;
+    if (typeof used !== "number" || !Number.isFinite(used)) {
+      continue;
+    }
 
     const minutes = typeof window.windowDurationMins === "number" ? window.windowDurationMins : null;
     const label = minutes === 300 ? "5시간"
@@ -71,7 +73,10 @@ export function parseClaudeQuota(value: unknown, now = Date.now()): QuotaInfo {
   if (fresh && snapshot) {
     for (const [key, label] of [["five_hour", "5시간"], ["seven_day", "7일"]] as const) {
       const window = snapshot.rate_limits[key];
-      if (!window) continue;
+      if (!window) {
+        continue;
+      }
+
       windows.push({
         label,
         usedPercent: window.used_percentage,
@@ -105,7 +110,10 @@ export function parseClaudeSdkQuota(value: unknown): QuotaInfo {
     const window = record(limits[key]);
     const used = window.utilization;
     const reset = window.resets_at;
-    if (typeof used !== "number" || !Number.isFinite(used) || used < 0 || used > 100) continue;
+    if (typeof used !== "number" || !Number.isFinite(used) || used < 0 || used > 100) {
+      continue;
+    }
+
     const timestamp = typeof reset === "string" ? Date.parse(reset) : NaN;
     windows.push({
       label,
@@ -138,12 +146,19 @@ async function queryClaudeQuota(): Promise<QuotaInfo> {
     let settled = false;
 
     const finish = (quota?: QuotaInfo, error?: Error) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
+
       settled = true;
       clearTimeout(timer);
-      if (error) reject(error);
-      else resolve(quota!);
+      if (error) {
+        reject(error);
+      } else {
+        resolve(quota!);
+      }
     };
+
     const timer = setTimeout(() => {
       child.kill();
       finish(undefined, new Error("Claude 한도 조회 시간이 초과됐습니다."));
@@ -151,12 +166,17 @@ async function queryClaudeQuota(): Promise<QuotaInfo> {
 
     child.stdout.on("data", chunk => {
       output += chunk.toString("utf8");
-      if (output.length > 64 * 1024) child.kill();
+      if (output.length > 64 * 1024) {
+        child.kill();
+      }
     });
     child.stderr.resume();
     child.on("error", error => finish(undefined, error));
     child.on("close", code => {
-      if (code !== 0) return finish(undefined, new Error("Claude SDK 한도 조회에 실패했습니다."));
+      if (code !== 0) {
+        return finish(undefined, new Error("Claude SDK 한도 조회에 실패했습니다."));
+      }
+
       try {
         finish(parseClaudeSdkQuota(JSON.parse(output)));
       } catch {
@@ -168,37 +188,51 @@ async function queryClaudeQuota(): Promise<QuotaInfo> {
 
 // Recent recorded quota can enrich a CLI denial without another network request.
 export async function cachedQuota(provider: Provider): Promise<QuotaInfo | undefined> {
-  if (provider !== "claude") return undefined;
+  if (provider !== "claude") {
+    return undefined;
+  }
+
   try {
     const recorded = JSON.parse(await readFile(claudeQuotaFile, "utf8"));
     const snapshot = parseClaudeQuota(recorded);
-    if (Date.now() - recorded.capturedAt <= 15 * 60000 && snapshot.status === "available") return snapshot;
+    if (Date.now() - recorded.capturedAt <= 15 * 60000 && snapshot.status === "available") {
+      return snapshot;
+    }
   } catch { /* No fresh status-line snapshot. */ }
+
   return claudeCache && Date.now() - claudeCache.at < 45000 ? claudeCache.quota : undefined;
 }
 
 // Claude: SDK 조회 → 실패하면 상태줄 기록 → 그것도 없으면 "조회 못 함".
 async function readClaudeQuota(forceRefresh: boolean): Promise<QuotaInfo> {
-  if (!forceRefresh && claudeCache && Date.now() - claudeCache.at < 45000) return claudeCache.quota;
+  if (!forceRefresh && claudeCache && Date.now() - claudeCache.at < 45000) {
+    return claudeCache.quota;
+  }
 
   // 기본 배포본은 SDK를 포함하지 않는다. 없는 도우미를 실행하며 기다리지 않는다.
-  if (process.env.MY_CIVIL3D_CLAUDE_QUOTA_MODE !== "statusline" && existsSync(claudeHelper)) try {
-    const quota = await queryClaudeQuota();
-    if (quota.status !== "unavailable") {
-      claudeCache = { at: Date.now(), quota };
-      return quota;
-    }
-  } catch {
+  if (process.env.MY_CIVIL3D_CLAUDE_QUOTA_MODE !== "statusline" && existsSync(claudeHelper)) {
+    try {
+      const quota = await queryClaudeQuota();
+      if (quota.status !== "unavailable") {
+        claudeCache = { at: Date.now(), quota };
+        return quota;
+      }
+    } catch {
     // 상태줄 기록으로 넘어간다.
+    }
   }
 
   try {
     const recorded = JSON.parse(await readFile(claudeQuotaFile, "utf8"));
     // reset 시각이 남아 있어도 오래된 사용률은 현재 한도로 표시하지 않는다.
-    if (typeof recorded.capturedAt !== "number" || recorded.capturedAt > Date.now() + 60000 || Date.now() - recorded.capturedAt > 15 * 60000)
+    if (typeof recorded.capturedAt !== "number" || recorded.capturedAt > Date.now() + 60000 || Date.now() - recorded.capturedAt > 15 * 60000) {
       throw new Error("Claude 상태줄 기록이 만료되었습니다.");
+    }
+
     const snapshot = parseClaudeQuota(recorded);
-    if (snapshot.status === "available") return snapshot;
+    if (snapshot.status === "available") {
+      return snapshot;
+    }
   } catch {
     // 상태줄 기록도 없다.
   }
@@ -215,9 +249,15 @@ async function readCodexQuota(): Promise<QuotaInfo> {
   const location = await locateCli("codex");
   const env = { ...process.env, CI: "1" };
   if (location) {
-    for (const key of Object.keys(env)) if (/^path$/i.test(key)) delete env[key as keyof typeof env];
+    for (const key of Object.keys(env)) {
+      if (/^path$/i.test(key)) {
+        delete env[key as keyof typeof env];
+      }
+    }
+
     Object.assign(env, { [windows ? "Path" : "PATH"]: await cliPath("codex", location) });
   }
+
   const child = spawn(
     windows ? "cmd.exe" : "codex",
     windows ? ["/d", "/s", "/c", "codex", "app-server", "--listen", "stdio://"] : ["app-server", "--listen", "stdio://"],
@@ -230,14 +270,21 @@ async function readCodexQuota(): Promise<QuotaInfo> {
   return await new Promise<QuotaInfo>((resolve, reject) => {
     let settled = false;
     const finish = (result?: QuotaInfo, error?: Error) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
+
       settled = true;
       clearTimeout(timer);
       child.stdin.end();
       lines.close();
-      if (error) reject(error);
-      else resolve(result!);
+      if (error) {
+        reject(error);
+      } else {
+        resolve(result!);
+      }
     };
+
     const timer = setTimeout(() => {
       child.kill();
       finish(undefined, new Error("Codex 한도 조회 시간이 초과됐습니다."));
@@ -253,14 +300,21 @@ async function readCodexQuota(): Promise<QuotaInfo> {
       } catch {
         return;
       }
+
       if (message.id === 1) {
         // 초기화 응답 → 한도 요청
-        if (message.error) return finish(undefined, new Error("Codex 초기화에 실패했습니다."));
+        if (message.error) {
+          return finish(undefined, new Error("Codex 초기화에 실패했습니다."));
+        }
+
         send({ jsonrpc: "2.0", method: "initialized", params: {} });
         send({ jsonrpc: "2.0", id: 2, method: "account/rateLimits/read", params: {} });
       } else if (message.id === 2) {
         // 한도 응답
-        if (message.error) return finish(undefined, new Error("Codex 한도 조회를 지원하지 않거나 계정 인증에 실패했습니다."));
+        if (message.error) {
+          return finish(undefined, new Error("Codex 한도 조회를 지원하지 않거나 계정 인증에 실패했습니다."));
+        }
+
         finish(parseCodexQuota(message.result));
       }
     });
@@ -274,14 +328,21 @@ async function readCodexQuota(): Promise<QuotaInfo> {
 
 export async function getQuota(provider: Provider, forceRefresh = false): Promise<QuotaInfo> {
   const observed = observedQuota(provider);
-  if (observed && !forceRefresh) return observed;
-  if (provider === "claude") return await readClaudeQuota(forceRefresh);
+  if (observed && !forceRefresh) {
+    return observed;
+  }
+
+  if (provider === "claude") {
+    return await readClaudeQuota(forceRefresh);
+  }
+
   if (provider === "gemini") {
     return {
       status: "unsupported", windows: [], ordinaryUsageAllowed: null,
       message: "Gemini CLI does not expose a documented headless quota read. Check /stats model in Gemini."
     };
   }
+
   try {
     return await readCodexQuota();
   } catch {

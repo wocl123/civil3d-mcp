@@ -23,7 +23,12 @@ const termPattern = (term: string) => /[가-힣]/.test(term)
 
 // 이 글이 PC 밖으로 나가면 안 되는 이유. 괜찮으면 undefined.
 export function leak(text: string, terms: string[]): string | undefined {
-  for (const [pattern, reason] of PATTERNS) if (pattern.test(text)) return reason;
+  for (const [pattern, reason] of PATTERNS) {
+    if (pattern.test(text)) {
+      return reason;
+    }
+  }
+
   const term = terms.find(item => termPattern(item).test(text));
   return term ? `가릴 낱말(${term.length}자)` : undefined;
 }
@@ -37,7 +42,10 @@ export function blank(text: string, terms: string[]): string {
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "<메일>")
     .replace(/[^\s"'\\/]+\.(dwg|dxf|dwt|rvt|pdf|xlsx?)\b/gi, "<파일>")
     .replace(/\b(sk|pk|ghp|gho)[-_][A-Za-z\d]{16,}/g, "<키>");
-  for (const term of terms) out = out.replace(termPattern(term), "<이름>");
+  for (const term of terms) {
+    out = out.replace(termPattern(term), "<이름>");
+  }
+
   return out;
 }
 

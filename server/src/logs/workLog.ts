@@ -50,9 +50,15 @@ export async function recentLines(name: LogFile): Promise<Record<string, unknown
   for (const day of days) {
     const text = await readFile(join(logsDir(), day, name), "utf8").catch(() => "");
     for (const line of text.split("\n")) {
-      if (!line.trim()) continue;
-      try { lines.push(JSON.parse(line) as Record<string, unknown>); } catch { /* 아직 쓰는 중인 줄 */ }
+      if (!line.trim()) {
+        continue;
+      }
+
+      try {
+        lines.push(JSON.parse(line) as Record<string, unknown>);
+      } catch { /* 아직 쓰는 중인 줄 */ }
     }
   }
+
   return lines;
 }

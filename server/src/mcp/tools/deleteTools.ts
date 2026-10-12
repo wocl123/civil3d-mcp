@@ -87,14 +87,19 @@ export function registerDeleteTools(server: McpServer): void {
       })),
       ...(preview.notFound.length ? { notFound: preview.notFound } : {})
     };
-    if (!items.length) return toolResult({ ...view, option: null, note: "Nothing can be deleted. Tell the user why." });
+    if (!items.length) {
+      return toolResult({ ...view, option: null, note: "Nothing can be deleted. Tell the user why." });
+    }
 
     // 지울 목록: 대상 + 함께 지울 코리더(중복 없이)
     const targets = new Map<string, RemoveTarget>();
     for (const item of items) {
       targets.set(item.handle, { kind: item.kind, handle: item.handle, name: item.name });
-      for (const corridor of item.corridors) targets.set(corridor.handle, { kind: "corridor", handle: corridor.handle, name: corridor.name });
+      for (const corridor of item.corridors) {
+        targets.set(corridor.handle, { kind: "corridor", handle: corridor.handle, name: corridor.name });
+      }
     }
+
     const count = (kind: RemoveTarget["kind"]) => [...targets.values()].filter(target => target.kind === kind).length;
     const what = [["선형", count("alignment")], ["종단", count("profile")], ["코리더", count("corridor")]]
       .filter(([, n]) => n).map(([label, n]) => `${label} ${n}개`).join(", ");

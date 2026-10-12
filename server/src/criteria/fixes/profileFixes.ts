@@ -24,7 +24,10 @@ export type VerticalCurveContext = {
 export function verticalCurveFixes(context: VerticalCurveContext): FixOption[] {
   const { curve } = context;
   const change = curve.gradeChangePercent === undefined ? undefined : Math.abs(curve.gradeChangePercent);
-  if (!change) return [];
+  if (!change) {
+    return [];
+  }
+
   return [longerCurve(context, change), smallerGradeChange(context, change)]
     .filter((fix): fix is FixOption => fix !== undefined);
 }
@@ -73,6 +76,7 @@ function longerCurve(context: VerticalCurveContext, change: number): FixOption {
       `${next ? `뒤 곡선 시작(${next.startStationText})` : "종단 종점"}까지 ${round(room.after)} m라 ` +
       `VIP를 유지한 대칭 곡선은 최대 ${longest} m`;
   }
+
   return fix;
 }
 
@@ -81,12 +85,16 @@ function longerCurve(context: VerticalCurveContext, change: number): FixOption {
 //    곡선 길이가 최소 길이 이상일 때만 의미가 있다(K만 모자란 경우).
 function smallerGradeChange(context: VerticalCurveContext, change: number): FixOption | undefined {
   const { profile, curve, curves, pvis, minK, minLength } = context;
-  if (curve.length < minLength) return undefined;
+  if (curve.length < minLength) {
+    return undefined;
+  }
 
   // 이 곡선의 VIP와 그 앞뒤 VIP.
   const index = pvis.findIndex(pvi => Math.abs(pvi.station - curve.pviStation) < 0.01);
   const [previous, pvi, next] = [pvis[index - 1], pvis[index], pvis[index + 1]];
-  if (!previous || !pvi || !next) return undefined;
+  if (!previous || !pvi || !next) {
+    return undefined;
+  }
 
   // 목표 경사 차 = 현재 길이 ÷ 최소 K. 거기에 맞는 표고 이동량.
   const a = pvi.station - previous.station;
@@ -107,7 +115,10 @@ function smallerGradeChange(context: VerticalCurveContext, change: number): FixO
     { pvi: next, grade: gradeOut, side: "in" as const }
   ].flatMap(({ pvi: other, grade, side }) => {
     const neighbour = curves.find(item => Math.abs(item.pviStation - other.station) < 0.01);
-    if (!neighbour || neighbour.gradeInPercent === undefined || neighbour.gradeOutPercent === undefined) return [];
+    if (!neighbour || neighbour.gradeInPercent === undefined || neighbour.gradeOutPercent === undefined) {
+      return [];
+    }
+
     const changed = Math.abs(side === "out" ? neighbour.gradeInPercent - grade : grade - neighbour.gradeOutPercent);
     return [
       `인접 곡선 VIP ${neighbour.pviStationText}: 경사 차 ${round(Math.abs(neighbour.gradeChangePercent ?? 0), 2)} → ${round(changed, 2)}%, ` +
@@ -135,7 +146,9 @@ function smallerGradeChange(context: VerticalCurveContext, change: number): FixO
 
 // 종단경사가 기준보다 급하다 → 경사 양 끝 VIP의 표고 차를 줄여야 한다.
 export function gradeFixes(profile: ProfileSummary, tangent: ProfileTangent, pvis: ProfilePvi[], limit: number): FixOption[] {
-  if (tangent.gradePercent === undefined) return [];
+  if (tangent.gradePercent === undefined) {
+    return [];
+  }
 
   // 경사 구간 양 끝의 VIP(없으면 경사 길이 자체를 쓴다).
   const start = [...pvis].reverse().find(pvi => pvi.station <= tangent.startStation + 1e-6);

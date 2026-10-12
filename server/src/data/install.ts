@@ -13,14 +13,18 @@ export type Install = { schema: 1; installId: string; createdAt: string };
 let cached: Install | undefined;
 
 export async function install(): Promise<Install> {
-  if (cached) return cached;
+  if (cached) {
+    return cached;
+  }
+
   const file = join(dataDir(), "install.json");
 
   // 이미 있으면 그것을 쓴다.
   try {
     const parsed = JSON.parse(await readFile(file, "utf8")) as Partial<Install>;
-    if (parsed.schema === 1 && typeof parsed.installId === "string" && /^[a-f\d]{16}$/.test(parsed.installId))
+    if (parsed.schema === 1 && typeof parsed.installId === "string" && /^[a-f\d]{16}$/.test(parsed.installId)) {
       return cached = parsed as Install;
+    }
   } catch {
     // 아래에서 만든다.
   }

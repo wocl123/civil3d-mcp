@@ -8,7 +8,10 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));   // .../Contents/server/build
 
 function read(): string {
-  if (process.env.MY_CIVIL3D_PRODUCT_VERSION) return process.env.MY_CIVIL3D_PRODUCT_VERSION;   // 테스트
+  if (process.env.MY_CIVIL3D_PRODUCT_VERSION) {
+    return process.env.MY_CIVIL3D_PRODUCT_VERSION;
+  }   // 테스트
+
   try {
     const version = JSON.parse(readFileSync(join(here, "..", "..", "version.json"), "utf8").replace(/^﻿/, "")).version;
     return typeof version === "string" && /^\d+\.\d+\.\d+$/.test(version) ? version : "dev";

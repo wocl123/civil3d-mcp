@@ -23,7 +23,10 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 // 플러그인 연결 파일 위치: %LOCALAPPDATA%\MyCivil3DMcp\connection.json (테스트는 환경 변수로 바꾼다).
 export function connectionFile(): string {
-  if (process.env.MY_CIVIL3D_CONNECTION_FILE) return process.env.MY_CIVIL3D_CONNECTION_FILE;
+  if (process.env.MY_CIVIL3D_CONNECTION_FILE) {
+    return process.env.MY_CIVIL3D_CONNECTION_FILE;
+  }
+
   const localAppData = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
   return join(localAppData, "MyCivil3DMcp", "connection.json");
 }
@@ -41,7 +44,10 @@ export async function callPlugin(method: BridgeMethod, params: Record<string, un
       return await callOnce(method, params, timeoutMs);
     } catch (error) {
       const notSent = (error as { notSent?: boolean }).notSent === true;
-      if (!notSent || attempt >= RETRY_DELAYS_MS.length) throw error;
+      if (!notSent || attempt >= RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
     }
   }
@@ -55,9 +61,12 @@ async function callOnce(method: BridgeMethod, params: Record<string, unknown>, t
   } catch {
     throw Object.assign(new Error("Civil 3D plugin connection was not found. Run NETLOAD and MYC3DCONNECTION in Civil 3D."), { notSent: true });
   }
+
   const validPort = Number.isInteger(config.port) && config.port! >= 1 && config.port! <= 65535;
   const validToken = typeof config.token === "string" && /^[a-f\d]{64}$/i.test(config.token);
-  if (!validPort || !validToken) throw new Error("Civil 3D plugin connection settings are invalid.");
+  if (!validPort || !validToken) {
+    throw new Error("Civil 3D plugin connection settings are invalid.");
+  }
 
   // 2) 요청 한 줄 보내고, 응답 한 줄 받기
   // (오류 메시지는 영어로 둔다: errors/failureGuide.ts 가 이 문구로 실패 종류를 가린다.)
@@ -74,21 +83,33 @@ async function callOnce(method: BridgeMethod, params: Record<string, unknown>, t
 
     // 한 번만 끝낸다(성공이든 실패든).
     const finish = (error?: Error, result?: unknown) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
+
       settled = true;
       socket.destroy();
       if (error) {
-        if (!requestSent) Object.assign(error, { notSent: true });
+        if (!requestSent) {
+          Object.assign(error, { notSent: true });
+        }
+
         // 전송 뒤 응답을 못 받으면 커밋 여부를 단정하지 않는다. 명시적 플러그인 거절만 false다.
-        if (!("drawingChanged" in error) || (error as { drawingChanged?: unknown }).drawingChanged === undefined)
+        if (!("drawingChanged" in error) || (error as { drawingChanged?: unknown }).drawingChanged === undefined) {
           Object.assign(error, { drawingChanged: requestSent && ["change.apply", "alignment.create", "drawing.delete", "alignment.edit", "change.undo"].includes(method) ? "unknown" : false });
+        }
+
         reject(error);
+      } else {
+        resolve(result);
       }
-      else resolve(result);
     };
 
     socket.setTimeout(timeoutMs, () => finish(new Error("Civil 3D plugin request timed out.")));
-    socket.on("connect", () => { requestSent = true; socket.write(request); });
+    socket.on("connect", () => {
+      requestSent = true;
+      socket.write(request);
+    });
     socket.on("error", (error) => finish(new Error(`Civil 3D plugin is unavailable: ${error.message}`)));
 
     socket.on("data", (chunk: Buffer) => {
@@ -102,7 +123,9 @@ async function callOnce(method: BridgeMethod, params: Record<string, unknown>, t
 
       // 줄바꿈이 올 때까지 모은다.
       const end = response.indexOf("\n");
-      if (end < 0) return;
+      if (end < 0) {
+        return;
+      }
 
       try {
         const message = JSON.parse(response.slice(0, end)) as {
@@ -111,8 +134,14 @@ async function callOnce(method: BridgeMethod, params: Record<string, unknown>, t
           result?: unknown;
           error?: { code?: number; message?: string; kind?: string; drawingChanged?: boolean | "unknown" };
         };
-        if (message.jsonrpc !== "2.0" || message.id !== id) throw new Error("Invalid plugin response.");
-        if (message.error) throw Object.assign(new Error(message.error.message ?? "Civil 3D plugin error."), { kind: message.error.kind, drawingChanged: message.error.drawingChanged ?? false });
+        if (message.jsonrpc !== "2.0" || message.id !== id) {
+          throw new Error("Invalid plugin response.");
+        }
+
+        if (message.error) {
+          throw Object.assign(new Error(message.error.message ?? "Civil 3D plugin error."), { kind: message.error.kind, drawingChanged: message.error.drawingChanged ?? false });
+        }
+
         finish(undefined, message.result);
       } catch (error) {
         finish(error instanceof Error ? error : new Error(String(error)));
@@ -120,7 +149,9 @@ async function callOnce(method: BridgeMethod, params: Record<string, unknown>, t
     });
 
     socket.on("close", () => {
-      if (!settled) finish(new Error("Civil 3D plugin closed the connection."));
+      if (!settled) {
+        finish(new Error("Civil 3D plugin closed the connection."));
+      }
     });
   });
 }

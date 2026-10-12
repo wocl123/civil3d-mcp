@@ -60,6 +60,7 @@ export async function answerChat(provider: Provider, message: string,
       cached: false, recorded: [], conversation: status(conversation)
     };
   }
+
   if (question === "/compact") {
     const result = await compactNow(provider, conversation);
     await log({ kind: "compact", answer: clip(result.answer) });
@@ -128,7 +129,9 @@ export async function answerChat(provider: Provider, message: string,
           onProgress?.({ type: "progress", text: toolLabel(event.name) });
         } else {
           const text = filter.push(event.text);
-          if (text && onProgress) onProgress({ type: "delta", text });
+          if (text && onProgress) {
+            onProgress({ type: "delta", text });
+          }
         }
       }
     });

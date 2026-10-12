@@ -60,7 +60,9 @@ async function checkProfileCriteriaInternal(input: ProfileCriteriaInput): Promis
     profiles = [overview.profile];
   } else if (input.alignment) {
     profiles = (await alignmentProfiles(input.alignment)).filter(profile => !UNCHECKED_TYPES.has(profile.type));
-    if (profiles.length === 0) throw new Error(`Alignment "${input.alignment}" has no design profile to check.`);
+    if (profiles.length === 0) {
+      throw new Error(`Alignment "${input.alignment}" has no design profile to check.`);
+    }
   } else {
     throw new Error("Give a profile, or an alignment to check all of its design profiles.");
   }
@@ -110,8 +112,10 @@ async function checkProfileCriteriaInternal(input: ProfileCriteriaInput): Promis
       ];
       report.notes.push(`선형 설명에 기록된 조건을 썼다: ${parts.join(", ")}`);
     }
+
     reports.push(report);
   }
+
   return reports;
 }
 
@@ -138,18 +142,27 @@ async function checkOne(set: CriteriaSet, profile: ProfileSummary, input: Profil
   ]);
 
   // 2) 적용 조건.
-  if (input.designSpeed !== undefined) report.conditions.designSpeed = { value: input.designSpeed, from: "input" };
-  else if (speeds.length) report.conditions.designSpeed = describeSpeeds(undefined, speeds)!;
-  else report.need("designSpeed", [grade, kTable, lengthTable].map(label).join(", "), options(kTable, "designSpeed"));
+  if (input.designSpeed !== undefined) {
+    report.conditions.designSpeed = { value: input.designSpeed, from: "input" };
+  } else if (speeds.length) {
+    report.conditions.designSpeed = describeSpeeds(undefined, speeds)!;
+  } else {
+    report.need("designSpeed", [grade, kTable, lengthTable].map(label).join(", "), options(kTable, "designSpeed"));
+  }
 
-  for (const name of ["roadFunction", "terrain"] as const)
-    if (input[name]) report.conditions[name] = { value: input[name]!, from: "input" };
+  for (const name of ["roadFunction", "terrain"] as const) {
+    if (input[name]) {
+      report.conditions[name] = { value: input[name]!, from: "input" };
+    }
+  }
 
   // 3) 제27조 종단곡선: K는 표의 값 이상, 길이는 max(K × 경사 차, 최소 길이) 이상.
   for (const curve of curves) {
     const target = `곡선 ${curve.number} ${curve.crestOrSag === "Crest" ? "볼록" : "오목"} (VIP ${curve.pviStationText})`;
     const speed = speedAt(curve.startStation, input.designSpeed, speeds);
-    if (!speed) continue;
+    if (!speed) {
+      continue;
+    }
 
     const form = curve.crestOrSag === "Crest" ? "볼록" : curve.crestOrSag === "Sag" ? "오목" : undefined;
     const kRow = form ? findRow(kTable, { designSpeed: speed.value, curveForm: form }) : undefined;
@@ -170,6 +183,7 @@ async function checkOne(set: CriteriaSet, profile: ProfileSummary, input: Profil
       report.skip(lengthTable, target, `표에 없는 설계속도 ${speed.value}`);
       continue;
     }
+
     const change = curve.gradeChangePercent === undefined ? undefined : Math.abs(curve.gradeChangePercent);
     if (typeof kRow?.value === "number" && change !== undefined) {
       const byRate = round(kRow.value * change);
@@ -188,13 +202,17 @@ async function checkOne(set: CriteriaSet, profile: ProfileSummary, input: Profil
   // 4) 제25조① 종단경사: 직선 경사마다 표의 값 이하.
   //    도로 기능과 지형을 알아야 표의 행을 고를 수 있다.
   const missingGradeConditions = (["roadFunction", "terrain"] as const).filter(name => !input[name]);
-  for (const name of missingGradeConditions) report.need(name, label(grade), options(grade, name));
+  for (const name of missingGradeConditions) {
+    report.need(name, label(grade), options(grade, name));
+  }
 
   if (missingGradeConditions.length === 0) {
     for (const tangent of tangents) {
       const target = `경사 ${tangent.number} (${tangent.startStationText}~${tangent.endStationText})`;
       const speed = speedAt(tangent.startStation, input.designSpeed, speeds);
-      if (!speed || tangent.gradePercent === undefined) continue;
+      if (!speed || tangent.gradePercent === undefined) {
+        continue;
+      }
 
       const row = findRow(grade, { designSpeed: speed.value, roadFunction: input.roadFunction!, terrain: input.terrain! });
       if (!row || typeof row.value !== "number") {
@@ -212,7 +230,10 @@ async function checkOne(set: CriteriaSet, profile: ProfileSummary, input: Profil
     }
   }
 
-  if (curves.length === 0) report.notes.push("종단곡선이 없는 종단이다.");
+  if (curves.length === 0) {
+    report.notes.push("종단곡선이 없는 종단이다.");
+  }
+
   return report.build();
 }
 

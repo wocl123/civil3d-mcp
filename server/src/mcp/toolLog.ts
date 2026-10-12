@@ -17,11 +17,15 @@ export function outputSize(result: ToolOutput | undefined): { outputChars: numbe
 export function loggedServer(server: McpServer): McpServer {
   // 팔레트 요청이 아니면(개발용 실행 등) 기록하지 않는다.
   const requestId = process.env.MY_CIVIL3D_REQUEST_ID;
-  if (!requestId || requestId === "none") return server;
+  if (!requestId || requestId === "none") {
+    return server;
+  }
 
   return new Proxy(server, {
     get(target, property, receiver) {
-      if (property !== "registerTool") return Reflect.get(target, property, receiver);
+      if (property !== "registerTool") {
+        return Reflect.get(target, property, receiver);
+      }
 
       return (name: string, config: unknown, callback: (...args: unknown[]) => Promise<ToolOutput>) =>
         (target.registerTool as (...args: unknown[]) => unknown)(name, config, async (...args: unknown[]) => {

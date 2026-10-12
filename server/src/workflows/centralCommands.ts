@@ -36,12 +36,29 @@ const DRIVE_WEB = "https://drive.google.com/drive/my-drive";
 // 이 명령들 중 하나면 답 글을, 아니면 undefined(→ 다음 명령 처리기나 AI로).
 export async function centralCommand(question: string, conversation?: string): Promise<string | undefined> {
   const text = question.trim();
-  if (text === "/설정값") return parametersText();
-  if (/^\/중앙(\s|$)/.test(text)) return central(text.replace(/^\/중앙\s*/, ""), conversation);
-  if (text === "/검토") return reviewList(conversation);
-  if (text === "/검토 보고") return report();
-  if (/^\/검토 사례(\s|$)/.test(text)) return problemCases(text.replace(/^\/검토 사례\s*/, ""), conversation);
-  if (text === "/검토 정리") return cleanup();
+  if (text === "/설정값") {
+    return parametersText();
+  }
+
+  if (/^\/중앙(\s|$)/.test(text)) {
+    return central(text.replace(/^\/중앙\s*/, ""), conversation);
+  }
+
+  if (text === "/검토") {
+    return reviewList(conversation);
+  }
+
+  if (text === "/검토 보고") {
+    return report();
+  }
+
+  if (/^\/검토 사례(\s|$)/.test(text)) {
+    return problemCases(text.replace(/^\/검토 사례\s*/, ""), conversation);
+  }
+
+  if (text === "/검토 정리") {
+    return cleanup();
+  }
 
   // "1 승인" 같은 답은 마지막 목록이 검토 목록일 때만 받는다.
   const listed = lastShown(conversation, "review");
@@ -72,19 +89,34 @@ const shareSteps = (folder: string, email?: string) => [
 // /중앙 ... 처리.
 async function central(rest: string, conversation?: string): Promise<string> {
   const [command, ...args] = rest.split(/\s+/).filter(Boolean);
-  if (!command) return statusText();
+  if (!command) {
+    return statusText();
+  }
 
   // ── 신청: 보내기 폴더를 만들고 공유 방법을 안내한다.
   if (command === "신청") {
     const email = args[0];
-    if (email && !validEmail(email)) return "형식: /중앙 신청 [관리자 메일]\n예: /중앙 신청 admin@gmail.com";
-    const drive = await updateDrive(item => { item.enabled = true; item.admin = false; if (email) item.adminEmail = email; });
+    if (email && !validEmail(email)) {
+      return "형식: /중앙 신청 [관리자 메일]\n예: /중앙 신청 admin@gmail.com";
+    }
+
+    const drive = await updateDrive(item => {
+      item.enabled = true;
+      item.admin = false;
+      if (email) {
+        item.adminEmail = email;
+      }
+    });
     if ((await loadTeam())?.ingestUrl) {
       const result = await runSync();
       return result.error ? `자동 연결 재시도 중: ${result.error}` : "관리자 자동 수신에 연결했습니다. Google Drive 설정이나 폴더 공유는 필요 없습니다.";
     }
+
     const root = findDriveRoot(drive.root);
-    if (!root) return `${NO_DRIVE}\n설치하고 로그인한 뒤 /중앙 신청 을 다시 입력하세요.`;
+    if (!root) {
+      return `${NO_DRIVE}\n설치하고 로그인한 뒤 /중앙 신청 을 다시 입력하세요.`;
+    }
+
     const folder = await ensureMemberFolder(root, (await install()).installId);
     void runSync();
     return [`구글 드라이브에 보내기 폴더를 만들었습니다: ${folder}`, "", "관리자에게 가입을 신청하려면:", shareSteps(folder.split(/[\\/]/).pop()!, drive.adminEmail)].join("\n");
@@ -92,25 +124,44 @@ async function central(rest: string, conversation?: string): Promise<string> {
 
   // ── 드라이브 위치
   if (command === "드라이브") {
-    if ((await loadTeam())?.ingestUrl && process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") return "관리자 자동 수신을 사용 중입니다. 사용자 Drive 경로 설정은 필요 없습니다.";
+    if ((await loadTeam())?.ingestUrl && process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") {
+      return "관리자 자동 수신을 사용 중입니다. 사용자 Drive 경로 설정은 필요 없습니다.";
+    }
+
     const path = args.join(" ");
-    if (!path) return "형식: /중앙 드라이브 <내 드라이브 폴더 경로> 또는 /중앙 드라이브 자동\n예: /중앙 드라이브 G:\\내 드라이브";
+    if (!path) {
+      return "형식: /중앙 드라이브 <내 드라이브 폴더 경로> 또는 /중앙 드라이브 자동\n예: /중앙 드라이브 G:\\내 드라이브";
+    }
+
     if (path === "자동") {
-      const drive = await updateDrive(item => { delete item.root; });
+      const drive = await updateDrive(item => {
+        delete item.root;
+      });
       const root = findDriveRoot(drive.root);
       return root ? `구글 드라이브를 찾았습니다: ${root}` : NO_DRIVE;
     }
-    if (!findDriveRoot(path)) return `그 폴더가 없습니다: ${path}`;
-    await updateDrive(item => { item.root = path; });
+
+    if (!findDriveRoot(path)) {
+      return `그 폴더가 없습니다: ${path}`;
+    }
+
+    await updateDrive(item => {
+      item.root = path;
+    });
     void runSync();
     return `구글 드라이브 폴더를 ${path}(으)로 정했습니다.`;
   }
 
   // ── 관리자
-  if (["관리자", "사용자", "배포"].includes(command) && process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1")
+  if (["관리자", "사용자", "배포"].includes(command) && process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") {
     return "관리자는 관리자실행.bat에서 사용자·지식을 관리하고, 배포하기.bat에서 GitHub Release로 배포합니다.";
+  }
+
   if (command === "관리자") {
-    const drive = await updateDrive(item => { item.enabled = true; item.admin = true; });
+    const drive = await updateDrive(item => {
+      item.enabled = true;
+      item.admin = true;
+    });
     const root = findDriveRoot(drive.root);
     loadAdminConfig();
     void runSync().then(() => watch());
@@ -125,15 +176,22 @@ async function central(rest: string, conversation?: string): Promise<string> {
   }
 
   const drive = await driveSettings();
-  if (!drive) return "구글 드라이브 연결을 아직 정하지 않았습니다. /중앙 신청 <관리자 메일> 을 입력하세요.";
+  if (!drive) {
+    return "구글 드라이브 연결을 아직 정하지 않았습니다. /중앙 신청 <관리자 메일> 을 입력하세요.";
+  }
 
   // ── 끊기 / 켜기
   if (command === "끊기") {
-    await updateDrive(item => { item.enabled = false; });
+    await updateDrive(item => {
+      item.enabled = false;
+    });
     return "드라이브로 보내기를 멈췄습니다. 기록은 이 PC에 계속 쌓이고, /중앙 켜기로 다시 보낼 수 있습니다.";
   }
+
   if (command === "켜기") {
-    await updateDrive(item => { item.enabled = true; });
+    await updateDrive(item => {
+      item.enabled = true;
+    });
     void runSync();
     return "드라이브로 보내기를 다시 시작했습니다.";
   }
@@ -141,18 +199,33 @@ async function central(rest: string, conversation?: string): Promise<string> {
   // ── 동기화
   if (command === "동기화") {
     const result = await runSync();
-    if (result.error) return `동기화 중 문제가 있었습니다. ${result.error}`;
-    if (drive.admin) return [
-      `동기화했습니다. 사용자 ${result.members ?? 0}명, 가져온 묶음 ${result.sent}개, 후보 ${result.candidates}개, 중앙 지식 v${result.official ?? 0}.`,
-      ...(result.linkFailures ? [`공유 링크로 설치 파일을 받지 못한 PC ${result.linkFailures}곳에는 따로 넣어 주었습니다. 링크가 바뀌었으면 /중앙 배포 링크 <새 링크>.`] : []),
-      ...(result.problems?.length ? ["", "받지 않은 것:", ...result.problems.slice(0, 10).map(line => `- ${line}`)] : [])
-    ].join("\n");
+    if (result.error) {
+      return `동기화 중 문제가 있었습니다. ${result.error}`;
+    }
+
+    if (drive.admin) {
+      return [
+        `동기화했습니다. 사용자 ${result.members ?? 0}명, 가져온 묶음 ${result.sent}개, 후보 ${result.candidates}개, 중앙 지식 v${result.official ?? 0}.`,
+        ...(result.linkFailures ? [`공유 링크로 설치 파일을 받지 못한 PC ${result.linkFailures}곳에는 따로 넣어 주었습니다. 링크가 바뀌었으면 /중앙 배포 링크 <새 링크>.`] : []),
+        ...(result.problems?.length ? ["", "받지 않은 것:", ...result.problems.slice(0, 10).map(line => `- ${line}`)] : [])
+      ].join("\n");
+    }
+
     return `동기화했습니다. 드라이브로 보낸 묶음 ${result.sent}개, 후보 ${result.candidates}개, 중앙 지식 v${result.official ?? 0}.`;
   }
 
-  if (!drive.admin) return unknown();
-  if (command === "사용자") return members(args, conversation, drive);
-  if (command === "배포") return releases(args);
+  if (!drive.admin) {
+    return unknown();
+  }
+
+  if (command === "사용자") {
+    return members(args, conversation, drive);
+  }
+
+  if (command === "배포") {
+    return releases(args);
+  }
+
   return unknown();
 }
 
@@ -173,14 +246,19 @@ async function statusText(): Promise<string> {
     `- 마지막 보냄 ${when(state.lastPush)}, 마지막 받음 ${when(state.lastPull)}, 중앙 지식 v${state.officialVersion ?? 0}`,
     ...(state.lastError ? [`- 마지막 문제: ${state.lastError}`] : [])
   ];
-  if (team?.ingestUrl && !drive?.admin) return [
-    "### 관리자 자동 수신",
-    `- 전송: ${drive?.enabled ? "켜짐" : "멈춤"}`,
-    `- 수신 연결: ${state.lastPull ? "확인됨" : "자동 등록/연결 대기"}`,
-    "- Google Drive 로그인·폴더 공유·경로 설정은 필요 없습니다.",
-    ...common, ...footer
-  ].join("\n");
-  if (!drive) return ["### 구글 드라이브 연결", "- 연결 안 함 — /중앙 신청 <관리자 메일> 로 시작하세요.", ...common, ...footer].join("\n");
+  if (team?.ingestUrl && !drive?.admin) {
+    return [
+      "### 관리자 자동 수신",
+      `- 전송: ${drive?.enabled ? "켜짐" : "멈춤"}`,
+      `- 수신 연결: ${state.lastPull ? "확인됨" : "자동 등록/연결 대기"}`,
+      "- Google Drive 로그인·폴더 공유·경로 설정은 필요 없습니다.",
+      ...common, ...footer
+    ].join("\n");
+  }
+
+  if (!drive) {
+    return ["### 구글 드라이브 연결", "- 연결 안 함 — /중앙 신청 <관리자 메일> 로 시작하세요.", ...common, ...footer].join("\n");
+  }
 
   if (drive.admin) {
     const store = adminStore();
@@ -217,17 +295,27 @@ async function members(args: string[], conversation: string | undefined, drive: 
   const store = adminStore();
   if (!args.length) {
     const root = findDriveRoot(drive.root);
-    if (!root) return NO_DRIVE;
+    if (!root) {
+      return NO_DRIVE;
+    }
+
     const own = (await install()).installId;
     for (const folder of await findMemberFolders(root)) {
-      if (folder.installId === own || store.members[folder.installId]) continue;
+      if (folder.installId === own || store.members[folder.installId]) {
+        continue;
+      }
+
       const today = new Date().toISOString().slice(0, 10);
       store.members[folder.installId] = { installId: folder.installId, folder: folder.name, firstSeen: today, lastSeen: today, seen: false };
     }
+
     const rows = Object.values(store.members).sort((a, b) => a.firstSeen.localeCompare(b.firstSeen));
     setShown(conversation, "members", rows.map(row => row.installId));
     const lines = rows.map((row, index) => `${index + 1}. ${row.folder} · 처음 ${row.firstSeen} · 마지막 ${row.lastSeen}${row.seen ? "" : " · **새 사용자**"}${row.blocked ? " · 차단됨" : ""}`);
-    for (const row of rows) row.seen = true;
+    for (const row of rows) {
+      row.seen = true;
+    }
+
     store.saveMembers();
     void watch();
     return [
@@ -239,20 +327,36 @@ async function members(args: string[], conversation: string | undefined, drive: 
       "모르는 폴더면: /중앙 사용자 <번호> 차단 (그리고 드라이브에서 바로가기 삭제)"
     ].join("\n");
   }
+
   const match = /^(\d+)$/.exec(args[0]);
   const action = args[1];
-  if (!match || (action !== "차단" && action !== "해제")) return "형식: /중앙 사용자 <번호> 차단|해제";
+  if (!match || (action !== "차단" && action !== "해제")) {
+    return "형식: /중앙 사용자 <번호> 차단|해제";
+  }
+
   const ids = lastShown(conversation, "members");
-  if (!ids) return "먼저 /중앙 사용자 로 목록을 보세요.";
+  if (!ids) {
+    return "먼저 /중앙 사용자 로 목록을 보세요.";
+  }
+
   const row = store.members[ids[Number(match[1]) - 1] ?? ""];
-  if (!row) return `${match[1]}번이 목록에 없습니다.`;
+  if (!row) {
+    return `${match[1]}번이 목록에 없습니다.`;
+  }
+
   const root = findDriveRoot(drive.root);
   const folder = root ? (await findMemberFolders(root)).find(item => item.installId === row.installId) : undefined;
   const descriptor = folder ? JSON.parse(await readFile(join(folder.path, "member.json"), "utf8")) : undefined;
   if (descriptor?.transport === "web") {
     await writeAtomic(join(folder!.path, "admin", "control.json"), JSON.stringify({ blocked: action === "차단" }));
   }
-  if (action === "차단") row.blocked = true; else delete row.blocked;
+
+  if (action === "차단") {
+    row.blocked = true;
+  } else {
+    delete row.blocked;
+  }
+
   store.saveMembers();
   return action === "차단"
     ? `${row.folder}: 차단했습니다. 웹 수신 사용자는 Drive 동기화 후 추가 전송도 거절됩니다.`
@@ -284,6 +388,7 @@ async function releases(args: string[]): Promise<string> {
         ...(config.downloadId ? [] : ["", linkSteps()])
       ].join("\n");
     }
+
     // 공용 배포 파일의 공유 링크: 정하면 사용자 폴더마다 zip을 넣지 않는다(관리자 드라이브 용량 절약).
     if (args[0] === "링크") {
       if (args[1] === "지우기") {
@@ -292,8 +397,12 @@ async function releases(args: string[]): Promise<string> {
         void runSync();
         return "공유 링크를 지웠습니다. 다음 동기화부터 사용자 폴더마다 설치 파일을 넣습니다.";
       }
+
       const id = driveFileId(args.slice(1).join(" "));
-      if (!id) return `형식: /중앙 배포 링크 <공유 링크>\n${linkSteps()}`;
+      if (!id) {
+        return `형식: /중앙 배포 링크 <공유 링크>\n${linkSteps()}`;
+      }
+
       config.downloadId = id;
       saveAdminConfig(config);
       const result = await runSync();
@@ -303,12 +412,17 @@ async function releases(args: string[]): Promise<string> {
         "링크로 받지 못한 PC가 있으면 그 PC 폴더에만 자동으로 따로 넣고 /중앙 배포 에 알려 드립니다."
       ].join("\n");
     }
+
     if (args[0] === "지우기") {
-      if (!args[1]) return "형식: /중앙 배포 지우기 <버전>";
+      if (!args[1]) {
+        return "형식: /중앙 배포 지우기 <버전>";
+      }
+
       const { stoppedPublishing } = removeRelease(args[1]);
       void runSync();
       return `지웠습니다: ${args[1]}${stoppedPublishing ? " (배포 중이던 버전이라 배포도 멈췄습니다)" : ""}`;
     }
+
     const version = args[0].replace(/^v/, "");
     const required = args[1] === "필수";
     const release = readRelease(version) ?? await fetchRelease("", version);
@@ -349,11 +463,17 @@ const NOT_ADMIN = "관리자 기능은 관리자실행.bat에서 사용하세요
 
 // /검토 : 후보 묶음과 통계 제안을 번호와 함께.
 async function reviewList(conversation?: string): Promise<string> {
-  if (!await isAdmin()) return NOT_ADMIN;
+  if (!await isAdmin()) {
+    return NOT_ADMIN;
+  }
+
   const store = adminStore();
   const items = reviewItems(store, loadAdminConfig());
   setShown(conversation, "review", items.map(item => item.id));
-  if (!items.length) return `검토할 항목이 없습니다. 지금 중앙 지식은 v${store.official.version}, ${store.official.items.length}개입니다.`;
+  if (!items.length) {
+    return `검토할 항목이 없습니다. 지금 중앙 지식은 v${store.official.version}, ${store.official.items.length}개입니다.`;
+  }
+
   return [
     `### 검토할 항목 ${items.length}개 (중앙 지식 v${store.official.version})`,
     "승인하면 다음 동기화(10분 이내) 때 사용자 폴더에 들어가고, 각 PC가 받아 적용합니다.",
@@ -371,10 +491,18 @@ async function reviewList(conversation?: string): Promise<string> {
 
 // "1 승인" / "2 반려 사유" 처리. 반려에는 사유가 필요하다.
 async function reviewDecide(reply: NonNullable<ReturnType<typeof parseDecision>>, listed: string[], conversation?: string): Promise<string> {
-  if (!await isAdmin()) return NOT_ADMIN;
+  if (!await isAdmin()) {
+    return NOT_ADMIN;
+  }
+
   const ids = pick(reply.which, listed);
-  if (!ids.length) return "번호를 찾지 못했습니다. /검토로 목록을 다시 봐 주세요.";
-  if (reply.decision === "rejected" && !reply.reason) return "반려 사유를 함께 적어 주세요. 예: \"2 반려 회사마다 달라서\"";
+  if (!ids.length) {
+    return "번호를 찾지 못했습니다. /검토로 목록을 다시 봐 주세요.";
+  }
+
+  if (reply.decision === "rejected" && !reply.reason) {
+    return "반려 사유를 함께 적어 주세요. 예: \"2 반려 회사마다 달라서\"";
+  }
 
   const store = adminStore();
   const config = loadAdminConfig();
@@ -386,16 +514,23 @@ async function reviewDecide(reply: NonNullable<ReturnType<typeof parseDecision>>
       lines.push(`- ${id}: ${failure(error)}`);
     }
   }
+
   // 결정한 항목은 목록에서 뺀다(남은 번호로 이어서 답할 수 있게). 승인했으면 바로 동기화해 나눠 준다.
   setShown(conversation, "review", listed.filter(id => !ids.includes(id)));
-  if (reply.decision === "approved") await runSync();
+  if (reply.decision === "approved") {
+    await runSync();
+  }
+
   const head = `${reply.decision === "approved" ? "승인" : "반려"}했습니다 (중앙 지식 v${store.official.version}).`;
   return [head, "", ...lines].join("\n");
 }
 
 // /검토 보고 : 최근 기간의 실패·도구 통계와 수정 추적 결과.
 async function report(): Promise<string> {
-  if (!await isAdmin()) return NOT_ADMIN;
+  if (!await isAdmin()) {
+    return NOT_ADMIN;
+  }
+
   const data = buildReport(adminStore(), loadAdminConfig());
   return [
     `### 최근 ${data.days}일 보고 (설치 ${data.installs}곳, 질문 ${data.turns}건)`,
@@ -421,7 +556,10 @@ const CATEGORY_NAME: Record<string, string> = { knowledge: "지식", code: "코�
 const STATUS_NAME: Record<string, string> = { new: "분류 전", todo: "할 일", done: "완료" };
 
 async function problemCases(rest: string, conversation?: string): Promise<string> {
-  if (!await isAdmin()) return NOT_ADMIN;
+  if (!await isAdmin()) {
+    return NOT_ADMIN;
+  }
+
   const store = adminStore();
   const short = (value: string | undefined, max: number) => (value ?? "").replace(/\s+/g, " ").slice(0, max);
   try {
@@ -440,7 +578,10 @@ async function problemCases(rest: string, conversation?: string): Promise<string
     if (listOf) {
       const cases = findCases(store, listOf);
       setShown(conversation, "cases", cases.map(item => item.key));
-      if (!cases.length) return `${STATUS_NAME[listOf]} 사례가 없습니다.`;
+      if (!cases.length) {
+        return `${STATUS_NAME[listOf]} 사례가 없습니다.`;
+      }
+
       return [
         `### 문제 사례 · ${STATUS_NAME[listOf]} ${cases.length}건`,
         ...cases.map((item, index) => {
@@ -454,15 +595,26 @@ async function problemCases(rest: string, conversation?: string): Promise<string
 
     // 번호: 바로 앞에 보여 준 사례 목록의 번호
     const match = /^(\d+)(?:\s+(처리|버림|완료|취소)(?:\s+(.*))?)?$/.exec(rest);
-    if (!match) return "형식: /검토 사례 [할일|완료] · /검토 사례 <번호> [처리 <지식|코드|AI|기타> 메모 | 버림 메모 | 완료 버전 메모 | 취소] · /검토 사례 내보내기";
+    if (!match) {
+      return "형식: /검토 사례 [할일|완료] · /검토 사례 <번호> [처리 <지식|코드|AI|기타> 메모 | 버림 메모 | 완료 버전 메모 | 취소] · /검토 사례 내보내기";
+    }
+
     const keys = lastShown(conversation, "cases");
-    if (!keys) return "먼저 /검토 사례 로 목록을 보세요.";
+    if (!keys) {
+      return "먼저 /검토 사례 로 목록을 보세요.";
+    }
+
     const key = keys[Number(match[1]) - 1];
-    if (!key) return `${match[1]}번이 목록에 없습니다.`;
+    if (!key) {
+      return `${match[1]}번이 목록에 없습니다.`;
+    }
 
     if (!match[2]) {
       const item = findCases(store, "all", Number.MAX_SAFE_INTEGER).find(entry => entry.key === key);
-      if (!item) return "사례를 찾지 못했습니다(이미 버렸을 수 있습니다).";
+      if (!item) {
+        return "사례를 찾지 못했습니다(이미 버렸을 수 있습니다).";
+      }
+
       return [
         `### 사례 ${match[1]} · ${item.signals.join(", ")}${item.triage ? ` · ${STATUS_NAME[item.triage.status] ?? item.triage.status} ${CATEGORY_NAME[item.triage.category ?? ""] ?? ""}` : ""}`,
         `${item.at} · 버전 ${item.appVersion ?? "?"} · ${item.provider ?? "?"} ${item.model ?? ""}${item.errorKind ? ` · 실패 ${item.errorKind}` : ""}`,
@@ -481,20 +633,26 @@ async function problemCases(rest: string, conversation?: string): Promise<string
     if (match[2] === "처리") {
       const [first, ...note] = words.split(/\s+/);
       const category = CATEGORY[first ?? ""];
-      if (!category) return "분류를 붙여 주세요: /검토 사례 <번호> 처리 <지식|코드|AI|기타> [메모]";
+      if (!category) {
+        return "분류를 붙여 주세요: /검토 사례 <번호> 처리 <지식|코드|AI|기타> [메모]";
+      }
+
       decideCase(store, { key, action: "todo", category, note: note.join(" ") });
       return `${match[1]}번을 할 일(${CATEGORY_NAME[category]})로 분류했습니다. /검토 사례 할일 로 모아 볼 수 있습니다.`;
     }
+
     if (match[2] === "버림") {
       decideCase(store, { key, action: "discard", note: words });
       return `${match[1]}번을 버렸습니다. 관리자 보관함에서 그 질문·답·의견 내용을 지웠습니다(통계 숫자만 남음).`;
     }
+
     if (match[2] === "완료") {
       const [first, ...note] = words.split(/\s+/);
       const version = /^\d+\.\d+\.\d+$/.test(first ?? "") ? first : undefined;
       decideCase(store, { key, action: "done", version, note: (version ? note : [first, ...note]).filter(Boolean).join(" ") });
       return `${match[1]}번을 완료로 표시했습니다${version ? `(${version}에서 고침)` : ""}. 그 내용은 지웠습니다(분류·메모·버전은 남음).`;
     }
+
     decideCase(store, { key, action: "reopen" });
     return `${match[1]}번의 분류를 취소했습니다(다시 분류 전).`;
   } catch (error) {
@@ -504,7 +662,10 @@ async function problemCases(rest: string, conversation?: string): Promise<string
 
 // /검토 정리 : 재배포까지 끝낸 뒤 한 바퀴 정리. 분류 전·할 일 사례의 내용만 남긴다.
 async function cleanup(): Promise<string> {
-  if (!await isAdmin()) return NOT_ADMIN;
+  if (!await isAdmin()) {
+    return NOT_ADMIN;
+  }
+
   const result = cleanupContent(adminStore());
   return `정리했습니다. 질문 ${result.scrubbed}건의 내용을 지웠습니다(숫자 통계는 남음). 분류 전·할 일 사례 ${result.kept}건은 그대로 두었습니다.`;
 }

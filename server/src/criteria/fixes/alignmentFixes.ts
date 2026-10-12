@@ -43,6 +43,7 @@ function tangentCheck(fix: FixOption, growth: number, room: { before: number; af
     fix.reason = `접선장이 ${round(growth)} m 늘어나는데 앞 직선 ${round(room.before)} m, ` +
       `뒤 직선 ${round(room.after)} m라 인접 곡선과 겹침`;
   }
+
   return fix;
 }
 
@@ -99,7 +100,10 @@ export function radiusFixes(context: CurveContext, minRadius: number): FixOption
 // 교각이 같으면 원곡선을 길게 하는 방법은 반지름을 키우는 것뿐이다(L = R × 교각).
 export function curveLengthFixes(context: CurveContext, minLength: number): FixOption[] {
   const { simpleArc } = layout(context);
-  if (!simpleArc?.deltaDeg) return [];
+  if (!simpleArc?.deltaDeg) {
+    return [];
+  }
+
   const radius = minLength / radians(Math.abs(simpleArc.deltaDeg));
   return [largerRadius(context, radius, "곡선 길이 늘리기 (반지름 키움, 교각 유지)")];
 }
@@ -108,7 +112,9 @@ export function curveLengthFixes(context: CurveContext, minLength: number): FixO
 // 클로소이드 하나가 교각의 Ls/(2R)을 차지하고, 원곡선을 이정량 p만큼 안쪽으로 민다(geometry.ts).
 export function addSpiralFixes(context: CurveContext, minSpiral: number): FixOption[] {
   const { simpleArc, room } = layout(context);
-  if (!simpleArc?.radius || simpleArc.deltaDeg === undefined) return [];
+  if (!simpleArc?.radius || simpleArc.deltaDeg === undefined) {
+    return [];
+  }
 
   const radius = simpleArc.radius;
   const delta = Math.abs(simpleArc.deltaDeg);
@@ -146,6 +152,7 @@ export function addSpiralFixes(context: CurveContext, minSpiral: number): FixOpt
     fix.reason = `교각 ${round(delta, 4)}°가 완화곡선 두 개의 각 ${round(spiralAngle, 4)}°보다 작아 원곡선이 남지 않음`;
     return [fix];
   }
+
   return [tangentCheck(fix, growth, room)];
 }
 

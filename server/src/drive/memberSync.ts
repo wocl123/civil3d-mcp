@@ -25,13 +25,20 @@ export class DriveError extends Error {}
 export const NO_DRIVE = "구글 드라이브 폴더를 찾지 못했습니다. Google Drive for Desktop을 설치하고 로그인해 주세요(다른 위치면 /중앙 드라이브 <경로>).";
 
 const readJson = async <T>(file: string): Promise<T | undefined> => {
-  try { return JSON.parse((await readFile(file, "utf8")).replace(/^﻿/, "")) as T; } catch { return undefined; }
+  try {
+    return JSON.parse((await readFile(file, "utf8")).replace(/^﻿/, "")) as T;
+  } catch {
+    return undefined;
+  }
 };
 
 // 승인 지식 파일이 맞는 모양인지.
 export function validOfficial(value: unknown): Official | undefined {
   const item = value as Partial<Official> | undefined;
-  if (!item || typeof item.version !== "number" || !Array.isArray(item.items) || !item.parameters || typeof item.parameters !== "object") return undefined;
+  if (!item || typeof item.version !== "number" || !Array.isArray(item.items) || !item.parameters || typeof item.parameters !== "object") {
+    return undefined;
+  }
+
   const items = item.items.filter(entry => entry && typeof entry.id === "string" && typeof entry.content === "string")
     .map(entry => ({ id: entry.id, content: entry.content.slice(0, 400), approvedAt: String(entry.approvedAt ?? ""), ...(entry.parameter ? { parameter: entry.parameter } : {}) }));
   return { version: item.version, publishedAt: item.publishedAt, items, parameters: item.parameters };
@@ -39,15 +46,26 @@ export function validOfficial(value: unknown): Official | undefined {
 
 export async function memberSync(drive: DriveSettings, state: SyncState): Promise<{ sent: number; candidates: number; official?: number }> {
   const root = findDriveRoot(drive.root);
-  if (!root) throw new DriveError(NO_DRIVE);
+  if (!root) {
+    throw new DriveError(NO_DRIVE);
+  }
+
   const folder = await ensureMemberFolder(root, (await install()).installId);
 
   // 1) 관리자가 가져간 것 지우기
   const received = await readJson<{ packages?: unknown; candidates?: unknown }>(join(folder, "admin", "received.json"));
   const names = (list: unknown) => Array.isArray(list) ? list.filter((id): id is string => typeof id === "string" && /^[\w.-]{1,80}$/.test(id)) : [];
-  for (const id of names(received?.packages)) await rm(join(folder, "packages", `${id}.json`), { force: true });
-  for (const id of names(received?.candidates)) await rm(join(folder, "candidates", `${id}.json`), { force: true });
-  if (received) state.lastPull = new Date().toISOString();
+  for (const id of names(received?.packages)) {
+    await rm(join(folder, "packages", `${id}.json`), { force: true });
+  }
+
+  for (const id of names(received?.candidates)) {
+    await rm(join(folder, "candidates", `${id}.json`), { force: true });
+  }
+
+  if (received) {
+    state.lastPull = new Date().toISOString();
+  }
 
   // 2) 묶음 옮기기(드라이브에 쓴 뒤 이 PC에서 지운다)
   let sent = 0;
@@ -57,11 +75,14 @@ export async function memberSync(drive: DriveSettings, state: SyncState): Promis
     await rm(from, { force: true });
     sent++;
   }
+
   // 관리자가 끝내 가져가지 않은 묶음은 보관 기한이 지나면 지운다.
   const now = Date.now();
   for (const name of await jsonFiles(join(folder, "packages"))) {
     const info = await stat(join(folder, "packages", name)).catch(() => undefined);
-    if (info && now - info.mtimeMs > RETENTION.pendingDays * 24 * 3600000) await rm(join(folder, "packages", name), { force: true });
+    if (info && now - info.mtimeMs > RETENTION.pendingDays * 24 * 3600000) {
+      await rm(join(folder, "packages", name), { force: true });
+    }
   }
 
   // 3) 지식 후보
@@ -74,14 +95,20 @@ export async function memberSync(drive: DriveSettings, state: SyncState): Promis
     state.officialVersion = official.version;
   }
 
-  if (sent) state.lastPush = new Date().toISOString();
+  if (sent) {
+    state.lastPush = new Date().toISOString();
+  }
+
   return { sent, candidates, ...(official ? { official: official.version } : {}) };
 }
 
 // 아직 안 보낸 후보를 넣는다. 그래도 검사에 걸리는 후보는 넣지 않고 남겨 둔다.
 async function sendCandidates(folder: string): Promise<number> {
   const unsent = await unsentCandidates();
-  if (!unsent.length) return 0;
+  if (!unsent.length) {
+    return 0;
+  }
+
   const terms = await privateTerms();
   const ready = unsent.map(item => ({
     id: item.id,
@@ -95,8 +122,14 @@ async function sendCandidates(folder: string): Promise<number> {
       localStatus: item.status
     }
   })).filter(item => !leak(JSON.stringify(item.body), terms));
-  for (const item of ready) await writeAtomic(join(folder, "candidates", `${item.id}.json`), JSON.stringify(item.body));
-  if (ready.length) await markSubmitted(ready.map(item => item.id));
+  for (const item of ready) {
+    await writeAtomic(join(folder, "candidates", `${item.id}.json`), JSON.stringify(item.body));
+  }
+
+  if (ready.length) {
+    await markSubmitted(ready.map(item => item.id));
+  }
+
   return ready.length;
 }
 

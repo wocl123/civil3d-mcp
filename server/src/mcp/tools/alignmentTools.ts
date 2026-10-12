@@ -32,7 +32,10 @@ async function alignmentOverview(alignment: string) {
 // 종단 개요 + (설계 종단이고 작으면) 종단곡선·경사 목록. 지표면 종단(EG)은 개요만.
 async function profileOverview(profile: string, alignment?: string) {
   const overview = await callPlugin("profile.get", { profile, alignment }) as Overview & { profile: { handle: string; type: string; alignmentHandle?: string } };
-  if (overview.profile.type === "EG") return overview;
+  if (overview.profile.type === "EG") {
+    return overview;
+  }
+
   const params = { profile: overview.profile.handle, alignment: overview.profile.alignmentHandle };
   const small = (name: string) => (overview.sections[name] ?? 0) <= INLINE_LIMIT;
   const [curves, tangents] = await Promise.all([

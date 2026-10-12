@@ -25,10 +25,13 @@ const file = () => join(dataDir(), "settings.json");
 export async function loadSettings(): Promise<Settings> {
   try {
     const parsed = JSON.parse(await readFile(file(), "utf8")) as Partial<Settings>;
-    if (parsed.schema === 1) return { schema: 1, ...(parsed.drive ? { drive: parsed.drive } : {}) };
+    if (parsed.schema === 1) {
+      return { schema: 1, ...(parsed.drive ? { drive: parsed.drive } : {}) };
+    }
   } catch {
     // 아직 설정이 없다.
   }
+
   return { schema: 1 };
 }
 
@@ -55,8 +58,11 @@ export const validEmail = (text: string) => /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$
 export async function driveSettings(): Promise<DriveSettings | undefined> {
   const settings = await loadSettings();
   const team = await loadTeam();
-  if (settings.drive) return { ...settings.drive,
-    ...(team?.ingestUrl && process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1" ? { admin: false } : {}),
-    adminEmail: settings.drive.adminEmail ?? team?.adminEmail };
+  if (settings.drive) {
+    return { ...settings.drive,
+      ...(team?.ingestUrl && process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1" ? { admin: false } : {}),
+      adminEmail: settings.drive.adminEmail ?? team?.adminEmail };
+  }
+
   return team ? { enabled: true, adminEmail: team.adminEmail, since: "" } : undefined;
 }

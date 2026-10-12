@@ -152,10 +152,16 @@ const PALETTE_MESSAGES: [RegExp, (match: RegExpExecArray) => string][] = [
 
 // 팔레트에 보여 줄 오류 문장: 아는 실패면 한국어 안내 + (원문), 모르면 원문 그대로.
 export function paletteMessage(message: string): string {
-  if (/^(Claude|Codex|Gemini) (사용|요청|로그인|계정|연결|실행)/.test(message)) return message;
+  if (/^(Claude|Codex|Gemini) (사용|요청|로그인|계정|연결|실행)/.test(message)) {
+    return message;
+  }
+
   for (const [pattern, text] of PALETTE_MESSAGES) {
     const match = pattern.exec(message);
-    if (match) return `${text(match)}\n(${message})`;
+    if (match) {
+      return `${text(match)}\n(${message})`;
+    }
   }
+
   return message;
 }

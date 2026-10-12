@@ -38,7 +38,10 @@ export function trackedItems(fix: StoredFix, result: NonNullable<ChangeLogEntry[
 
   // ── 수정안: 검토에 쓴 조건 중 아는 것만.
   // 속성 변경·삭제는 설계 값이 아니라 추적하지 않는다.
-  if (fix.edit || fix.remove || !Array.isArray(result.changes)) return [];
+  if (fix.edit || fix.remove || !Array.isArray(result.changes)) {
+    return [];
+  }
+
   const input = fix.source.check === "none" ? {} : fix.source.input as Record<string, unknown>;
   const conditions: TrackConditions = Object.fromEntries(["designSpeed", "roadClass", "region", "criteria"]
     .filter(key => input[key] !== undefined)
@@ -49,27 +52,41 @@ export function trackedItems(fix: StoredFix, result: NonNullable<ChangeLogEntry[
 
   return (result.changes ?? []).flatMap((change, index): NewItem[] => {
     const handle = fix.changes[index]?.object.handle;
-    if (!handle) return [];
+    if (!handle) {
+      return [];
+    }
+
     const base = { source: "fix" as const, check: fix.check, handle, aiValue: change.after, conditions };
 
-    if (change.kind === "alignmentArc" && change.property === "radius" && curve > 0)
+    if (change.kind === "alignmentArc" && change.property === "radius" && curve > 0) {
       return [{ ...base, objectKind: "alignment", curve, property: "radius" }];
-    if (change.kind === "profilePvi" && change.property === "elevation")
+    }
+
+    if (change.kind === "profilePvi" && change.property === "elevation") {
       return [{ ...base, objectKind: "profile", at: change.at, property: "elevation" }];
-    if (change.kind === "profileCurve" && change.property === "length")
+    }
+
+    if (change.kind === "profileCurve" && change.property === "length") {
       return [{ ...base, objectKind: "profile", at: change.at, property: "curveLength" }];
+    }
+
     return [];
   });
 }
 
 // 적용에 성공한 뒤: 값을 추적하고, 도면 이름(과 사람이 붙인 선형 이름)을 보내지 않을 낱말로 기억한다.
 export async function trackApplied(fix: StoredFix, result: ChangeLogEntry["result"]): Promise<void> {
-  if (!result) return;
+  if (!result) {
+    return;
+  }
+
   try {
     const scope = await currentDrawingScope();
     const expected = drawingContext();
-    if (expected && (scope.drawingId !== expected.drawingId || scope.state !== expected.revision))
+    if (expected && (scope.drawingId !== expected.drawingId || scope.state !== expected.revision)) {
       throw new Error("Drawing changed before tracking was recorded.");
+    }
+
     const createdName = result.created && !/^선형-\d+$/.test(result.created.name) ? [result.created.name] : [];
     await addTerms([scope.label, ...createdName]);
     await track(scope, trackedItems(fix, result));

@@ -16,9 +16,18 @@ const completeItems = new WeakMap<CriteriaReport, CheckItem[]>();
 export const fullItems = (report: CriteriaReport) => completeItems.get(report) ?? report.items;
 export type Assessment = NonNullable<CriteriaReport["assessment"]>;
 export function assess(items: CheckItem[], missing = false): Assessment {
-  if (items.some(item => item.result === "fail")) return "fail";
-  if (missing || !items.length || items.some(item => item.result === "n/a")) return "incomplete";
-  if (items.some(item => item.result === "review")) return "review";
+  if (items.some(item => item.result === "fail")) {
+    return "fail";
+  }
+
+  if (missing || !items.length || items.some(item => item.result === "n/a")) {
+    return "incomplete";
+  }
+
+  if (items.some(item => item.result === "review")) {
+    return "review";
+  }
+
   return "pass";
 }
 
@@ -53,7 +62,10 @@ export class ReportBuilder {
     private readonly notCovered: string[] = [],
     private readonly objectHandle = ""
   ) {
-    if (!set.reviewed) this.notes.push("기준표는 원문에서 옮긴 값이며 사람 검토 전이다.");
+    if (!set.reviewed) {
+      this.notes.push("기준표는 원문에서 옮긴 값이며 사람 검토 전이다.");
+    }
+
     this.notes.push(...(set.notes ?? []));
   }
 
@@ -70,7 +82,10 @@ export class ReportBuilder {
     if (typeof value === "number") {
       limit = value;
     } else {
-      if (!extra.deltaDeg) return this.skip(source, target, "교각을 읽지 못해 비교하지 못함");
+      if (!extra.deltaDeg) {
+        return this.skip(source, target, "교각을 읽지 못해 비교하지 못함");
+      }
+
       limit = round(value.divideByDeltaDeg / extra.deltaDeg);
       note = [`${value.divideByDeltaDeg} ÷ 교각 ${round(extra.deltaDeg, 4)}° (계산값)`, note].filter(Boolean).join("; ");
     }
@@ -116,9 +131,13 @@ export class ReportBuilder {
   need(name: string, neededFor: string, choices?: (string | number)[]): void {
     const entry = this.missing.get(name);
     if (entry) {
-      if (!entry.neededFor.includes(neededFor)) entry.neededFor += `, ${neededFor}`;
+      if (!entry.neededFor.includes(neededFor)) {
+        entry.neededFor += `, ${neededFor}`;
+      }
+
       return;
     }
+
     this.missing.set(name, { name, neededFor, ...(choices ? { options: choices } : {}) });
   }
 

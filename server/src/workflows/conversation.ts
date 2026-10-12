@@ -25,8 +25,15 @@ const SHORT_ANSWER = 200;
 const store = stateFile<Conversation>("conversations", conversation => conversation.usedAt);
 const conversations = store.map;
 // 읽어 온 것 중 오래 안 쓴 것과 개수를 넘는 것은 버린다.
-for (const [key, found] of [...conversations]) if (Date.now() - found.usedAt > IDLE_MS) store.remove(key);
-for (const key of [...conversations.keys()].slice(0, Math.max(0, conversations.size - MAX_CONVERSATIONS))) store.remove(key);
+for (const [key, found] of [...conversations]) {
+  if (Date.now() - found.usedAt > IDLE_MS) {
+    store.remove(key);
+  }
+}
+
+for (const key of [...conversations.keys()].slice(0, Math.max(0, conversations.size - MAX_CONVERSATIONS))) {
+  store.remove(key);
+}
 
 export function isConversationId(value: unknown): value is string {
   return typeof value === "string" && /^[\w-]{8,64}$/.test(value);
@@ -34,18 +41,25 @@ export function isConversationId(value: unknown): value is string {
 
 // 대화 하나. 오래 안 썼으면 버리고 undefined.
 function entry(id: string | undefined): Conversation | undefined {
-  if (!id) return undefined;
+  if (!id) {
+    return undefined;
+  }
+
   const found = conversations.get(id);
   if (found && Date.now() - found.usedAt > IDLE_MS) {
     store.remove(id);
     return undefined;
   }
+
   return found;
 }
 
 // 턴 하나를 더한다.
 export function remember(id: string | undefined, turn: Turn): void {
-  if (!id) return;
+  if (!id) {
+    return;
+  }
+
   const found = entry(id) ?? { turns: [], summarized: 0, usedAt: 0 };
   const answer = turn.answer.length > MAX_STORED_ANSWER ? turn.answer.slice(0, MAX_STORED_ANSWER) + "\n(이하 생략)" : turn.answer;
   found.turns.push({ ...turn, answer });
@@ -55,9 +69,13 @@ export function remember(id: string | undefined, turn: Turn): void {
   conversations.delete(id);
   conversations.set(id, found);
   for (const key of [...conversations.keys()]) {
-    if (conversations.size <= MAX_CONVERSATIONS) break;
+    if (conversations.size <= MAX_CONVERSATIONS) {
+      break;
+    }
+
     store.remove(key);
   }
+
   store.save();
 }
 
@@ -69,9 +87,12 @@ const turnText = (turn: Turn) => `Q: ${turn.question}\nA (${turn.provider}): ${t
 
 // 요약이 아직 대신하지 않는 턴들(최신 keep개는 빼고).
 export function unsummarized(id: string | undefined, keep: number):
-  { turns: Turn[]; upTo: number; summary?: string; chars: number } {
+{ turns: Turn[]; upTo: number; summary?: string; chars: number } {
   const found = entry(id);
-  if (!found) return { turns: [], upTo: 0, chars: 0 };
+  if (!found) {
+    return { turns: [], upTo: 0, chars: 0 };
+  }
+
   const upTo = Math.max(found.summarized, found.turns.length - keep);
   const turns = found.turns.slice(found.summarized, upTo);
   return { turns, upTo, summary: found.summary, chars: turns.reduce((sum, turn) => sum + turnText(turn).length, 0) };
@@ -80,7 +101,10 @@ export function unsummarized(id: string | undefined, keep: number):
 // upTo 턴까지를 요약으로 바꾼다. 그사이 대화가 바뀌었으면(다른 요약이 먼저 됨) 하지 않는다.
 export function applySummary(id: string, summary: string, from: number, upTo: number): boolean {
   const found = entry(id);
-  if (!found || found.summarized !== from || upTo > found.turns.length) return false;
+  if (!found || found.summarized !== from || upTo > found.turns.length) {
+    return false;
+  }
+
   found.summary = summary;
   found.summarized = upTo;
   store.save();
@@ -105,7 +129,9 @@ export function status(id: string | undefined): { turns: number; summarized: num
 // (AI가 읽는 문장이라 영어로 둔다.)
 export function historyPrompt(id: string | undefined): string {
   const found = entry(id);
-  if (!found || !found.turns.length) return "";
+  if (!found || !found.turns.length) {
+    return "";
+  }
 
   const lines: string[] = [];
   const questionsOnly: string[] = [];
@@ -120,12 +146,14 @@ export function historyPrompt(id: string | undefined): string {
       full += whole.length;
       continue;
     }
+
     const brief = `Q: ${turn.question}\nA (${turn.provider}, 앞부분): ${turn.answer.slice(0, SHORT_ANSWER).replace(/\s+/g, " ")}…`;
     if (short + brief.length <= SHORT_BUDGET) {
       lines.unshift(brief);
       short += brief.length;
       continue;
     }
+
     questionsOnly.unshift(`- ${turn.question.slice(0, 100)}`);
   }
 

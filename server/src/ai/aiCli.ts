@@ -28,9 +28,12 @@ async function cliError(provider: Provider, failure: CliFailure): Promise<Error>
   if (failure.kind === "limit") {
     try {
       quota = await cachedQuota(provider);
-      if (!quota && !failure.resetsAt.length) quota = await getQuota(provider, true);
+      if (!quota && !failure.resetsAt.length) {
+        quota = await getQuota(provider, true);
+      }
     } catch { /* Reset information may be unavailable. */ }
   }
+
   const message = formatCliFailure(provider, failure, quota);
   rememberLimit(provider, failure, message, quota);
   return new Error(message);
@@ -51,6 +54,7 @@ function setVerified(provider: Provider, state: ProviderState): ProviderState {
   sessions.save();
   return state;
 }
+
 const SESSION_MS = Math.max(1, Number(process.env.MY_CIVIL3D_AI_SESSION_MINUTES ?? "30") || 30) * 60 * 1000;
 
 const MAX_OUTPUT = 2 * 1024 * 1024;   // CLI 출력이 이보다 크면 멈춘다
@@ -73,7 +77,12 @@ async function runCli(provider: Provider, args: string[], input = "", timeoutMs 
   const location = await locateCli(provider);
   const env: Record<string, string | undefined> = { ...process.env, ...extraEnv, CI: "1" };
   if (location) {
-    for (const key of Object.keys(env)) if (/^path$/i.test(key)) delete env[key];
+    for (const key of Object.keys(env)) {
+      if (/^path$/i.test(key)) {
+        delete env[key];
+      }
+    }
+
     env[windows ? "Path" : "PATH"] = await cliPath(provider, location);
   }
 
@@ -88,23 +97,35 @@ async function runCli(provider: Provider, args: string[], input = "", timeoutMs 
     const outDecoder = new StringDecoder("utf8");
     const errDecoder = new StringDecoder("utf8");
     const stop = (message: string) => {
-      if (settled || stopping) return;
+      if (settled || stopping) {
+        return;
+      }
+
       stopping = true;
       clearTimeout(timer);
       void terminateTree(child).finally(() => {
-        if (!settled) { settled = true; reject(new Error(message)); }
+        if (!settled) {
+          settled = true;
+          reject(new Error(message));
+        }
       });
     };
+
     const abort = () => stop("요청을 취소했습니다. 도면 변경 결과는 작업 카드에서 확인하세요.");
 
     // 시간 초과
     const timer = setTimeout(() => stop(`${provider} timed out.`), timeoutMs);
     signal?.addEventListener("abort", abort, { once: true });
-    if (signal?.aborted) abort();
+    if (signal?.aborted) {
+      abort();
+    }
 
     // 출력 모으기. stdout은 줄 단위로 onLine에도 넘긴다.
     const append = (target: "stdout" | "stderr", chunk: Buffer) => {
-      if (settled || stopping) return;
+      if (settled || stopping) {
+        return;
+      }
+
       outputBytes += chunk.length;
       if (target === "stdout") {
         const text = outDecoder.write(chunk);
@@ -113,25 +134,44 @@ async function runCli(provider: Provider, args: string[], input = "", timeoutMs 
           pending += text;
           const lines = pending.split("\n");
           pending = lines.pop() ?? "";
-          for (const line of lines) if (line.trim()) onLine(line);
+          for (const line of lines) {
+            if (line.trim()) {
+              onLine(line);
+            }
+          }
         }
       } else {
         stderr += errDecoder.write(chunk);
       }
-      if (outputBytes > MAX_OUTPUT) stop(`${provider} output exceeded 2 MiB.`);
+
+      if (outputBytes > MAX_OUTPUT) {
+        stop(`${provider} output exceeded 2 MiB.`);
+      }
     };
 
     child.stdout.on("data", (chunk: Buffer) => append("stdout", chunk));
     child.stderr.on("data", (chunk: Buffer) => append("stderr", chunk));
     child.stdin.on("error", () => { /* CLI가 stdin을 다 읽기 전에 끝날 수 있다. */ });
     child.on("error", (error) => {
-      if (!settled) { settled = true; clearTimeout(timer); reject(error); }
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      }
     });
     child.on("close", (code) => {
       signal?.removeEventListener("abort", abort);
-      stdout += outDecoder.end(); stderr += errDecoder.end();
-      if (pending.trim() && !stopping) onLine?.(pending);
-      if (!settled && !stopping) { settled = true; clearTimeout(timer); resolve({ code: code ?? 1, stdout, stderr }); }
+      stdout += outDecoder.end();
+      stderr += errDecoder.end();
+      if (pending.trim() && !stopping) {
+        onLine?.(pending);
+      }
+
+      if (!settled && !stopping) {
+        settled = true;
+        clearTimeout(timer);
+        resolve({ code: code ?? 1, stdout, stderr });
+      }
     });
 
     child.stdin.end(input);
@@ -144,9 +184,15 @@ async function isInstalled(provider: Provider): Promise<boolean> {
 
 // 현재 상태: missing(설치 안 됨) / unchecked(확인 전 또는 세션 끝) / ready / unauthenticated.
 export async function getProviderState(provider: Provider): Promise<ProviderState> {
-  if (!(await isInstalled(provider))) return "missing";
+  if (!(await isInstalled(provider))) {
+    return "missing";
+  }
+
   const record = verified.get(provider);
-  if (!record || Date.now() - record.checkedAt > SESSION_MS) return "unchecked";
+  if (!record || Date.now() - record.checkedAt > SESSION_MS) {
+    return "unchecked";
+  }
+
   return record.state;
 }
 
@@ -162,7 +208,10 @@ export function touchProvider(provider: Provider): void {
 // 사용 가능한 AI의 남은 세션 시간(팔레트 표시용). 세션이 없으면 undefined.
 export function sessionInfo(provider: Provider): { expiresInMs: number; sessionMs: number } | undefined {
   const record = verified.get(provider);
-  if (record?.state !== "ready") return undefined;
+  if (record?.state !== "ready") {
+    return undefined;
+  }
+
   const left = SESSION_MS - (Date.now() - record.checkedAt);
   return left > 0 ? { expiresInMs: left, sessionMs: SESSION_MS } : undefined;
 }
@@ -172,6 +221,7 @@ export async function verifyProvider(provider: Provider): Promise<ProviderState>
   if (!(await isInstalled(provider))) {
     return setVerified(provider, "missing");
   }
+
   try {
     // Claude·Codex는 로그인 상태 명령이 있다.
     // Gemini는 없어서 짧은 질문을 하나 보내 실제로 답하는지 본다(사용량을 조금 쓴다).
@@ -183,16 +233,26 @@ export async function verifyProvider(provider: Provider): Promise<ProviderState>
 
     const failure = parseCliFailure(provider, result);
     if (failure) {
-      if (failure.kind === "auth") return setVerified(provider, "unauthenticated");
+      if (failure.kind === "auth") {
+        return setVerified(provider, "unauthenticated");
+      }
+
       const error = await cliError(provider, failure);
       // Gemini checks login with a request. Quota rejection is not missing login.
-      if (provider === "gemini" && failure.kind === "limit") return setVerified(provider, "ready");
+      if (provider === "gemini" && failure.kind === "limit") {
+        return setVerified(provider, "ready");
+      }
+
       throw error;
     }
+
     let ready = result.code === 0;
     if (provider === "claude" && ready) {
-      try { ready = JSON.parse(result.stdout).loggedIn !== false; } catch { /* Older CLI prints text. */ }
+      try {
+        ready = JSON.parse(result.stdout).loggedIn !== false;
+      } catch { /* Older CLI prints text. */ }
     }
+
     if (provider === "gemini" && ready) {
       try {
         const output = JSON.parse(result.stdout) as { response?: string; error?: unknown };
@@ -222,21 +282,29 @@ function chatEvent(provider: Provider, line: string): ChatEvent | undefined {
 
   if (provider === "claude") {
     const delta = event.type === "stream_event" ? event.event?.delta : undefined;
-    if (delta?.type === "text_delta" && typeof delta.text === "string") return { type: "text", text: delta.text };
+    if (delta?.type === "text_delta" && typeof delta.text === "string") {
+      return { type: "text", text: delta.text };
+    }
 
     const tool = event.type === "assistant"
       ? (event.message?.content as any[] | undefined)?.find(part => part?.type === "tool_use")
       : undefined;
     // 도구 이름 앞의 "mcp__서버이름__"은 뗀다.
-    if (typeof tool?.name === "string") return { type: "tool", name: tool.name.replace(/^mcp__[^_]+__/, "") };
+    if (typeof tool?.name === "string") {
+      return { type: "tool", name: tool.name.replace(/^mcp__[^_]+__/, "") };
+    }
   }
 
   if (provider === "codex") {
-    if (event.type === "item.started" && event.item?.type === "mcp_tool_call" && typeof event.item.tool === "string")
+    if (event.type === "item.started" && event.item?.type === "mcp_tool_call" && typeof event.item.tool === "string") {
       return { type: "tool", name: event.item.tool };
-    if (event.type === "item.completed" && event.item?.type === "agent_message" && typeof event.item.text === "string")
+    }
+
+    if (event.type === "item.completed" && event.item?.type === "agent_message" && typeof event.item.text === "string") {
       return { type: "text", text: event.item.text };
+    }
   }
+
   return undefined;
 }
 
@@ -245,18 +313,25 @@ function chatEvent(provider: Provider, line: string): ChatEvent | undefined {
 export async function askProvider(provider: Provider, prompt: string,
   options: { tools?: boolean; onEvent?: (event: ChatEvent) => void; requestId?: string; offeredFixes?: string[]; drawingId?: string; signal?: AbortSignal } = {}):
   Promise<{ answer: string; usage: TokenUsage }> {
-  if (await getProviderState(provider) !== "ready")
+  if (await getProviderState(provider) !== "ready") {
     throw new Error(`${provider} account is not verified. Verify its login first.`);
+  }
 
   // 1) CLI 실행 (명령 인자와 작업 폴더는 paletteWorkspace.ts 가 정한다)
   const launch = await paletteLaunch(provider, options.tools === true, options.requestId ?? randomUUID(), options.offeredFixes, options.drawingId);
   const onEvent = options.onEvent;
   const onLine = onEvent
-    ? (line: string) => { const event = chatEvent(provider, line); if (event) onEvent(event); }
+    ? (line: string) => {
+      const event = chatEvent(provider, line);
+      if (event) {
+        onEvent(event);
+      }
+    }
     : undefined;
   let result: CliResult;
-  try { result = await runCli(provider, launch.args, prompt, 200000, launch.cwd, launch.env, onLine, options.signal); }
-  finally {
+  try {
+    result = await runCli(provider, launch.args, prompt, 200000, launch.cwd, launch.env, onLine, options.signal);
+  } finally {
     // 요청별 폴더는 이 실행이 소유한다. 인증 파일은 여기 저장하지 않는다.
     await rm(launch.cwd, { recursive: true, force: true }).catch(error => process.stderr.write(`Workspace cleanup failed: ${String(error)}\n`));
   }
@@ -264,9 +339,13 @@ export async function askProvider(provider: Provider, prompt: string,
   // Errors may be on stdout, including error JSON with exit code 0.
   const failure = parseCliFailure(provider, result);
   if (failure) {
-    if (failure.kind === "auth") setVerified(provider, "unauthenticated");
+    if (failure.kind === "auth") {
+      setVerified(provider, "unauthenticated");
+    }
+
     throw await cliError(provider, failure);
   }
+
   clearLimit(provider);
 
   // 3) 답 꺼내기 (CLI마다 출력 형식이 다르다)
@@ -274,13 +353,19 @@ export async function askProvider(provider: Provider, prompt: string,
     // 스트림의 마지막 "result" 이벤트가 일반 JSON 출력과 같은 모양이다.
     const last = result.stdout.trim().split(/\r?\n/).reverse().find(line => /"type"\s*:\s*"result"/.test(line)) ?? result.stdout;
     const parsed = JSON.parse(last) as { result?: string; is_error?: boolean };
-    if (parsed.is_error || typeof parsed.result !== "string") throw new Error("Claude returned no answer.");
+    if (parsed.is_error || typeof parsed.result !== "string") {
+      throw new Error("Claude returned no answer.");
+    }
+
     return { answer: parsed.result, usage: parseUsage(provider, parsed) };
   }
 
   if (provider === "gemini") {
     const parsed = JSON.parse(result.stdout) as { response?: string; error?: unknown };
-    if (parsed.error || typeof parsed.response !== "string") throw new Error("Gemini returned no answer.");
+    if (parsed.error || typeof parsed.response !== "string") {
+      throw new Error("Gemini returned no answer.");
+    }
+
     return { answer: parsed.response, usage: parseUsage(provider, parsed) };
   }
 
@@ -296,12 +381,18 @@ export async function askProvider(provider: Provider, prompt: string,
         usage = parseUsage(provider, event);
         foundUsage = true;
       }
-      if (event.type === "item.completed" && event.item?.type === "agent_message" && event.item.text)
+
+      if (event.type === "item.completed" && event.item?.type === "agent_message" && event.item.text) {
         answer ??= event.item.text;
+      }
     } catch {
       // JSON이 아닌 진단 출력은 건너뛴다.
     }
   }
-  if (!answer) throw new Error("Codex returned no final answer.");
+
+  if (!answer) {
+    throw new Error("Codex returned no final answer.");
+  }
+
   return { answer, usage };
 }

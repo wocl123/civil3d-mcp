@@ -60,7 +60,9 @@ export function registerAlignmentEditTools(server: McpServer): void {
       ...(unchanged.length ? { alreadySame: unchanged } : {}),
       ...(preview.notFound.length ? { notFound: preview.notFound } : {})
     };
-    if (!changing.length) return toolResult({ ...view, option: null, note: "Nothing to change. Tell the user why." });
+    if (!changing.length) {
+      return toolResult({ ...view, option: null, note: "Nothing to change. Tell the user why." });
+    }
 
     // 계획 저장: 미리 본 값 그대로 적용한다.
     const value = (item: PreviewItem, property: string) => item.changes.find(change => change.property === property)?.to;

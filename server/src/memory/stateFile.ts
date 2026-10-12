@@ -18,12 +18,19 @@ export type StateFile<V> = {
 export function stateFile<V>(name: string, stamp: (value: V) => number): StateFile<V> {
   const file = join(dataDir(), "state", `${name}.json`);
   const read = (text: string): [string, V][] => {
-    try { return Object.entries(JSON.parse(text) as Record<string, V>); } catch { return []; }
+    try {
+      return Object.entries(JSON.parse(text) as Record<string, V>);
+    } catch {
+      return [];
+    }
   };
 
   // 시작할 때 한 번 읽는다. 오래된 것부터 넣어 Map 순서가 "최근 사용" 순서가 되게 한다.
   let initial: [string, V][] = [];
-  try { initial = read(readFileSync(file, "utf8")); } catch { /* 처음이거나 못 읽음: 빈 상태 */ }
+  try {
+    initial = read(readFileSync(file, "utf8"));
+  } catch { /* 처음이거나 못 읽음: 빈 상태 */ }
+
   const map = new Map(initial.sort((a, b) => stamp(a[1]) - stamp(b[1])));
   const removed = new Set<string>();
 
@@ -32,19 +39,31 @@ export function stateFile<V>(name: string, stamp: (value: V) => number): StateFi
   const save = () => {
     queue = queue.then(() => withFileLock(file, async () => {
       const merged = new Map(read(await readFile(file, "utf8").catch(() => "{}")));
-      for (const key of removed) merged.delete(key);
+      for (const key of removed) {
+        merged.delete(key);
+      }
+
       for (const [key, value] of map) {
         const other = merged.get(key);
-        if (!other || stamp(value) >= stamp(other)) merged.set(key, value);
+        if (!other || stamp(value) >= stamp(other)) {
+          merged.set(key, value);
+        }
       }
+
       removed.clear();
       await writeAtomic(file, JSON.stringify(Object.fromEntries(merged)));
-    })).catch(error => { process.stderr.write(`MyCivil3DMcp state save failed (${name}): ${String(error)}\n`); });
+    })).catch(error => {
+      process.stderr.write(`MyCivil3DMcp state save failed (${name}): ${String(error)}\n`);
+    });
   };
 
   return {
     map,
     save,
-    remove(key) { map.delete(key); removed.add(key); save(); }
+    remove(key) {
+      map.delete(key);
+      removed.add(key);
+      save();
+    }
   };
 }

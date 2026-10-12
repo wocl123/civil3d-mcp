@@ -19,8 +19,9 @@ export function polylinePath(vertices: PolylineVertex[], reverse = false): PlanP
 
     // 호 구간: bulge = tan(중심각/4). 반원 이상은 접선이 만나지 않아 IP로 바꿀 수 없다.
     if (Math.abs(bulge) > 1e-9) {
-      if (Math.abs(bulge) >= 1 - 1e-9)
+      if (Math.abs(bulge) >= 1 - 1e-9) {
         throw new Error(`폴리라인 ${index + 1}번째 호가 반원 이상이라 IP로 바꿀 수 없음`);
+      }
 
       const delta = 4 * Math.atan(Math.abs(bulge));              // 중심각
       const chord = Math.hypot(end.x - start.x, end.y - start.y);
@@ -33,8 +34,10 @@ export function polylinePath(vertices: PolylineVertex[], reverse = false): PlanP
         radius: chord / (2 * Math.sin(delta / 2))
       });
     }
+
     points.push({ x: end.x, y: end.y });
   }
+
   return simplify(points);
 }
 
@@ -55,9 +58,13 @@ function simplify(points: PlanPoint[]): PlanPoint[] {
 
   for (let index = 1; index < list.length - 1;) {
     const straight = Math.abs(deflection(list[index - 1], list[index], list[index + 1])) < STRAIGHT_DEG;
-    if (list[index].radius === undefined && straight) list.splice(index, 1);
-    else index++;
+    if (list[index].radius === undefined && straight) {
+      list.splice(index, 1);
+    } else {
+      index++;
+    }
   }
+
   return list;
 }
 

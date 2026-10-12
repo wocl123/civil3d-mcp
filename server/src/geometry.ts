@@ -29,7 +29,10 @@ export const spiralK = (radius: number, spiral: number) =>
 
 // IP에서 곡선 시작점까지의 접선장. deltaRad: 교각(라디안).
 export function curveTangent({ radius, spiral }: Curve, deltaRad: number): number {
-  if (!spiral) return radius * Math.tan(deltaRad / 2);
+  if (!spiral) {
+    return radius * Math.tan(deltaRad / 2);
+  }
+
   return (radius + spiralShift(radius, spiral)) * Math.tan(deltaRad / 2) + spiralK(radius, spiral);
 }
 

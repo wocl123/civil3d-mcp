@@ -75,7 +75,9 @@ const queued = <T>(work: () => Promise<T>): Promise<T> => {
 
 // AI가 방금 열린 도면에 넣은 값들을 기억한다.
 export async function track(scope: DrawingScope, items: Omit<Tracked, "id" | "lastValue" | "createdAt">[]): Promise<void> {
-  if (!scope.key || !items.length) return;
+  if (!scope.key || !items.length) {
+    return;
+  }
 
   await queued(() => withFileLock(fileOf(scope), async () => {
     const file = await load(scope);
@@ -87,6 +89,7 @@ export async function track(scope: DrawingScope, items: Omit<Tracked, "id" | "la
       const id = hashKey(item.handle, item.property, String(item.curve ?? item.at), now).slice(0, 12);
       file.items.push({ ...item, id, lastValue: item.aiValue, createdAt: now });
     }
+
     file.lastState = scope.state;
     await writeAtomic(fileOf(scope), JSON.stringify(file, null, 1));
   })).catch(error => process.stderr.write(`MyCivil3DMcp tracking was not saved: ${String(error)}\n`));
@@ -105,8 +108,14 @@ async function readAlignment(handle: string, items: Tracked[]): Promise<Map<Trac
   try {
     elements = await readSection<AlignmentElement>("alignment.section", { alignment: handle }, "elements");
   } catch (error) {
-    if (!missing(error)) throw error;
-    for (const item of items) out.set(item, { outcome: "deleted" });
+    if (!missing(error)) {
+      throw error;
+    }
+
+    for (const item of items) {
+      out.set(item, { outcome: "deleted" });
+    }
+
     return out;
   }
 
@@ -118,12 +127,14 @@ async function readAlignment(handle: string, items: Tracked[]): Promise<Map<Trac
       out.set(item, { outcome: "restructured" });
       continue;
     }
+
     // 반지름은 원곡선에서, 완화곡선 길이는 첫 완화곡선에서(없으면 0).
     const value = item.property === "radius"
       ? group.find(element => element.kind === "Arc")?.radius
       : group.find(element => element.kind === "Spiral")?.length ?? 0;
     out.set(item, value === undefined ? { outcome: "restructured" } : { value });
   }
+
   return out;
 }
 
@@ -137,8 +148,14 @@ async function readProfile(handle: string, items: Tracked[]): Promise<Map<Tracke
       readSection<ProfileCurve>("profile.section", { profile: handle }, "curves")
     ]);
   } catch (error) {
-    if (!missing(error)) throw error;
-    for (const item of items) out.set(item, { outcome: "deleted" });
+    if (!missing(error)) {
+      throw error;
+    }
+
+    for (const item of items) {
+      out.set(item, { outcome: "deleted" });
+    }
+
     return out;
   }
 
@@ -149,6 +166,7 @@ async function readProfile(handle: string, items: Tracked[]): Promise<Map<Tracke
       : curves.find(curve => near(curve.pviStation))?.length ?? 0;
     out.set(item, value === undefined ? { outcome: "restructured" } : { value });
   }
+
   return out;
 }
 
@@ -171,11 +189,15 @@ function emit(item: Tracked, outcome: Outcome, userValue?: number): Promise<void
 // 열린 도면의 추적 값을 다시 읽는다. 지난번 이후 도면이 바뀌었을 때만 읽는다.
 // 기록한 결과 수를 돌려준다. 연결 문제면 모두 다음으로 미룬다.
 export async function checkTracked(scope: DrawingScope): Promise<number> {
-  if (!scope.key || !scope.drawingId) return 0;
+  if (!scope.key || !scope.drawingId) {
+    return 0;
+  }
 
   return queued(() => withFileLock(fileOf(scope), async () => {
     const file = await load(scope);
-    if (!file.items.length) return 0;
+    if (!file.items.length) {
+      return 0;
+    }
 
     const now = Date.now();
     const expired = (item: Tracked) => now - Date.parse(item.createdAt) > KEEP_DAYS * 24 * 3600000;
@@ -187,7 +209,9 @@ export async function checkTracked(scope: DrawingScope): Promise<number> {
       // 먼저 전부 읽고 도면 상태를 확인한 뒤 관측 결과를 기록한다. 도면 전환을 사람 수정으로 오인하지 않는다.
       const allReadings = new Map<Tracked, Reading>();
       const handles = new Map<string, Tracked[]>();
-      for (const item of file.items) handles.set(item.handle, [...handles.get(item.handle) ?? [], item]);
+      for (const item of file.items) {
+        handles.set(item.handle, [...handles.get(item.handle) ?? [], item]);
+      }
 
       for (const [handle, items] of handles) {
         let readings: Map<Tracked, Reading>;
@@ -197,45 +221,64 @@ export async function checkTracked(scope: DrawingScope): Promise<number> {
         } catch (error) {
           // 도면이 없거나 연결이 안 되면 다음에. 그 밖의 오류는 이 객체만 건너뛴다.
           if ((error as { kind?: string }).kind === "drawing_mismatch" || (error as { kind?: string }).kind === "revision_mismatch" ||
-              STOP.has(failureGuide(error instanceof Error ? error.message : String(error)).kind)) return recorded;
+              STOP.has(failureGuide(error instanceof Error ? error.message : String(error)).kind)) {
+            return recorded;
+          }
+
           continue;
         }
 
-        for (const [item, reading] of readings) allReadings.set(item, reading);
-      }
-      const after = await currentDrawingScope();
-      if (after.drawingId !== scope.drawingId || after.state !== scope.state) return 0;
-      for (const [item, reading] of allReadings) {
-          if (reading.outcome) {
-            await emit(item, reading.outcome);
-            done.add(item);
-            recorded++;
-            continue;
-          }
-          if (reading.value !== undefined && Math.abs(reading.value - item.lastValue) > TOLERANCE) {
-            item.lastValue = Math.round(reading.value * 10000) / 10000;
-            item.modifiedAt = new Date().toISOString();
-            await emit(item, "modified", item.lastValue);
-            recorded++;
-          }
+        for (const [item, reading] of readings) {
+          allReadings.set(item, reading);
         }
+      }
+
+      const after = await currentDrawingScope();
+      if (after.drawingId !== scope.drawingId || after.state !== scope.state) {
+        return 0;
+      }
+
+      for (const [item, reading] of allReadings) {
+        if (reading.outcome) {
+          await emit(item, reading.outcome);
+          done.add(item);
+          recorded++;
+          continue;
+        }
+
+        if (reading.value !== undefined && Math.abs(reading.value - item.lastValue) > TOLERANCE) {
+          item.lastValue = Math.round(reading.value * 10000) / 10000;
+          item.modifiedAt = new Date().toISOString();
+          await emit(item, "modified", item.lastValue);
+          recorded++;
+        }
+      }
+
       file.lastState = scope.state;
     }
 
     // 2) 기간이 지난 항목은 끝낸다(한 번도 안 고쳤으면 kept 로 남긴다).
     for (const item of file.items) {
       if (!done.has(item) && expired(item)) {
-        if (!item.modifiedAt) { await emit(item, "kept"); recorded++; }
+        if (!item.modifiedAt) {
+          await emit(item, "kept");
+          recorded++;
+        }
+
         done.add(item);
       }
     }
+
     file.items = file.items.filter(item => !done.has(item));
 
     // 3) 그사이 MCP 서버 프로세스가 새 항목을 더했을 수 있다. 디스크의 새 항목을 합친 뒤 저장한다.
     const known = new Set([...file.items, ...done].map(item => item.id));
     file.items.push(...(await load(scope)).items.filter(item => !known.has(item.id)));
-    if (file.items.length) await writeAtomic(fileOf(scope), JSON.stringify(file, null, 1));
-    else await rm(fileOf(scope), { force: true });
+    if (file.items.length) {
+      await writeAtomic(fileOf(scope), JSON.stringify(file, null, 1));
+    } else {
+      await rm(fileOf(scope), { force: true });
+    }
 
     return recorded;
   }));
@@ -246,20 +289,35 @@ export function closeStaleTracking(): Promise<number> {
   return queued(async () => {
     let closed = 0;
     for (const name of await readdir(dir()).catch(() => [] as string[])) {
-      if (!name.endsWith(".json")) continue;
+      if (!name.endsWith(".json")) {
+        continue;
+      }
+
       const path = join(dir(), name);
       await withFileLock(path, async () => {
-      const file = JSON.parse(await readFile(path, "utf8").catch(() => "{\"items\":[]}")) as TrackFile;
-      const now = Date.now();
-      const stale = file.items.filter(item => now - Date.parse(item.createdAt) > KEEP_DAYS * 24 * 3600000);
-      if (!stale.length) return;
+        const file = JSON.parse(await readFile(path, "utf8").catch(() => "{\"items\":[]}")) as TrackFile;
+        const now = Date.now();
+        const stale = file.items.filter(item => now - Date.parse(item.createdAt) > KEEP_DAYS * 24 * 3600000);
+        if (!stale.length) {
+          return;
+        }
 
-      for (const item of stale) if (!item.modifiedAt) { await emit(item, "kept"); closed++; }
-      file.items = file.items.filter(item => !stale.includes(item));
-      if (file.items.length) await writeAtomic(path, JSON.stringify(file, null, 1));
-      else await rm(path, { force: true });
+        for (const item of stale) {
+          if (!item.modifiedAt) {
+            await emit(item, "kept");
+            closed++;
+          }
+        }
+
+        file.items = file.items.filter(item => !stale.includes(item));
+        if (file.items.length) {
+          await writeAtomic(path, JSON.stringify(file, null, 1));
+        } else {
+          await rm(path, { force: true });
+        }
       });
     }
+
     return closed;
   });
 }

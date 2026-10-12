@@ -12,7 +12,10 @@ export function setShown(conversation: string | undefined, kind: ListKind, ids: 
   shown.set(key, { kind, ids });
   // 넘치면 가장 오래된 것부터 버린다.
   for (const old of shown.keys()) {
-    if (shown.size <= MAX) break;
+    if (shown.size <= MAX) {
+      break;
+    }
+
     shown.delete(old);
   }
 }
@@ -28,13 +31,19 @@ const REPLY = /^(모두|전부|[\d\s,번]+?)\s*(승인|반려)\s*(?:해\s*줘|�
 
 export function parseDecision(text: string): { which: string; decision: "approved" | "rejected"; reason: string } | undefined {
   const match = REPLY.exec(text.trim());
-  if (!match) return undefined;
+  if (!match) {
+    return undefined;
+  }
+
   return { which: match[1].trim(), decision: match[2] === "승인" ? "approved" : "rejected", reason: match[3].trim() };
 }
 
 // 번호가 가리키는 id들. "모두"/"전부"는 목록 전체.
 export function pick(which: string, order: string[]): string[] {
-  if (/^(모두|전부)$/.test(which)) return order;
+  if (/^(모두|전부)$/.test(which)) {
+    return order;
+  }
+
   return which.split(/[\s,번]+/)
     .filter(Boolean)
     .map(part => order[Number(part) - 1])

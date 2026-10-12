@@ -33,9 +33,15 @@ const found = new Map<Provider, { location: CliLocation; at: number }>();
 
 // 레지스트리의 PATH 값 하나를 읽는다. %USERPROFILE% 같은 변수는 Windows가 새 프로세스에 하듯 펼친다.
 function regPath(key: string): Promise<string[]> {
-  if (process.platform !== "win32") return Promise.resolve([]);
+  if (process.platform !== "win32") {
+    return Promise.resolve([]);
+  }
+
   return new Promise(resolve => execFile("reg.exe", ["query", key, "/v", "Path"], { windowsHide: true, timeout: 5000 }, (error, stdout) => {
-    if (error) return resolve([]);
+    if (error) {
+      return resolve([]);
+    }
+
     const value = /Path\s+REG_(?:EXPAND_)?SZ\s+(.*)/i.exec(stdout)?.[1] ?? "";
     const expand = (part: string) => part.trim().replace(/%([^%]+)%/g, (_, name: string) => process.env[name] ?? `%${name}%`);
     resolve(value.split(";").map(expand).filter(Boolean));
@@ -50,7 +56,9 @@ const windowsDir = join(process.env.SystemRoot ?? "C:\\Windows", "System32");
 // 찾아볼 폴더 목록(중복 제거).
 async function searchDirs(provider: Provider): Promise<string[]> {
   const only = onlyDirs();
-  if (only) return process.env.MY_CIVIL3D_NODE_EXE ? [cliPrefix(provider), runtimeDir(), ...only, windowsDir] : [...only, windowsDir];
+  if (only) {
+    return process.env.MY_CIVIL3D_NODE_EXE ? [cliPrefix(provider), runtimeDir(), ...only, windowsDir] : [...only, windowsDir];
+  }
 
   const [user, machine] = await Promise.all([
     regPath("HKCU\\Environment"),
@@ -63,7 +71,9 @@ async function searchDirs(provider: Provider): Promise<string[]> {
 // CLI 실행 파일 위치. 없으면 undefined(= 설치 안 됨).
 export async function locateCli(provider: Provider): Promise<CliLocation | undefined> {
   const cached = found.get(provider);
-  if (cached && Date.now() - cached.at < POSITIVE_TTL_MS && existsSync(cached.location.file)) return cached.location;
+  if (cached && Date.now() - cached.at < POSITIVE_TTL_MS && existsSync(cached.location.file)) {
+    return cached.location;
+  }
 
   for (const dir of await searchDirs(provider)) {
     for (const extension of EXTENSIONS) {
@@ -75,6 +85,7 @@ export async function locateCli(provider: Provider): Promise<CliLocation | undef
       }
     }
   }
+
   found.delete(provider);
   return undefined;
 }

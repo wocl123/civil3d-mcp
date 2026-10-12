@@ -30,9 +30,14 @@ function summaryPrompt(previous: string | undefined, turns: string): string {
 // 요약 안 된 턴이 기준을 넘으면(force면 언제나) 요약한다.
 // 요약에 접은 턴 수를 돌려준다. 하지 않았으면 0.
 export async function compactConversation(id: string | undefined, provider: Provider, force = false): Promise<number> {
-  if (!id || running.has(id)) return 0;
+  if (!id || running.has(id)) {
+    return 0;
+  }
+
   const pending = unsummarized(id, force ? 1 : KEEP_RECENT);
-  if (!pending.turns.length || (!force && pending.chars < TRIGGER_CHARS)) return 0;
+  if (!pending.turns.length || (!force && pending.chars < TRIGGER_CHARS)) {
+    return 0;
+  }
 
   running.add(id);
   try {

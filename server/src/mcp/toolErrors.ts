@@ -8,7 +8,9 @@ import { failureGuide } from "../errors/failureGuide.js";
 export function guidedServer(server: McpServer): McpServer {
   return new Proxy(server, {
     get(target, property, receiver) {
-      if (property !== "registerTool") return Reflect.get(target, property, receiver);
+      if (property !== "registerTool") {
+        return Reflect.get(target, property, receiver);
+      }
 
       // 등록할 때 도구 함수를 감싼다: 던진 오류를 isError 결과로 바꾼다.
       return (name: string, config: unknown, callback: (...args: unknown[]) => Promise<unknown>) =>

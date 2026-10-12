@@ -19,17 +19,28 @@ let loading: Promise<PaletteMemory> | undefined;
 let writing: Promise<void> = Promise.resolve();
 
 function memoryFile(): string {
-  if (process.env.MY_CIVIL3D_MEMORY_FILE) return process.env.MY_CIVIL3D_MEMORY_FILE;
+  if (process.env.MY_CIVIL3D_MEMORY_FILE) {
+    return process.env.MY_CIVIL3D_MEMORY_FILE;
+  }
+
   return join(dataDir(), "memory", "answers.json");
 }
 
 function load(): Promise<PaletteMemory> {
-  if (memory) return Promise.resolve(memory);
-  return loading ??= loadOnce().finally(() => { loading = undefined; });
+  if (memory) {
+    return Promise.resolve(memory);
+  }
+
+  return loading ??= loadOnce().finally(() => {
+    loading = undefined;
+  });
 }
 
 async function loadOnce(): Promise<PaletteMemory> {
-  if (memory) return memory;
+  if (memory) {
+    return memory;
+  }
+
   try {
     const parsed = JSON.parse(await readFile(memoryFile(), "utf8")) as Partial<PaletteMemory>;
     memory = parsed.version === 2 && Array.isArray(parsed.answers)
@@ -38,6 +49,7 @@ async function loadOnce(): Promise<PaletteMemory> {
   } catch {
     memory = { version: 2, answers: [] };
   }
+
   return memory;
 }
 
@@ -64,7 +76,10 @@ export function hashKey(...parts: string[]): string {
 // AI마다 답이 다를 수 있고, 도면을 고치면 답이 낡기 때문이다.
 export async function findAnswer(kind: CachedAnswer["kind"], provider: CachedAnswer["provider"],
   key: string, scope: DrawingScope): Promise<CachedAnswer | undefined> {
-  if (!scope.drawingId || scope.state === "legacy") return undefined;
+  if (!scope.drawingId || scope.state === "legacy") {
+    return undefined;
+  }
+
   const data = await load();
   const now = Date.now();
   const found = data.answers.find(answer =>
@@ -77,12 +92,16 @@ export async function findAnswer(kind: CachedAnswer["kind"], provider: CachedAns
     found.lastUsedAt = now;
     await persist(data);
   }
+
   return found;
 }
 
 // 답을 저장한다. 같은 AI·질문·도면의 옛 답과 기간이 지난 답은 지우고, 최근 사용 순으로 300개까지.
 export async function saveAnswer(entry: Omit<CachedAnswer, "createdAt" | "lastUsedAt" | "hits">): Promise<void> {
-  if (!entry.drawingId || entry.state === "legacy") return;
+  if (!entry.drawingId || entry.state === "legacy") {
+    return;
+  }
+
   const data = await load();
   const now = Date.now();
   const others = data.answers.filter(answer =>

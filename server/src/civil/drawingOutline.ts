@@ -22,7 +22,9 @@ export async function drawingOutline(): Promise<string> {
   try {
     const page = await callPlugin("alignment.list", { offset: 0, limit: MAX_ALIGNMENTS }) as
       { totalCount: number; items: AlignmentListItem[] };
-    if (!page.items.length) return "";
+    if (!page.items.length) {
+      return "";
+    }
 
     // 선형 한 줄: "- 선형 본선 [B1, Centerline, 0+000.00~1+500.00, 용도 도로]: 종단 본선 계획선(FG)"
     const lines = await Promise.all(page.items.map(async alignment => {

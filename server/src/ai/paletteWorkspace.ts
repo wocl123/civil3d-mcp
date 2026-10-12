@@ -34,17 +34,23 @@ const CODEX_DISABLED_FEATURES = [
 
 // AI CLI의 작업 폴더 (data/ai-workspace).
 function workspaceDir(): string {
-  if (process.env.MY_CIVIL3D_AI_WORKSPACE) return process.env.MY_CIVIL3D_AI_WORKSPACE;
+  if (process.env.MY_CIVIL3D_AI_WORKSPACE) {
+    return process.env.MY_CIVIL3D_AI_WORKSPACE;
+  }
+
   return join(dataDir(), "ai-workspace");
 }
 
 // 내용이 바뀌었을 때만 파일을 쓴다.
 async function writeIfChanged(path: string, content: string): Promise<void> {
   try {
-    if (await readFile(path, "utf8") === content) return;
+    if (await readFile(path, "utf8") === content) {
+      return;
+    }
   } catch {
     // 없으면 아래에서 쓴다.
   }
+
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content, "utf8");
 }
@@ -60,7 +66,10 @@ function settingValue(value: unknown): string | undefined {
 }
 
 function tomlPath(path: string): string {
-  if (/['"\r\n%&|<>^]/.test(path)) throw new Error(`Unsupported characters in path: ${path}`);
+  if (/['"\r\n%&|<>^]/.test(path)) {
+    throw new Error(`Unsupported characters in path: ${path}`);
+  }
+
   return `'${path}'`;
 }
 
@@ -79,10 +88,13 @@ export async function paletteModel(provider: Provider): Promise<ModelChoice> {
   try {
     const all = JSON.parse(await readFile(join(dataDir(), "palette-models.json"), "utf8")) as Record<string, unknown>;
     const entry = all[provider] as Record<string, unknown> | undefined;
-    if (entry) override = { model: settingValue(entry.model), effort: settingValue(entry.effort) };
+    if (entry) {
+      override = { model: settingValue(entry.model), effort: settingValue(entry.effort) };
+    }
   } catch {
     // 바꾸는 파일이 없다.
   }
+
   const base = DEFAULT_MODELS[provider];
   return { model: override.model ?? base.model, effort: override.effort ?? base.effort };
 }
@@ -112,10 +124,15 @@ export async function paletteVersion(provider: Provider): Promise<string> {
 //   requestId:    MCP 서버로 전달돼, 계산한 수정안과 적용한 변경에 이 요청을 표시한다.
 //   offeredFixes: 이 요청에서 적용해도 되는 수정안 id(앞서 대화에서 사용자에게 보여 준 것).
 export async function paletteLaunch(provider: Provider, tools: boolean, requestId = "none", offeredFixes: string[] = [], drawingId = ""):
-  Promise<CliLaunch> {
-  if (!/^[\w-]{1,64}$/.test(requestId)) throw new Error("Invalid request id.");
+Promise<CliLaunch> {
+  if (!/^[\w-]{1,64}$/.test(requestId)) {
+    throw new Error("Invalid request id.");
+  }
 
-  if (!/^[\w-]{0,64}$/.test(drawingId)) throw new Error("Invalid drawing id.");
+  if (!/^[\w-]{0,64}$/.test(drawingId)) {
+    throw new Error("Invalid drawing id.");
+  }
+
   const offered = offeredFixes.filter(id => /^fx-[a-f\d]{10}$/.test(id)).join(",");
   // 요약과 새 질문이 설정 파일(허용 수정안 포함)을 덮어쓰지 않도록 실행별 격리.
   const cwd = join(workspaceDir(), "requests", randomUUID());
