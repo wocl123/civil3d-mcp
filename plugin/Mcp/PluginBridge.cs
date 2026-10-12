@@ -29,8 +29,13 @@ public static class PluginBridge
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
+
+    private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
+
     private const int DefaultPort = 48761;
     private const int MaxRequestBytes = 1024 * 1024;
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(10);
+
     private static TcpListener? _listener;
     private static CancellationTokenSource? _cancellation;
     private static string? _token;
@@ -38,32 +43,50 @@ public static class PluginBridge
     public static bool IsRunning => _listener is not null;
     internal static string? SessionToken => _token;
     public static int Port { get; private set; } = DefaultPort;
+
     private static string Folder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MyCivil3DMcp");
+
     public static string ConnectionFilePath => Path.Combine(Folder, "connection.json");
+
     public static string OwnConnectionFilePath => Path.Combine(Folder, $"connection-{Environment.ProcessId}.json");
 
     // 포트를 열고, 토큰을 만들어 연결 파일에 쓴 뒤 접속을 받기 시작한다.
     public static void Start()
     {
-        if (_listener is not null) return;
+        if (_listener is not null)
+        {
+            return;
+        }
 
         string? configuredPort = Environment.GetEnvironmentVariable("MY_CIVIL3D_PORT");
-        int port = string.IsNullOrWhiteSpace(configuredPort)
-            ? DefaultPort
-            : int.TryParse(configuredPort, out int parsedPort) && parsedPort is > 0 and <= 65535
-                ? parsedPort
-                : throw new ArgumentException("MY_CIVIL3D_PORT must be between 1 and 65535.");
+        bool portConfigured = !string.IsNullOrWhiteSpace(configuredPort);
+
+        int port = DefaultPort;
+        if (portConfigured)
+        {
+            bool valid = int.TryParse(configuredPort, out int parsedPort) && parsedPort is > 0 and <= 65535;
+            if (!valid)
+            {
+                throw new ArgumentException("MY_CIVIL3D_PORT must be between 1 and 65535.");
+            }
+
+            port = parsedPort;
+        }
 
         TcpListener listener = new(IPAddress.Loopback, port);
-        try { listener.Start(); }
-        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse && string.IsNullOrWhiteSpace(configuredPort))
+        try
+        {
+            listener.Start();
+        }
+        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse && !portConfigured)
         {
             // 다른 Civil 3D나 다른 프로그램이 쓰는 중: 빈 포트로 우회한다.
             listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             port = ((IPEndPoint)listener.LocalEndpoint).Port;
         }
+
         RemoveStaleConnectionFiles();
         CancellationTokenSource cancellation = new();
         string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -93,26 +116,45 @@ public static class PluginBridge
     public static void Stop()
     {
         string? ownToken = _token;
+
         _cancellation?.Cancel();
         _listener?.Stop();
         _listener = null;
         _cancellation?.Dispose();
         _cancellation = null;
         _token = null;
-        try { File.Delete(OwnConnectionFilePath); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+
+        try
+        {
+            File.Delete(OwnConnectionFilePath);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+
         try
         {
             if (ownToken is not null && File.Exists(ConnectionFilePath))
             {
                 JsonObject? config = JsonNode.Parse(File.ReadAllText(ConnectionFilePath)) as JsonObject;
-                if (config?["token"]?.ToString() == ownToken) File.Delete(ConnectionFilePath);
+                if (config?["token"]?.ToString() == ownToken)
+                {
+                    File.Delete(ConnectionFilePath);
+                }
             }
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-        catch (JsonException) { }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+        catch (JsonException)
+        {
+        }
     }
 
     // Civil 3D가 비정상 종료해 남은 connection-<PID>.json 을 지운다(그 PID가 더는 없을 때).
@@ -123,15 +165,36 @@ public static class PluginBridge
             foreach (string file in Directory.EnumerateFiles(Folder, "connection-*.json"))
             {
                 string name = Path.GetFileNameWithoutExtension(file);
-                if (!int.TryParse(name["connection-".Length..], out int pid) || pid == Environment.ProcessId) continue;
-                bool alive;
-                try { using System.Diagnostics.Process process = System.Diagnostics.Process.GetProcessById(pid); alive = !process.HasExited; }
-                catch (ArgumentException) { alive = false; }
-                if (!alive) File.Delete(file);
+                if (!int.TryParse(name["connection-".Length..], out int pid) || pid == Environment.ProcessId)
+                {
+                    continue;
+                }
+
+                if (!ProcessAlive(pid))
+                {
+                    File.Delete(file);
+                }
             }
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static bool ProcessAlive(int pid)
+    {
+        try
+        {
+            using System.Diagnostics.Process process = System.Diagnostics.Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     private static async Task AcceptLoopAsync(TcpListener listener, CancellationToken cancellationToken)
@@ -143,9 +206,18 @@ public static class PluginBridge
                 TcpClient client = await listener.AcceptTcpClientAsync(cancellationToken);
                 _ = HandleClientAsync(client, cancellationToken);
             }
-            catch (OperationCanceledException) { break; }
-            catch (ObjectDisposedException) { break; }
-            catch (SocketException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
+            catch (SocketException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
@@ -157,17 +229,27 @@ public static class PluginBridge
             try
             {
                 await using NetworkStream stream = client.GetStream();
-                using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromMinutes(10));
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(RequestTimeout);
+
                 string requestText = await ReadRequestAsync(stream, timeout.Token);
                 object response = await DispatchAsync(requestText);
+
                 byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response, JsonOptions) + "\n");
                 await stream.WriteAsync(bytes, cancellationToken);
             }
-            catch (OperationCanceledException) { }
-            catch (IOException) { }
-            catch (SocketException) { }
-            catch (InvalidDataException) { }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+            catch (SocketException)
+            {
+            }
+            catch (InvalidDataException)
+            {
+            }
         }
     }
 
@@ -176,16 +258,29 @@ public static class PluginBridge
     {
         byte[] buffer = new byte[8192];
         using MemoryStream request = new();
+
         while (true)
         {
             int count = await stream.ReadAsync(buffer, cancellationToken);
-            if (count == 0) throw new InvalidDataException("Request ended before newline.");
+            if (count == 0)
+            {
+                throw new InvalidDataException("Request ended before newline.");
+            }
+
             int end = Array.IndexOf(buffer, (byte)'\n', 0, count);
             int length = end < 0 ? count : end;
+
             if (request.Length + length > MaxRequestBytes)
+            {
                 throw new InvalidDataException("Request exceeds 1 MiB.");
+            }
+
             request.Write(buffer, 0, length);
-            if (end >= 0) return Encoding.UTF8.GetString(request.ToArray());
+
+            if (end >= 0)
+            {
+                return Encoding.UTF8.GetString(request.ToArray());
+            }
         }
     }
 
@@ -197,132 +292,199 @@ public static class PluginBridge
     private static async Task<object> DispatchAsync(string requestText)
     {
         JsonNode? request;
-        try { request = JsonNode.Parse(requestText); }
-        catch (JsonException) { return Failure(null, -32700, "Invalid JSON."); }
+        try
+        {
+            request = JsonNode.Parse(requestText);
+        }
+        catch (JsonException)
+        {
+            return Failure(null, -32700, "Invalid JSON.");
+        }
 
         if (request is not JsonObject requestObject)
+        {
             return Failure(null, -32600, "Invalid JSON-RPC request.");
+        }
+
         string? id = requestObject["id"]?.ToString();
+
         if (requestObject["jsonrpc"]?.ToString() != "2.0")
+        {
             return Failure(id, -32600, "Invalid JSON-RPC request.");
+        }
+
         if (!IsAuthorized(requestObject["token"]?.ToString()))
+        {
             return Failure(id, -32001, "Unauthorized.");
+        }
 
         try
         {
             if (requestObject["params"] is not null and not JsonObject)
+            {
                 throw new ArgumentException("params must be a JSON object.");
+            }
+
             JsonObject? parameters = requestObject["params"] as JsonObject;
             JsonObject? context = requestObject["context"] as JsonObject;
-            Task<object> Read(Func<Document, object> query) => InDocumentContextAsync(query, context);
-            object result = requestObject["method"]?.ToString() switch
-            {
-                // ── 도면 조회
-                "drawing.status" => await Read(doc => DrawingQueries.GetStatus(doc)),
-                "drawing.objects" => await Read(doc => DrawingQueries.GetObjects(
-                    doc,
-                    ReadInt(parameters?["offset"], 0),
-                    ReadInt(parameters?["limit"], 20),
-                    parameters?["layer"]?.ToString())),
-                "drawing.layers" => await Read(doc => DrawingQueries.GetLayers(
-                    doc,
-                    ReadInt(parameters?["offset"], 0),
-                    ReadInt(parameters?["limit"], 50))),
-                "drawing.object" => await Read(doc => DrawingQueries.GetObject(
-                    doc, ReadString(parameters?["handle"]))),
-                // ── 선형·종단 조회
-                "alignment.list" => await Read(doc => AlignmentQueries.ListAlignments(
-                    doc,
-                    ReadInt(parameters?["offset"], 0),
-                    ReadInt(parameters?["limit"], 50))),
-                "alignment.get" => await Read(doc => AlignmentQueries.GetAlignment(
-                    doc, ReadString(parameters?["alignment"]))),
-                "alignment.section" => await Read(doc => AlignmentQueries.GetAlignmentSection(
-                    doc,
-                    ReadString(parameters?["alignment"]),
-                    ReadString(parameters?["section"]),
-                    ReadOptionalNumber(parameters?["fromStation"]),
-                    ReadOptionalNumber(parameters?["toStation"]),
-                    ReadInt(parameters?["offset"], 0),
-                    ReadInt(parameters?["limit"], 50))),
-                "drawing.delete_preview" => await Read(doc => DrawingDeletion.Preview(doc, parameters)),
-                "alignment.edit_preview" => await Read(doc => AlignmentEditing.Preview(doc, parameters)),
-                "profile.get" => await Read(doc => ProfileQueries.GetProfile(
-                    doc,
-                    ReadString(parameters?["profile"]),
-                    parameters?["alignment"]?.ToString())),
-                // ── 도면 편집
-                "change.apply" => await InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context,
-                    () => DesignChanges.Apply(doc, ReadChanges(parameters?["changes"])))),
-                "alignment.create" => await InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context,
-                    () => AlignmentCreation.Create(doc, ReadCreate(parameters)))),
-                "drawing.delete" => await InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context,
-                    () => DrawingDeletion.Delete(doc, DrawingDeletion.ReadTargets(parameters?["targets"])))),
-                "alignment.edit" => await InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context,
-                    () => AlignmentEditing.Apply(doc, AlignmentEditing.ReadEdits(parameters?["edits"])))),
-                "change.undo" => await InDocumentContextAsync(doc => DrawingOperations.Undo(doc, parameters)),
-                "change.cancel" => await InDocumentContextAsync(doc => DrawingOperations.Cancel(doc, parameters)),
-                "change.result" => await InDocumentContextAsync(doc => DrawingOperations.Result(doc, parameters)),
-                "change.confirm" => await InDocumentContextAsync(_ => DrawingOperations.Confirm(parameters)),
-                // ── 사용자에게 고르게 하기, 화면 캡처, 선택·요약, 그 밖의 조회
-                "drawing.pick_polyline" => await Read(doc => DrawingPicker.PickPolyline(
-                    doc, parameters?["message"]?.ToString(), Math.Clamp(ReadInt(parameters?["timeoutSeconds"], 90), 10, 110))),
-                "drawing.capture" => await Read(doc => DrawingCapture.Capture(
-                    doc, ReadStrings(parameters?["handles"]),
-                    Math.Clamp(ReadInt(parameters?["width"], 800), 200, 1600),
-                    Math.Clamp(ReadInt(parameters?["height"], 600), 200, 1200))),
-                "drawing.selection" => await Read(doc => DrawingSelection.Get(doc)),
-                "drawing.summary" => await Read(doc => DrawingSummary.Read(doc)),
-                "drawing.polylines" => await Read(doc => DrawingQueries.GetPolylines(
-                    doc,
-                    ReadInt(parameters?["offset"], 0),
-                    ReadInt(parameters?["limit"], 20),
-                    parameters?["layer"]?.ToString())),
-                "profile.section" => await Read(doc => ProfileQueries.GetProfileSection(
-                    doc,
-                    ReadString(parameters?["profile"]),
-                    parameters?["alignment"]?.ToString(),
-                    ReadString(parameters?["section"]),
-                    ReadOptionalNumber(parameters?["fromStation"]),
-                    ReadOptionalNumber(parameters?["toStation"]),
-                    ReadNumbers(parameters?["stations"]),
-                    ReadOptionalNumber(parameters?["interval"]),
-                    ReadInt(parameters?["offset"], 0),
-                    ReadInt(parameters?["limit"], 50))),
-                _ => throw new MissingMethodException("Unknown bridge method.")
-            };
+            string? method = requestObject["method"]?.ToString();
+
+            object result = await RunMethodAsync(method, parameters, context);
             return new { jsonrpc = "2.0", id, result };
         }
-        catch (BridgeFailure ex) { return new { jsonrpc = "2.0", id, error = new { code = -32002, message = ex.Message, kind = ex.Kind, drawingChanged = ex.DrawingChanged } }; }
-        catch (MissingMethodException) { return Failure(id, -32601, "Method not found."); }
-        catch (ArgumentException ex) { return Failure(id, -32602, ex.Message); }
-        catch (System.Exception ex) { return Failure(id, -32603, ex.Message); }
+        catch (BridgeFailure ex)
+        {
+            var error = new { code = -32002, message = ex.Message, kind = ex.Kind, drawingChanged = ex.DrawingChanged };
+            return new { jsonrpc = "2.0", id, error };
+        }
+        catch (MissingMethodException)
+        {
+            return Failure(id, -32601, "Method not found.");
+        }
+        catch (ArgumentException ex)
+        {
+            return Failure(id, -32602, ex.Message);
+        }
+        catch (System.Exception ex)
+        {
+            return Failure(id, -32603, ex.Message);
+        }
+    }
+
+    private static async Task<object> RunMethodAsync(string? method, JsonObject? parameters, JsonObject? context)
+    {
+        // 조회: 명령 컨텍스트에서 도면을 읽는다.
+        Task<object> Read(Func<Document, object> query) => InDocumentContextAsync(query, context);
+
+        // 편집: Undo 한 번으로 되돌릴 수 있게 DrawingOperations.Apply로 묶는다.
+        Task<object> Edit(Func<Document, object> edit) =>
+            InDocumentContextAsync(doc => DrawingOperations.Apply(doc, parameters, context, () => edit(doc)));
+
+        int Offset() => ReadInt(parameters?["offset"], 0);
+        int Limit(int fallback) => ReadInt(parameters?["limit"], fallback);
+
+        return method switch
+        {
+            // ── 도면 조회
+            "drawing.status" => await Read(doc => DrawingQueries.GetStatus(doc)),
+            "drawing.objects" => await Read(doc => DrawingQueries.GetObjects(
+                doc, Offset(), Limit(20), parameters?["layer"]?.ToString())),
+            "drawing.layers" => await Read(doc => DrawingQueries.GetLayers(doc, Offset(), Limit(50))),
+            "drawing.object" => await Read(doc => DrawingQueries.GetObject(doc, ReadString(parameters?["handle"]))),
+            "drawing.polylines" => await Read(doc => DrawingQueries.GetPolylines(
+                doc, Offset(), Limit(20), parameters?["layer"]?.ToString())),
+            "drawing.selection" => await Read(doc => DrawingSelection.Get(doc)),
+            "drawing.summary" => await Read(doc => DrawingSummary.Read(doc)),
+            "drawing.delete_preview" => await Read(doc => DrawingDeletion.Preview(doc, parameters)),
+
+            // ── 선형·종단 조회
+            "alignment.list" => await Read(doc => AlignmentQueries.ListAlignments(doc, Offset(), Limit(50))),
+            "alignment.get" => await Read(doc => AlignmentQueries.GetAlignment(
+                doc, ReadString(parameters?["alignment"]))),
+            "alignment.section" => await Read(doc => AlignmentQueries.GetAlignmentSection(
+                doc,
+                ReadString(parameters?["alignment"]),
+                ReadString(parameters?["section"]),
+                ReadOptionalNumber(parameters?["fromStation"]),
+                ReadOptionalNumber(parameters?["toStation"]),
+                Offset(),
+                Limit(50))),
+            "alignment.edit_preview" => await Read(doc => AlignmentEditing.Preview(doc, parameters)),
+            "profile.get" => await Read(doc => ProfileQueries.GetProfile(
+                doc, ReadString(parameters?["profile"]), parameters?["alignment"]?.ToString())),
+            "profile.section" => await Read(doc => ProfileQueries.GetProfileSection(
+                doc,
+                ReadString(parameters?["profile"]),
+                parameters?["alignment"]?.ToString(),
+                ReadString(parameters?["section"]),
+                ReadOptionalNumber(parameters?["fromStation"]),
+                ReadOptionalNumber(parameters?["toStation"]),
+                ReadNumbers(parameters?["stations"]),
+                ReadOptionalNumber(parameters?["interval"]),
+                Offset(),
+                Limit(50))),
+
+            // ── 도면 편집
+            "change.apply" => await Edit(doc => DesignChanges.Apply(doc, ReadChanges(parameters?["changes"]))),
+            "alignment.create" => await Edit(doc => AlignmentCreation.Create(doc, ReadCreate(parameters))),
+            "drawing.delete" => await Edit(
+                doc => DrawingDeletion.Delete(doc, DrawingDeletion.ReadTargets(parameters?["targets"]))),
+            "alignment.edit" => await Edit(
+                doc => AlignmentEditing.Apply(doc, AlignmentEditing.ReadEdits(parameters?["edits"]))),
+
+            // ── 편집 작업 관리(되돌리기·취소·결과·확정)
+            "change.undo" => await InDocumentContextAsync(doc => DrawingOperations.Undo(doc, parameters)),
+            "change.cancel" => await InDocumentContextAsync(doc => DrawingOperations.Cancel(doc, parameters)),
+            "change.result" => await InDocumentContextAsync(doc => DrawingOperations.Result(doc, parameters)),
+            "change.confirm" => await InDocumentContextAsync(_ => DrawingOperations.Confirm(parameters)),
+
+            // ── 사용자에게 고르게 하기, 화면 캡처
+            "drawing.pick_polyline" => await Read(doc => DrawingPicker.PickPolyline(
+                doc,
+                parameters?["message"]?.ToString(),
+                Math.Clamp(ReadInt(parameters?["timeoutSeconds"], 90), 10, 110))),
+            "drawing.capture" => await Read(doc => DrawingCapture.Capture(
+                doc,
+                ReadStrings(parameters?["handles"]),
+                Math.Clamp(ReadInt(parameters?["width"], 800), 200, 1600),
+                Math.Clamp(ReadInt(parameters?["height"], 600), 200, 1200))),
+
+            _ => throw new MissingMethodException("Unknown bridge method.")
+        };
     }
 
     // ── 매개변수 읽기. 형식이 틀리면 ArgumentException(→ -32602).
 
     private static int ReadInt(JsonNode? value, int fallback)
     {
-        if (value is null) return fallback;
+        if (value is null)
+        {
+            return fallback;
+        }
+
         if (!int.TryParse(value.ToString(), out int parsed))
+        {
             throw new ArgumentException("offset and limit must be integers.");
+        }
+
         return parsed;
     }
 
     private static List<DesignChangeRequest> ReadChanges(JsonNode? value)
     {
         if (value is not JsonArray array || array.Count is 0 or > 20)
+        {
             throw new ArgumentException("changes must be an array of 1 to 20 items.");
-        return array.Select(item => new DesignChangeRequest(
-            ReadString(item?["kind"]), ReadString(item?["handle"]), ReadOptionalNumber(item?["at"]),
-            ReadString(item?["property"]), ReadOptionalNumber(item?["from"]),
-            ReadOptionalNumber(item?["to"]) ?? throw new ArgumentException("Each change needs a new value (to)."))).ToList();
+        }
+
+        return array.Select(ReadChange).ToList();
     }
 
-    private static AlignmentCreateRequest ReadCreate(JsonObject? value) =>
-        value?.Deserialize<AlignmentCreateRequest>(ReadOptions) is { Polyline: not null, Points: not null, Curves: not null } request
-            ? request
-            : throw new ArgumentException("alignment.create needs name, type, polyline, points, and curves.");
+    private static DesignChangeRequest ReadChange(JsonNode? item)
+    {
+        string kind = ReadString(item?["kind"]);
+        string handle = ReadString(item?["handle"]);
+        double? at = ReadOptionalNumber(item?["at"]);
+        string property = ReadString(item?["property"]);
+        double? from = ReadOptionalNumber(item?["from"]);
+        double to = ReadOptionalNumber(item?["to"])
+            ?? throw new ArgumentException("Each change needs a new value (to).");
+
+        return new DesignChangeRequest(kind, handle, at, property, from, to);
+    }
+
+    private static AlignmentCreateRequest ReadCreate(JsonObject? value)
+    {
+        AlignmentCreateRequest? request = value?.Deserialize<AlignmentCreateRequest>(ReadOptions);
+
+        bool complete = request is { Polyline: not null, Points: not null, Curves: not null };
+        if (!complete)
+        {
+            throw new ArgumentException("alignment.create needs name, type, polyline, points, and curves.");
+        }
+
+        return request!;
+    }
 
     private static string[] ReadStrings(JsonNode? value) => value switch
     {
@@ -331,33 +493,60 @@ public static class PluginBridge
         _ => throw new ArgumentException("handles must be an array of handles.")
     };
 
-    private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
-
-    private static string ReadString(JsonNode? value) => value?.ToString() ??
-        throw new ArgumentException("Required text parameter is missing.");
+    private static string ReadString(JsonNode? value) =>
+        value?.ToString() ?? throw new ArgumentException("Required text parameter is missing.");
 
     private static double? ReadOptionalNumber(JsonNode? value) =>
         value is null ? null : ReadNumbers(new JsonArray(value.DeepClone()))[0];
 
     private static double[] ReadNumbers(JsonNode? value)
     {
-        if (value is null) return [];
-        if (value is not JsonArray array) throw new ArgumentException("stations must be an array of numbers.");
-        return array.Select(item => double.TryParse(item?.ToString(), System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out double number) && double.IsFinite(number)
-            ? number : throw new ArgumentException("Each station must be a finite number.")).ToArray();
+        if (value is null)
+        {
+            return [];
+        }
+
+        if (value is not JsonArray array)
+        {
+            throw new ArgumentException("stations must be an array of numbers.");
+        }
+
+        return array.Select(ReadFiniteNumber).ToArray();
+    }
+
+    private static double ReadFiniteNumber(JsonNode? item)
+    {
+        bool parsed = double.TryParse(
+            item?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out double number);
+
+        if (!parsed || !double.IsFinite(number))
+        {
+            throw new ArgumentException("Each station must be a finite number.");
+        }
+
+        return number;
     }
 
     // 토큰 비교(시간이 일정한 비교).
     private static bool IsAuthorized(string? candidate)
     {
-        if (_token is null || candidate is null) return false;
+        if (_token is null || candidate is null)
+        {
+            return false;
+        }
+
         try
         {
             return CryptographicOperations.FixedTimeEquals(
                 Convert.FromHexString(candidate), Convert.FromHexString(_token));
         }
-        catch (FormatException) { return false; }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 
     // 조회: 명령 컨텍스트에서 도면을 잠그고 실행한다.
@@ -365,6 +554,7 @@ public static class PluginBridge
     {
         object? result = null;
         System.Exception? error = null;
+
         // 명령 컨텍스트에 들어가면 사용자의 그립이 지워진다. DrawingSelection이 선택을 기억해 둔다.
         DrawingSelection.BridgeStarted();
         try
@@ -376,15 +566,28 @@ public static class PluginBridge
                     Document document = App.DocumentManager.MdiActiveDocument
                         ?? throw new InvalidOperationException("No active drawing.");
                     using DocumentLock documentLock = document.LockDocument();
+
                     DrawingOperations.Validate(document, context);
                     result = query(document);
                 }
-                catch (System.Exception ex) { error = ex; }
+                catch (System.Exception ex)
+                {
+                    error = ex;
+                }
+
                 await Task.CompletedTask;
             }, null);
         }
-        finally { DrawingSelection.BridgeEnded(); }
-        if (error is not null) throw error;
+        finally
+        {
+            DrawingSelection.BridgeEnded();
+        }
+
+        if (error is not null)
+        {
+            throw error;
+        }
+
         return result!;
     }
 

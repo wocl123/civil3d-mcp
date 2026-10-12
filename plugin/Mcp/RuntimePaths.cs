@@ -11,24 +11,47 @@ internal static class RuntimePaths
 
     public static string Server(string assemblyDirectory, string? configured)
     {
-        if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured);
-        if (IsBundle(assemblyDirectory)) return Path.GetFullPath(Path.Combine(assemblyDirectory, "..", "server", "build", "localService.js"));
-        return Path.GetFullPath(Path.Combine(assemblyDirectory, "..", "..", "..", "..", "server", "build", "localService.js"));
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return Path.GetFullPath(configured);
+        }
+
+        // 번들: 플러그인 폴더 옆의 server 폴더
+        if (IsBundle(assemblyDirectory))
+        {
+            return Path.GetFullPath(Path.Combine(assemblyDirectory, "..", "server", "build", "localService.js"));
+        }
+
+        // 개발: 빌드 출력 폴더에서 네 단계 위가 저장소 루트
+        string repository = Path.Combine(assemblyDirectory, "..", "..", "..", "..");
+        return Path.GetFullPath(Path.Combine(repository, "server", "build", "localService.js"));
     }
 
     public static string? Node(string assemblyDirectory, string? path)
     {
         string bundled = Path.GetFullPath(Path.Combine(assemblyDirectory, "..", "node", "node.exe"));
-        if (File.Exists(bundled)) return bundled;
+        if (File.Exists(bundled))
+        {
+            return bundled;
+        }
+
+        // 번들에 없으면 PATH에서 찾는다.
         foreach (string dir in (path ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
             try
             {
                 string candidate = Path.Combine(dir.Trim().Trim('"'), "node.exe");
-                if (File.Exists(candidate)) return Path.GetFullPath(candidate);
+                if (File.Exists(candidate))
+                {
+                    return Path.GetFullPath(candidate);
+                }
             }
-            catch (ArgumentException) { }
+            catch (ArgumentException)
+            {
+                // 경로에 쓸 수 없는 글자가 든 PATH 항목은 건너뛴다.
+            }
         }
+
         return null;
     }
 
@@ -39,6 +62,9 @@ internal static class RuntimePaths
             string file = Path.Combine(assemblyDirectory, "..", "version.json");
             return JsonNode.Parse(File.ReadAllText(file))?["version"]?.ToString() ?? "development";
         }
-        catch (System.Exception) { return "development"; }
+        catch (System.Exception)
+        {
+            return "development";
+        }
     }
 }

@@ -28,10 +28,14 @@ public sealed class PluginEntry : IExtensionApplication
             DrawingSelection.Start();
             PluginBridge.Start();
             NodeService.Start();
+
             // 번들 자동 로드 시 첫 도면이 준비된 Idle에서 팔레트를 연다.
             // NETLOAD 개발 흐름은 기존처럼 MYC3DCHAT 명령으로 연다.
-            if (RuntimePaths.IsBundle(System.IO.Path.GetDirectoryName(typeof(PluginEntry).Assembly.Location)!))
+            string assemblyDirectory = System.IO.Path.GetDirectoryName(typeof(PluginEntry).Assembly.Location)!;
+            if (RuntimePaths.IsBundle(assemblyDirectory))
+            {
                 App.Idle += ShowOnFirstDrawing;
+            }
         }
         catch (System.Exception ex)
         {
@@ -42,10 +46,21 @@ public sealed class PluginEntry : IExtensionApplication
 
     private static void ShowOnFirstDrawing(object? sender, EventArgs e)
     {
-        if (App.DocumentManager.MdiActiveDocument is null) return;
+        if (App.DocumentManager.MdiActiveDocument is null)
+        {
+            return;
+        }
+
         App.Idle -= ShowOnFirstDrawing;
-        try { ChatPalette.Show(); }
-        catch (System.Exception ex) { App.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\n팔레트 시작 실패: " + ex.Message); }
+
+        try
+        {
+            ChatPalette.Show();
+        }
+        catch (System.Exception ex)
+        {
+            App.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\n팔레트 시작 실패: " + ex.Message);
+        }
     }
 
     public void Terminate()
@@ -65,13 +80,16 @@ public sealed class PluginEntry : IExtensionApplication
     [CommandMethod("MYC3DCONNECTION")]
     public void ShowConnection()
     {
+        string bridge = PluginBridge.IsRunning ? "running" : "stopped";
+        string service = NodeService.IsRunning ? "running" : "stopped";
+        string error = NodeService.LastError is null ? "" : $", error {NodeService.LastError}";
+
         App.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
-            $"\nMyCivil3DMcp bridge: {(PluginBridge.IsRunning ? "running" : "stopped")}, " +
-            $"port {PluginBridge.Port}, service {(NodeService.IsRunning ? "running" : "stopped")}, " +
+            $"\nMyCivil3DMcp bridge: {bridge}, port {PluginBridge.Port}, service {service}, " +
             $"config {PluginBridge.OwnConnectionFilePath}, " +
-            $"version {NodeService.ProductVersion} (Civil 3D 2025), node {NodeService.NodeVersion} [{NodeService.NodePath}], " +
-            $"service port {NodeService.Port}, entry {NodeService.EntryPath}" +
-            (NodeService.LastError is null ? "\n" : $", error {NodeService.LastError}\n"));
+            $"version {NodeService.ProductVersion} (Civil 3D 2025), " +
+            $"node {NodeService.NodeVersion} [{NodeService.NodePath}], " +
+            $"service port {NodeService.Port}, entry {NodeService.EntryPath}{error}\n");
     }
 
     [CommandMethod("MYC3DSTATUS")]
@@ -82,13 +100,25 @@ public sealed class PluginEntry : IExtensionApplication
     public void ShowRevisions()
     {
         Document? document = App.DocumentManager.MdiActiveDocument;
-        if (document is null) return;
+        if (document is null)
+        {
+            return;
+        }
+
         Editor editor = document.Editor;
-        editor.WriteMessage($"\n리비전 {DrawingRevisions.Of(document.Database)} (도면 ID {DrawingRevisions.Id(document.Database)[..8]})");
+        string revision = DrawingRevisions.Of(document.Database);
+        string drawingId = DrawingRevisions.Id(document.Database)[..8];
+        editor.WriteMessage($"\n리비전 {revision} (도면 ID {drawingId})");
         editor.WriteMessage("\n최근 객체 변경 (센 것 = 리비전을 올림, 브리지 = AI 조회·변경 중):");
+
         foreach (DrawingRevisions.Change change in DrawingRevisions.RecentChanges())
-            editor.WriteMessage($"\n  {change.At:HH:mm:ss} {change.Event} {change.Type} [{change.Handle}]" +
-                (change.Counted ? " 센 것" : "") + (change.DuringBridge ? " 브리지" : ""));
+        {
+            string counted = change.Counted ? " 센 것" : "";
+            string duringBridge = change.DuringBridge ? " 브리지" : "";
+            editor.WriteMessage(
+                $"\n  {change.At:HH:mm:ss} {change.Event} {change.Type} [{change.Handle}]{counted}{duringBridge}");
+        }
+
         editor.WriteMessage("\n");
     }
 
@@ -96,16 +126,23 @@ public sealed class PluginEntry : IExtensionApplication
     public void ShowObjects()
     {
         Document? document = App.DocumentManager.MdiActiveDocument;
-        if (document is null) return;
+        if (document is null)
+        {
+            return;
+        }
 
         Editor editor = document.Editor;
+
         PromptIntegerResult offsetResult = editor.GetInteger(new PromptIntegerOptions("\nStart index <0>: ")
         {
             AllowNone = true,
             DefaultValue = 0,
             LowerLimit = 0
         });
-        if (offsetResult.Status is not (PromptStatus.OK or PromptStatus.None)) return;
+        if (offsetResult.Status is not (PromptStatus.OK or PromptStatus.None))
+        {
+            return;
+        }
 
         PromptIntegerResult limitResult = editor.GetInteger(new PromptIntegerOptions("\nMaximum objects <20>: ")
         {
@@ -114,7 +151,10 @@ public sealed class PluginEntry : IExtensionApplication
             LowerLimit = 1,
             UpperLimit = 200
         });
-        if (limitResult.Status is not (PromptStatus.OK or PromptStatus.None)) return;
+        if (limitResult.Status is not (PromptStatus.OK or PromptStatus.None))
+        {
+            return;
+        }
 
         int offset = offsetResult.Status == PromptStatus.None ? 0 : offsetResult.Value;
         int limit = limitResult.Status == PromptStatus.None ? 20 : limitResult.Value;
@@ -125,7 +165,10 @@ public sealed class PluginEntry : IExtensionApplication
     private static void Run<T>(Func<Document, T> query)
     {
         Document? document = App.DocumentManager.MdiActiveDocument;
-        if (document is null) return;
+        if (document is null)
+        {
+            return;
+        }
 
         try
         {
