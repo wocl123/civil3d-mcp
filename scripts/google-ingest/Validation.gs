@@ -22,11 +22,13 @@ const PARAMETERS = {
 const isParameterKey = (key) => typeof key === "string" && key in PARAMETERS;
 // { key, value } 가 있는 키이고 허용 값이면 받는다.
 function validParameter(value) {
-    if (!value || typeof value !== "object")
+    if (!value || typeof value !== "object") {
         return undefined;
+    }
     const item = value;
-    if (!isParameterKey(item.key) || typeof item.value !== "number")
+    if (!isParameterKey(item.key) || typeof item.value !== "number") {
         return undefined;
+    }
     const allowed = PARAMETERS[item.key].allowed;
     return allowed.includes(item.value) ? { key: item.key, value: item.value } : undefined;
 }
@@ -56,6 +58,7 @@ const WORD = /^[\w.-]{1,40}$/; // 짧은 영문 낱말
 const NAME = /^[a-z][a-z_]{0,60}$/; // 도구 이름
 const CHECK = /^[\p{L}\p{N} ·(),.%/①-⑳_-]{1,80}$/u; // 코드가 만든 검토 이름
 const HOUR = /^\d{4}-\d{2}-\d{2}T\d{2}$/; // 시각(시간 단위)
+// 값이 undefined인 항목을 뺀다.
 const clean = (record) => Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 const oneOf = (list, value) => list.includes(value) ? value : undefined;
 const APP_VERSION = /^(\d+\.\d+\.\d+|dev)$/; // 프로그램 버전
@@ -72,8 +75,9 @@ function record(value) {
 function recordBody(value) {
     const item = obj(value);
     const at = str(item.at, HOUR);
-    if (!at)
+    if (!at) {
         return undefined;
+    }
     switch (item.type) {
         // 질문 1건
         case "turn": {
@@ -94,10 +98,15 @@ function recordBody(value) {
                 cached: item.cached === true,
                 tools: Array.isArray(item.tools) ? item.tools.filter(tool => str(tool, NAME)).slice(0, 50) : [],
                 usage: clean({
-                    inputTokens: num(usage.inputTokens), outputTokens: num(usage.outputTokens), cachedInputTokens: num(usage.cachedInputTokens)
+                    inputTokens: num(usage.inputTokens),
+                    outputTokens: num(usage.outputTokens),
+                    cachedInputTokens: num(usage.cachedInputTokens)
                 }),
                 counts: clean({
-                    recorded: num(counts.recorded), candidates: num(counts.candidates), fixes: num(counts.fixes), applied: num(counts.applied)
+                    recorded: num(counts.recorded),
+                    candidates: num(counts.candidates),
+                    fixes: num(counts.fixes),
+                    applied: num(counts.applied)
                 }),
                 errorKind: str(item.errorKind, WORD)
             });
@@ -141,8 +150,9 @@ function recordBody(value) {
         // 사용자가 답을 이상하다고 표시함(팔레트 👎)
         case "feedback": {
             const turnId = str(item.turnId, ID);
-            if (!turnId)
+            if (!turnId) {
                 return undefined;
+            }
             return clean({ type: "feedback", at, turnId, rating: oneOf(["bad", "good"], item.rating) ?? "bad", reason: text(item.reason, 500) });
         }
         // 수정 추적 결과 1건
@@ -150,8 +160,9 @@ function recordBody(value) {
             const conditions = obj(item.conditions);
             const outcome = oneOf(["modified", "kept", "deleted", "restructured"], item.outcome);
             const property = oneOf(["radius", "spiralLength", "elevation", "curveLength"], item.property);
-            if (!outcome || !property)
+            if (!outcome || !property) {
                 return undefined;
+            }
             return clean({
                 type: "modification",
                 at,
@@ -179,33 +190,40 @@ function recordBody(value) {
 function validPackage(body, installId) {
     const item = obj(body);
     const packageId = str(item.packageId, /^[a-f\d]{16}-[\w-]{1,40}$/);
-    if (item.schema !== 1 || !packageId || item.installId !== installId)
+    if (item.schema !== 1 || !packageId || item.installId !== installId) {
         throw new Invalid("패키지 형식이 맞지 않습니다.");
-    if (!packageId.startsWith(installId))
+    }
+    if (!packageId.startsWith(installId)) {
         throw new Invalid("다른 설치의 패키지입니다.");
-    if (!Array.isArray(item.records) || item.records.length > 1000)
+    }
+    if (!Array.isArray(item.records) || item.records.length > 1000) {
         throw new Invalid("records가 없거나 너무 많습니다.");
+    }
     const records = item.records.map(record).filter((value) => !!value);
     const reason = leak(JSON.stringify(records));
-    if (reason)
+    if (reason) {
         throw new Invalid(`비식별 검사에 걸렸습니다(${reason}).`);
+    }
     return { packageId, records };
 }
 // 후보 목록을 검사한다(한 번에 50개까지). 하나라도 형식이 틀리거나 검사에 걸리면 전부 받지 않는다.
 function validCandidates(body) {
     const list = obj(body).candidates;
-    if (!Array.isArray(list) || list.length > 50)
+    if (!Array.isArray(list) || list.length > 50) {
         throw new Invalid("candidates가 없거나 너무 많습니다.");
+    }
     return list.map(value => {
         const item = obj(value);
         const localId = str(item.localId, /^C-\d{8}-\d{1,4}$/);
         const title = typeof item.title === "string" ? item.title.replace(/\s+/g, " ").trim().slice(0, 80) : "";
         const content = typeof item.content === "string" ? item.content.replace(/\s+/g, " ").trim().slice(0, 400) : "";
-        if (!localId || !content)
+        if (!localId || !content) {
             throw new Invalid("후보 형식이 맞지 않습니다.");
+        }
         const reason = leak(title + " " + content);
-        if (reason)
+        if (reason) {
             throw new Invalid(`비식별 검사에 걸렸습니다(${reason}).`);
+        }
         const parameter = validParameter(item.parameter);
         return {
             localId,
