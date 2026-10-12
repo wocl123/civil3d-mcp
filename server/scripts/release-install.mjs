@@ -21,6 +21,7 @@ const version = /^MyCivil3DMcp-(\d+\.\d+\.\d+)-win-x64\.zip$/.exec(basename(zip)
 assert.ok(version && existsSync(zip), 'usage: release-install.mjs <MyCivil3DMcp-x.y.z-win-x64.zip>');
 
 const temporary = await mkdtemp(join(tmpdir(), 'mycivil3d-release-'));
+let fakeCivil, linkServer;
 const plugins = join(temporary, 'plugins');
 const data = join(temporary, 'data');
 const ps = command => execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command]);
@@ -141,6 +142,8 @@ try {
   assert.notEqual(nothing.code, 0);
   assert.match(nothing.out, /설치 파일\(MyCivil3DMcp\.bundle\.zip\)이 없습니다/);
 
+  // This section deliberately exercises the legacy ZIP channel, independently of the new public EXE channel.
+  await writeFile(join(data, 'team.json'), JSON.stringify({ adminEmail: 'admin@example.com' }));
   // 3) 자동 업데이트: 옛 버전(0.0.1)으로 도는 서비스가 드라이브 보내기 폴더의 배포 버전을 받아 두고, Civil 3D가 꺼지면 도우미가 설치한다
   const drive = join(temporary, '내 드라이브');
   const installId = 'abcdef0123456789';
@@ -155,10 +158,10 @@ try {
   await placeScripts(helperSource);
   await copyFile(join(repo, 'scripts', 'update.ps1'), join(helperSource, 'update.ps1'));
   const autoRoot = join(temporary, 'plugins-auto');
-  const fakeCivil = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
+  fakeCivil = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
   // 관리자의 공용 배포 파일 대신 이 테스트의 HTTP 서버(공유 링크 다운로드 흉내). served: 지금 내줄 내용
   let served = Buffer.from('not the release');
-  const linkServer = (await import('node:http')).createServer((request, response) => {
+  linkServer = (await import('node:http')).createServer((request, response) => {
     if (!/[?&]id=SHAREDFILE12345(&|$)/.test(request.url ?? '')) { response.writeHead(404); response.end(); return; }
     response.writeHead(200, { 'Content-Type': 'application/octet-stream' });
     response.end(served);
@@ -212,5 +215,8 @@ try {
 
   console.log(`Release install passed: ${version} from the unpacked zip (inner bundle zip, team mail to the data folder, bad team file skipped); bundle folder install checks signature and version (unsigned and other-key bundles refused, same/newer skipped, reinstall); stale work and old backups removed; missing files explained; automatic update from the drive folder and the share link (nothing published → nothing, hash mismatch refused, a stale link reported after the grace hour, download kept, waits for Civil 3D to exit, signed install).`);
 } finally {
+  fakeCivil?.kill();
+  linkServer?.closeAllConnections();
+  linkServer?.close();
   await rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }

@@ -44,8 +44,8 @@ const clean = <T extends Record<string, unknown>>(record: T): T =>
 // 오류는 원문이 아니라 종류만 보낸다.
 export function errorKind(message: unknown): string | undefined {
   if (typeof message !== "string" || !message) return undefined;
-  if (/usage limit|rate limit|quota|429/i.test(message)) return "ai_limit";
-  if (/account is not verified|Check its account login/.test(message)) return "ai_login";
+  if (/usage limit|rate limit|quota|429|사용 한도|요청 한도/i.test(message)) return "ai_limit";
+  if (/account is not verified|Check its account login|로그인이 만료|인증에 실패/.test(message)) return "ai_login";
   if (/returned no (final )?answer/.test(message)) return "ai_no_answer";
   const kind = failureGuide(message).kind;
   return kind === "unexpected" && /timed out|ETIMEDOUT/.test(message) ? "ai_timeout" : kind;

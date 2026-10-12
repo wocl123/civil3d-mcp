@@ -16,6 +16,7 @@ import { outRecord, type OutRecord } from "./records.js";
 import type { SyncState } from "./syncState.js";
 
 export const CLIENT = "my-civil3d-mcp/0.2";
+const MAX_PACKAGE_BYTES = 512 * 1024;
 const MAX_RECORDS = 500;          // 묶음 하나의 기록 수
 const MAX_READ = 4 * 1024 * 1024; // 파일 하나에서 한 번에 읽는 양
 
@@ -87,7 +88,14 @@ export async function exportLogs(state: SyncState): Promise<{ packages: number; 
   let packages = 0;
   let blocked = 0;
 
-  for (let index = 0; index < records.length; index += MAX_RECORDS) {
+  for (let index = 0; index < records.length;) {
+    const batch: OutRecord[] = [];
+    let bytes = 0;
+    while (index < records.length && batch.length < MAX_RECORDS) {
+      const next = records[index], size = Buffer.byteLength(JSON.stringify(next)) + 1;
+      if (batch.length && bytes + size > MAX_PACKAGE_BYTES) break;
+      batch.push(next); bytes += size; index++;
+    }
     const packageId = `${installId}-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
     const item: Package = {
       schema: 1,
@@ -95,7 +103,7 @@ export async function exportLogs(state: SyncState): Promise<{ packages: number; 
       installId,
       client: CLIENT,
       createdAt: hour(new Date().toISOString()),
-      records: records.slice(index, index + MAX_RECORDS)
+      records: batch
     };
     const text = JSON.stringify(item);
     const reason = leak(text, terms);

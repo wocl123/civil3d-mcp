@@ -425,6 +425,7 @@ internal sealed class ChatPanel : UserControl
             ticker.Stop();
             answer.Child = SelectableText("오류: " + ex.Message, _theme.Error);
             await RefreshProvidersAsync();
+            _ = RefreshUsageAsync(provider, refreshQuota: false);
         }
         finally
         {
@@ -483,18 +484,36 @@ internal sealed class ChatPanel : UserControl
                 "/api/quota?provider=" + provider + (refreshQuota ? "&refresh=1" : ""));
             if (_selected != provider) return;
             JsonNode? quota = data["quota"];
-            if (quota?["status"]?.ToString() != "available")
+            if (quota?["limit"] is JsonNode limit)
+                _quota = (limit["message"]?.ToString() ?? "사용 한도에 도달했습니다.").Split('\n')[0]
+                    + (DateTimeOffset.TryParse(limit["resetsAt"]?.ToString(), out DateTimeOffset recovery)
+                        ? $" · 복구 예정 {recovery.ToLocalTime():MM/dd HH:mm}" : " · 복구 시각 확인 불가");
+            else if (quota?["status"]?.ToString() != "available")
                 _quota = "한도 정보 없음";
             else
             {
-                IEnumerable<string> windows = (quota["windows"]?.AsArray() ?? []).Select(window =>
-                    $"{window?["label"]} {window?["remainingPercent"]}%");
-                _quota = (quota["ordinaryUsageAllowed"]?.ToString() == "false" ? "사용 차단됨 · " : "") +
+                IEnumerable<string> windows = (quota["windows"]?.AsArray() ?? []).Select(QuotaWindowText);
+                _quota = (quota["ordinaryUsageAllowed"]?.ToString() == "false" ? "사용 제한됨 · " : "") +
                     "남은 한도 " + string.Join(" · ", windows);
             }
         }
         catch (System.Exception) { _quota = "한도 조회 실패"; }
         UpdateFooter();
+    }
+
+    private static string QuotaWindowText(JsonNode? window)
+    {
+        double remaining = double.TryParse(window?["remainingPercent"]?.ToString(), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double value) ? value : 0;
+        string percent = remaining <= 0 ? "0" : remaining < 0.1 ? "<0.1" : remaining.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+        string result = $"{window?["label"]} {percent}%";
+        if (DateTimeOffset.TryParse(window?["resetsAt"]?.ToString(), out DateTimeOffset reset))
+        {
+            DateTimeOffset local = reset.ToLocalTime();
+            result += reset > DateTimeOffset.UtcNow ? $" · {(remaining <= 0 ? "복구" : "재설정")} {local:MM/dd HH:mm}" : " · 재설정 확인 필요";
+        }
+        else if (remaining <= 0) result += " · 복구 시각 확인 불가";
+        return result;
     }
 
     // ── 대화 항목

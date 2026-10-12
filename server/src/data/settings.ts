@@ -7,6 +7,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { writeAtomic } from "../files.js";
 import { dataDir } from "../paths.js";
+import { validGitHubRepo } from "../update/githubRelease.js";
+import { validIngestUrl } from "../ingest/config.js";
 
 export type DriveSettings = {
   enabled: boolean;      // false면 드라이브로 보내기를 멈춤(기록은 계속 쌓인다)
@@ -16,7 +18,7 @@ export type DriveSettings = {
   since: string;
 };
 export type Settings = { schema: 1; drive?: DriveSettings };
-export type Team = { adminEmail?: string };
+export type Team = { adminEmail?: string; releaseManifestId?: string; githubRepo?: string; ingestUrl?: string };
 
 const file = () => join(dataDir(), "settings.json");
 
@@ -38,7 +40,10 @@ export async function saveSettings(settings: Settings): Promise<void> {
 export async function loadTeam(): Promise<Team | undefined> {
   try {
     const parsed = JSON.parse((await readFile(join(dataDir(), "team.json"), "utf8")).replace(/^﻿/, "")) as Team;
-    return typeof parsed.adminEmail === "string" && validEmail(parsed.adminEmail) ? { adminEmail: parsed.adminEmail } : {};
+    return { ...(typeof parsed.adminEmail === "string" && validEmail(parsed.adminEmail) ? { adminEmail: parsed.adminEmail } : {}),
+      ...(validGitHubRepo(parsed.githubRepo) ? { githubRepo: parsed.githubRepo } : {}),
+      ...(validIngestUrl(parsed.ingestUrl) ? { ingestUrl: parsed.ingestUrl } : {}),
+      ...(typeof parsed.releaseManifestId === "string" && /^[\w-]{10,200}$/.test(parsed.releaseManifestId) ? { releaseManifestId: parsed.releaseManifestId } : {}) };
   } catch {
     return undefined;
   }
@@ -50,6 +55,8 @@ export const validEmail = (text: string) => /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$
 export async function driveSettings(): Promise<DriveSettings | undefined> {
   const settings = await loadSettings();
   const team = await loadTeam();
-  if (settings.drive) return { ...settings.drive, adminEmail: settings.drive.adminEmail ?? team?.adminEmail };
+  if (settings.drive) return { ...settings.drive,
+    ...(team?.ingestUrl && process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1" ? { admin: false } : {}),
+    adminEmail: settings.drive.adminEmail ?? team?.adminEmail };
   return team ? { enabled: true, adminEmail: team.adminEmail, since: "" } : undefined;
 }

@@ -10,6 +10,8 @@
 *.gz
 **/.vs/
 
+/.drive-deploy.json
+/MyCivil3DMcp-*.exe
 /dist/
 /.package-cache/
 /.package-work/

@@ -5,6 +5,10 @@ stdio entry point. The palette tests AI sign-in, chat about the open drawing,
 usage, drawing knowledge, and answer reuse. MCP exposes drawing inspection, design criteria checks, computed fixes, and
 alignment creation. The palette provides Apply and Undo buttons for proposed changes.
 
+## Installation and distribution
+
+Download the installer EXE from [GitHub Releases](https://github.com/wocl123/civil3d-mcp/releases/latest). Updates use signed GitHub release metadata and signed installer assets. User records go through the administrator Apps Script endpoint into private Google Drive; users do not need Google login or Drive setup. Administrators publish with `배포하기.bat` and review received data with `관리자실행.bat`. Source and installer releases use the same public repository. See [installation and deployment](docs/배포_설치.md).
+
 ## Build
 
 Requires Civil 3D 2025, .NET 8 SDK, Node.js 20 or later, and npm. Build the Node
@@ -407,44 +411,40 @@ before loading the rebuilt DLL.
 
 ## Sharing through Google Drive and learning from other users
 
-There is no server. Each install keeps a send folder in its own Google Drive
-(Google Drive for Desktop), `MyCivil3DMcp-<install id>`, and puts its
-de-identified records and knowledge candidates there. The user shares that
-folder with the admin's mail as an editor (that is the request to join); the
-admin adds a shortcut to it in their own drive (that is the approval). The
-admin's service then finds the folder, checks and takes in the files, and writes
-back what it took, the approved knowledge, and the published release
-(`server/src/drive/`, `server/src/admin/`; layout in
-[docs/데이터관리_설계.md](docs/데이터관리_설계.md) §6). The GitHub release zip
-carries `team.json` with the admin's mail (repository variable `ADMIN_EMAIL`),
-so an install from it needs no setup. Palette commands (answered without an AI):
+Users install from a fixed Google Drive folder link: download `MyCivil3DMcp-release/설치.exe` and run it.
+The administrator runs `배포하기.bat` to build, verify and sign locally, then publish through Drive for Desktop.
+The BAT discovers the release manifest and installer IDs from the folder link; the administrator configures the intake web app once.
+GitHub Release, Actions and gh login are not part of distribution.
+See [installation and deployment](docs/배포_설치.md).
 
-| Command | What it does |
+The public `latest.json` is signed and identifies a signed EXE. Updates work even before joining the data sharing system
+or while data sending is stopped. Installed clients check after startup and every six hours, download and verify,
+then use their existing trusted installer after Civil 3D exits. An unpublished or incomplete download is never installed.
+
+Data sending uses an administrator-owned Apps Script web app configured once through
+[scripts/google-ingest/README.md](scripts/google-ingest/README.md). The EXE carries its endpoint.
+Users need no Google login, Drive app, shared folder or local path setting. Each install registers automatically,
+then sends de-identified packages over HTTPS, keeping unconfirmed files for retries.
+The web app writes per-install folders in the private `MyCivil3DMcp-data` collection folder.
+`관리자실행.bat` imports and reviews these independently of Civil 3D, using its own
+`%LOCALAPPDATA%/MyCivil3DMcp/admin-data` store and a ten-minute interval.
+Legacy installations without an intake URL retain the per-user Drive-folder transport.
+
+| User palette command | Purpose |
 |---|---|
-| `/중앙` | drive, send folder, whether the admin takes it, queued and blocked packages |
-| `/중앙 신청 [admin mail]` | make the send folder and show how to share it |
-| `/중앙 드라이브 <path>` | where "My Drive" is, if it is not found |
-| `/중앙 끊기`, `/중앙 켜기`, `/중앙 동기화` | stop, resume, or sync now |
-| `/중앙 관리자` | make this PC the admin |
-| `/중앙 사용자`, `/중앙 배포 <version>` | admin: member folders (block), publish a GitHub release |
-| `/검토`, then `1 승인` / `2 반려 <reason>`; `/검토 보고`; `/검토 사례` | review (admin only) |
-| `/설정값` | settings in force and where they come from |
+| `/중앙` | Automatic registration, sending and receipt status |
+| `/중앙 신청 [admin mail]` | Retry automatic connection (legacy: create shared send folder) |
+| `/중앙 드라이브 <path>` | Legacy Drive-folder transport only |
+| `/중앙 끊기`, `/중앙 켜기`, `/중앙 동기화` | Stop/resume data sending or sync |
+| `/설정값` | Applied settings and their sources |
 
-Every 10 minutes and shortly after each answer, the local service turns new log
-lines into records built from allowed fields only, masks drawing names, paths,
-mail addresses, user and PC names, checks the whole package again, and moves it
-to the send folder. A package that fails the check stays in
-`data\outbox\blocked`. The admin's PC checks every file once more when it takes
-it in and refuses forged folders.
+The standalone administrator console offers users, review, reporting, approval/rejection and case triage.
+Administrator role selection, review and deployment are not done in the user palette.
 
-Learning works in two ways. Knowledge candidates from several installs are
-grouped by content, so the reviewer sees how many installs stated the same
-practice. Values the AI set in a drawing are read again later; when people on
-several installs keep changing them the same way (for example radii to multiples
-of 10), the server proposes the matching setting. Only what the reviewer
-approves reaches installs, as `rules\중앙_지식.md` and central settings.
-Settings (`server/src/knowledge/parameters.ts`) are what code reads directly,
-such as the radius rounding step; this PC's approvals come before central ones.
+New logs are rebuilt from allowed fields, de-identified and inspected before sending.
+The administrator checks them again, acknowledges received package IDs, and returns approved knowledge/settings.
+Knowledge candidates are grouped across installs and tracked human edits can suggest numeric settings.
+Only approved changes reach users; this PC's approvals take precedence over shared settings.
 
 ## MCP stdio entry point and tests
 
@@ -458,6 +458,8 @@ criteria checks, fixes, creation and recheck) against a fake Civil 3D and compar
 every result with `scripts/fixtures/design-regression.json`. Run it after any change to
 the calculations; after an intended change, `node scripts/design-regression.mjs --update`
 rewrites the snapshot, and its git diff shows exactly what changed.
+`npm run test:ingest` runs the actual Apps Script receiver and client over a simulated private Drive,
+including registration, lost receipts, deduplication, multi-user isolation, admin import, approved knowledge and retries.
 `npm run test:drive` runs an admin and simulated installs over one fake Google Drive
 folder, and checks the whole data flow: de-identification (nothing private reaches the
 drive), tracking of a person's change to an AI-created alignment, candidate grouping and
@@ -551,6 +553,5 @@ replace manual checks of WPF controls, CAD undo grouping, and API effects in Civ
 
 ## 배포 패키지
 
-Civil 3D 2025용 번들 생성은 `scripts/package.ps1`을 사용합니다. Node·npm을 동봉하고,
-운영 의존성과 파일 manifest를 검사한 뒤 `dist/`에 설치 zip과 SHA-256 파일만 만듭니다.
-설치·업데이트·실패 복구·제거 방법과 현장 검증 범위는 [배포 설치 안내](docs/배포_설치.md)를 참고하세요.
+사용자는 공개 GitHub Release에서 설치 EXE를 받아 실행합니다. 데이터는 관리자 웹앱을 통해 비공개 Google Drive에 전송합니다. 관리자는 배포하기.bat과 관리자실행.bat을 사용합니다.
+설치·자동 업데이트·배포·복구 안내는 [배포 설치 안내](docs/배포_설치.md)를 참고하세요.

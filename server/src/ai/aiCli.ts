@@ -10,6 +10,8 @@ import { stateFile } from "../memory/stateFile.js";
 
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
+import { parseCliFailure, formatCliFailure, rememberLimit, clearLimit, type CliFailure } from "./cliFailure.js";
+import { getQuota, cachedQuota } from "./quota.js";
 import { parseUsage } from "./usage.js";
 import { paletteLaunch } from "./paletteWorkspace.js";
 import { cliPath, locateCli } from "./cliLocator.js";
@@ -20,6 +22,19 @@ import type { CliResult } from "./types/CliResult.js";
 import type { ChatEvent } from "./types/ChatEvent.js";
 export type { Provider } from "./types/Provider.js";
 export type { ProviderState } from "./types/ProviderState.js";
+
+async function cliError(provider: Provider, failure: CliFailure): Promise<Error> {
+  let quota;
+  if (failure.kind === "limit") {
+    try {
+      quota = await cachedQuota(provider);
+      if (!quota && !failure.resetsAt.length) quota = await getQuota(provider, true);
+    } catch { /* Reset information may be unavailable. */ }
+  }
+  const message = formatCliFailure(provider, failure, quota);
+  rememberLimit(provider, failure, message, quota);
+  return new Error(message);
+}
 
 export const PROVIDERS = ["claude", "codex", "gemini"] as const;
 
@@ -166,7 +181,18 @@ export async function verifyProvider(provider: Provider): Promise<ProviderState>
         ? await runCli(provider, ["login", "status"], "", 15000)
         : await runCli(provider, ["--output-format", "json", "-p", "Reply with OK."], "", 60000);
 
+    const failure = parseCliFailure(provider, result);
+    if (failure) {
+      if (failure.kind === "auth") return setVerified(provider, "unauthenticated");
+      const error = await cliError(provider, failure);
+      // Gemini checks login with a request. Quota rejection is not missing login.
+      if (provider === "gemini" && failure.kind === "limit") return setVerified(provider, "ready");
+      throw error;
+    }
     let ready = result.code === 0;
+    if (provider === "claude" && ready) {
+      try { ready = JSON.parse(result.stdout).loggedIn !== false; } catch { /* Older CLI prints text. */ }
+    }
     if (provider === "gemini" && ready) {
       try {
         const output = JSON.parse(result.stdout) as { response?: string; error?: unknown };
@@ -177,8 +203,9 @@ export async function verifyProvider(provider: Provider): Promise<ProviderState>
     }
 
     return setVerified(provider, ready ? "ready" : "unauthenticated");
-  } catch {
-    return setVerified(provider, "unauthenticated");
+  } catch (error) {
+    // Process/network/option failures do not prove that login is missing.
+    throw error;
   }
 }
 
@@ -234,16 +261,18 @@ export async function askProvider(provider: Provider, prompt: string,
     await rm(launch.cwd, { recursive: true, force: true }).catch(error => process.stderr.write(`Workspace cleanup failed: ${String(error)}\n`));
   }
 
-  // 2) 실패: CLI 옵션이나 MCP 서버 문제일 수도 있으니 마지막 오류 메시지를 붙인다.
-  if (result.code !== 0) {
-    const detail = result.stderr.trim().split(/\r?\n/).filter(Boolean).slice(-2).join(" ").slice(0, 400);
-    throw new Error(`${provider} failed. Check its account login in the CLI.${detail ? ` (${detail})` : ""}`);
+  // Errors may be on stdout, including error JSON with exit code 0.
+  const failure = parseCliFailure(provider, result);
+  if (failure) {
+    if (failure.kind === "auth") setVerified(provider, "unauthenticated");
+    throw await cliError(provider, failure);
   }
+  clearLimit(provider);
 
   // 3) 답 꺼내기 (CLI마다 출력 형식이 다르다)
   if (provider === "claude") {
     // 스트림의 마지막 "result" 이벤트가 일반 JSON 출력과 같은 모양이다.
-    const last = result.stdout.trim().split(/\r?\n/).reverse().find(line => line.includes('"type":"result"')) ?? result.stdout;
+    const last = result.stdout.trim().split(/\r?\n/).reverse().find(line => /"type"\s*:\s*"result"/.test(line)) ?? result.stdout;
     const parsed = JSON.parse(last) as { result?: string; is_error?: boolean };
     if (parsed.is_error || typeof parsed.result !== "string") throw new Error("Claude returned no answer.");
     return { answer: parsed.result, usage: parseUsage(provider, parsed) };

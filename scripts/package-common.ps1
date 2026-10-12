@@ -176,9 +176,20 @@ function Save-TeamInfo([string]$File, [string]$DataDir) {
   try { $team = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Write-Host 'team.json을 읽지 못해 건너뜁니다.'; return }
   $email = if ($team.PSObject.Properties['adminEmail']) { [string]$team.adminEmail } else { '' }
   if ($email -notmatch '^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$') { Write-Host 'team.json의 관리자 메일 형식이 맞지 않아 건너뜁니다.'; return }
+  $saved = @{ adminEmail = $email }
+  if ($team.PSObject.Properties['releaseManifestId'] -and [string]$team.releaseManifestId -match '^[\w-]{10,200}$') { $saved.releaseManifestId = [string]$team.releaseManifestId }
+  if ($team.PSObject.Properties['githubRepo'] -and $team.githubRepo) {
+    if ([string]$team.githubRepo -notmatch '^[a-z\d][a-z\d-]{0,38}/[a-z\d_.-]{1,100}$' -or ([string]$team.githubRepo).Split('/')[1] -in @('.', '..')) { throw 'GitHub 배포 저장소 형식 오류' }
+    $saved.githubRepo = [string]$team.githubRepo
+  }
+  if ($team.PSObject.Properties['ingestUrl'] -and $team.ingestUrl) {
+    if ([string]$team.ingestUrl -notmatch '^https://script\.google\.com/macros/s/[\w-]{20,200}/exec$') { throw '자동 수신 URL 형식 오류' }
+    $saved.ingestUrl = [string]$team.ingestUrl
+  }
   New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
-  [IO.File]::WriteAllText((Join-Path $DataDir 'team.json'), ([pscustomobject]@{ adminEmail = $email } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
-  Write-Host "Civil 3D를 켜면 구글 드라이브에 보내기 폴더를 만듭니다. 그 폴더를 관리자($email)와 공유하세요(팔레트 /중앙 에 방법이 나옵니다)."
+  [IO.File]::WriteAllText((Join-Path $DataDir 'team.json'), ([pscustomobject]$saved | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+  if ($saved.ContainsKey('ingestUrl')) { Write-Host "관리자 자동 수신 연결을 설정했습니다. 사용자 Drive 설정은 필요 없습니다." }
+  else { Write-Host "기존 Drive 폴더 방식입니다. 사용자 보내기 폴더를 관리자($email)와 공유하세요." }
 }
 
 # ── 설치 폴더 정리: 끊긴 설치가 남긴 작업 폴더와 쌓인 이전 버전 백업(각 120MB 남짓)

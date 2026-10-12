@@ -31,10 +31,12 @@ try {
   $arguments = @{ Archive = $Archive; DataDir = $DataDir }
   if ($DestinationRoot) { $arguments.DestinationRoot = $DestinationRoot }
   if ($SkipRunningCheck) { $arguments.SkipRunningCheck = $true }
-  $output = & (Join-Path $PSScriptRoot 'install.ps1') @arguments 6>&1 2>&1 | ForEach-Object { "$_" }
+  $script = if ([IO.Path]::GetExtension($Archive) -eq '.exe') { 'install-exe.ps1' } else { 'install.ps1' }
+  $output = & (Join-Path $PSScriptRoot $script) @arguments 6>&1 2>&1 | ForEach-Object { "$_" }
   $output | ForEach-Object { Write-Log "  $_" }
   Write-Log "업데이트 $Version 완료."
   Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath ($Archive + '.json') -Force -ErrorAction SilentlyContinue
 } catch {
   Write-Log "업데이트 $Version 실패: $($_.Exception.Message)"
   exit 1

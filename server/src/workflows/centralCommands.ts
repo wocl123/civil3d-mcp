@@ -17,8 +17,10 @@
 
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { writeAtomic } from "../files.js";
+import { readFile } from "node:fs/promises";
 import { install } from "../data/install.js";
-import { driveSettings, loadSettings, saveSettings, validEmail, type DriveSettings } from "../data/settings.js";
+import { driveSettings, loadTeam, loadSettings, saveSettings, validEmail, type DriveSettings } from "../data/settings.js";
 import { PARAMETERS, isParameterKey, parameterSummary } from "../knowledge/parameters.js";
 import { adminDir, driveFileId, loadAdminConfig, saveAdminConfig } from "../admin/adminConfig.js";
 import { adminStore } from "../admin/adminStore.js";
@@ -77,6 +79,10 @@ async function central(rest: string, conversation?: string): Promise<string> {
     const email = args[0];
     if (email && !validEmail(email)) return "형식: /중앙 신청 [관리자 메일]\n예: /중앙 신청 admin@gmail.com";
     const drive = await updateDrive(item => { item.enabled = true; item.admin = false; if (email) item.adminEmail = email; });
+    if ((await loadTeam())?.ingestUrl) {
+      const result = await runSync();
+      return result.error ? `자동 연결 재시도 중: ${result.error}` : "관리자 자동 수신에 연결했습니다. Google Drive 설정이나 폴더 공유는 필요 없습니다.";
+    }
     const root = findDriveRoot(drive.root);
     if (!root) return `${NO_DRIVE}\n설치하고 로그인한 뒤 /중앙 신청 을 다시 입력하세요.`;
     const folder = await ensureMemberFolder(root, (await install()).installId);
@@ -86,6 +92,7 @@ async function central(rest: string, conversation?: string): Promise<string> {
 
   // ── 드라이브 위치
   if (command === "드라이브") {
+    if ((await loadTeam())?.ingestUrl && process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") return "관리자 자동 수신을 사용 중입니다. 사용자 Drive 경로 설정은 필요 없습니다.";
     const path = args.join(" ");
     if (!path) return "형식: /중앙 드라이브 <내 드라이브 폴더 경로> 또는 /중앙 드라이브 자동\n예: /중앙 드라이브 G:\\내 드라이브";
     if (path === "자동") {
@@ -100,6 +107,8 @@ async function central(rest: string, conversation?: string): Promise<string> {
   }
 
   // ── 관리자
+  if (["관리자", "사용자", "배포"].includes(command) && process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1")
+    return "관리자는 관리자실행.bat에서 사용자·지식을 관리하고, 배포하기.bat에서 GitHub Release로 배포합니다.";
   if (command === "관리자") {
     const drive = await updateDrive(item => { item.enabled = true; item.admin = true; });
     const root = findDriveRoot(drive.root);
@@ -147,12 +156,12 @@ async function central(rest: string, conversation?: string): Promise<string> {
   return unknown();
 }
 
-const unknown = () => "알 수 없는 명령입니다. /중앙, /중앙 신청, /중앙 드라이브, /중앙 끊기, /중앙 켜기, /중앙 동기화 (관리자: /중앙 관리자, /중앙 사용자, /중앙 배포)를 쓸 수 있습니다.";
+const unknown = () => "알 수 없는 명령입니다. /중앙, /중앙 신청, /중앙 드라이브, /중앙 끊기, /중앙 켜기, /중앙 동기화를 쓸 수 있습니다. 관리자: 관리자실행.bat, 배포하기.bat.";
 const when = (iso?: string) => iso ? new Date(iso).toLocaleString("ko-KR") : "없음";
 
 // /중앙 : 연결 상태.
 async function statusText(): Promise<string> {
-  const [drive, { installId }, { state, pending, blocked }] = await Promise.all([driveSettings(), install(), syncStatus()]);
+  const [drive, { installId }, { state, pending, blocked }, team] = await Promise.all([driveSettings(), install(), syncStatus(), loadTeam()]);
   const footer = [
     "",
     "보내는 것: 질문과 답, 도구 입력, 도면 변경 내용(적용·되돌림), 👎 의견, 시간·토큰·실패 종류, 사람이 AI 값을 고쳤는지, 지식 후보, 프로그램 버전.",
@@ -164,6 +173,13 @@ async function statusText(): Promise<string> {
     `- 마지막 보냄 ${when(state.lastPush)}, 마지막 받음 ${when(state.lastPull)}, 중앙 지식 v${state.officialVersion ?? 0}`,
     ...(state.lastError ? [`- 마지막 문제: ${state.lastError}`] : [])
   ];
+  if (team?.ingestUrl && !drive?.admin) return [
+    "### 관리자 자동 수신",
+    `- 전송: ${drive?.enabled ? "켜짐" : "멈춤"}`,
+    `- 수신 연결: ${state.lastPull ? "확인됨" : "자동 등록/연결 대기"}`,
+    "- Google Drive 로그인·폴더 공유·경로 설정은 필요 없습니다.",
+    ...common, ...footer
+  ].join("\n");
   if (!drive) return ["### 구글 드라이브 연결", "- 연결 안 함 — /중앙 신청 <관리자 메일> 로 시작하세요.", ...common, ...footer].join("\n");
 
   if (drive.admin) {
@@ -218,8 +234,8 @@ async function members(args: string[], conversation: string | undefined, drive: 
       `### 사용자 ${rows.length}명`,
       ...(lines.length ? lines : ["아직 없습니다."]),
       "",
-      "누구의 폴더인지는 구글 드라이브에서 폴더 소유자로 보입니다.",
-      "새 사용자 받기: 공유 알림 메일 → drive.google.com 공유 문서함 → 폴더 우클릭 → 정리 → 바로가기 추가 → 내 드라이브",
+      "자동 수신 사용자는 설치ID로 등록됩니다. 실제 사용자 신원은 수집하지 않습니다.",
+      "웹 수신 설치는 자동 등록됩니다. 구버전 폴더 방식만 공유받은 폴더의 바로가기를 추가하세요.",
       "모르는 폴더면: /중앙 사용자 <번호> 차단 (그리고 드라이브에서 바로가기 삭제)"
     ].join("\n");
   }
@@ -230,10 +246,16 @@ async function members(args: string[], conversation: string | undefined, drive: 
   if (!ids) return "먼저 /중앙 사용자 로 목록을 보세요.";
   const row = store.members[ids[Number(match[1]) - 1] ?? ""];
   if (!row) return `${match[1]}번이 목록에 없습니다.`;
+  const root = findDriveRoot(drive.root);
+  const folder = root ? (await findMemberFolders(root)).find(item => item.installId === row.installId) : undefined;
+  const descriptor = folder ? JSON.parse(await readFile(join(folder.path, "member.json"), "utf8")) : undefined;
+  if (descriptor?.transport === "web") {
+    await writeAtomic(join(folder!.path, "admin", "control.json"), JSON.stringify({ blocked: action === "차단" }));
+  }
   if (action === "차단") row.blocked = true; else delete row.blocked;
   store.saveMembers();
   return action === "차단"
-    ? `${row.folder}: 차단했습니다. 이 폴더에서는 더 가져오지 않고 아무것도 넣어 주지 않습니다. 드라이브에서 바로가기도 지우세요.`
+    ? `${row.folder}: 차단했습니다. 웹 수신 사용자는 Drive 동기화 후 추가 전송도 거절됩니다.`
     : `${row.folder}: 차단을 풀었습니다.`;
 }
 
@@ -257,7 +279,7 @@ async function releases(args: string[]): Promise<string> {
         ...list.map(item => `- 받아 둠: ${item.version} · ${(item.size / 1048576).toFixed(1)} MB${item.tag ? ` · ${item.tag}` : ""}`),
         `- 공유 링크: ${config.downloadId ? "정함 (사용자 폴더에는 설치 파일을 넣지 않음)" : "없음 (사용자 폴더마다 설치 파일을 넣음)"}`,
         "",
-        "새 버전 배포: 새버전내기.bat → GitHub 빌드가 끝나면 /중앙 배포 <버전> (예: /중앙 배포 0.1.3)",
+        "새 버전 배포: 배포하기.bat → 로컬 빌드·서명 → GitHub Release 게시",
         "사용자 PC는 6시간 안에(또는 Civil 3D를 다시 켤 때) 받아 두었다가 Civil 3D를 끄면 설치합니다.",
         ...(config.downloadId ? [] : ["", linkSteps()])
       ].join("\n");
@@ -289,7 +311,7 @@ async function releases(args: string[]): Promise<string> {
     }
     const version = args[0].replace(/^v/, "");
     const required = args[1] === "필수";
-    const release = readRelease(version) ?? await fetchRelease(config.githubRepo, version);
+    const release = readRelease(version) ?? await fetchRelease("", version);
     publish(version, required ? version : undefined);
     const result = await runSync();
     return [
@@ -322,8 +344,8 @@ const parameterLabel = (parameter?: { key: string; value: number }) =>
   parameter && isParameterKey(parameter.key) ? `${PARAMETERS[parameter.key].label} = ${parameter.value}` : undefined;
 
 // 관리자 PC인지.
-const isAdmin = async () => (await driveSettings())?.admin === true;
-const NOT_ADMIN = "관리자 PC가 아닙니다. 관리자라면 /중앙 관리자 를 먼저 입력하세요.";
+const isAdmin = async () => process.env.MY_CIVIL3D_ADMIN_CONSOLE === "1" && (await driveSettings())?.admin === true;
+const NOT_ADMIN = "관리자 기능은 관리자실행.bat에서 사용하세요.";
 
 // /검토 : 후보 묶음과 통계 제안을 번호와 함께.
 async function reviewList(conversation?: string): Promise<string> {

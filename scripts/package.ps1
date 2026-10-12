@@ -1,5 +1,7 @@
 ﻿# -NuGetAutodesk: Civil 3D가 없는 PC·CI에서 Autodesk 공식 참조 패키지(NuGet)로 플러그인을 빌드한다.
 param([string]$AcadDir = 'C:\Program Files\Autodesk\AutoCAD 2025', [string]$NodeArchive, [switch]$NuGetAutodesk, [switch]$RequireSignature)
+$ErrorActionPreference = 'Stop'
+if ($env:MY_CIVIL3D_INGEST_URL -and $env:MY_CIVIL3D_INGEST_URL -notmatch '^https://script\.google\.com/macros/s/[\w-]{20,200}/exec$') { throw '자동 수신 URL 형식 오류' }
 . (Join-Path $PSScriptRoot 'package-common.ps1')
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $config = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'node-runtime.json') -Raw | ConvertFrom-Json
@@ -41,7 +43,8 @@ try {
   try {
     Run $node @($npm,'ci','--no-audit','--no-fund')
     Run $node @($npm,'run','build')
-    foreach ($test in @('smoke','design-regression','tool-contract','safety-regression','delete-scenario','edit-scenario','reconnect-scenario','service-smoke','service-lifetime','memory-smoke','knowledge-smoke','usage-smoke','cli-missing-scenario','drive-e2e')) {
+    Run $node @((Join-Path $repo 'scripts/build-ingest.mjs'))
+    foreach ($test in @('smoke','design-regression','tool-contract','safety-regression','delete-scenario','edit-scenario','reconnect-scenario','service-smoke','service-lifetime','memory-smoke','knowledge-smoke','usage-smoke','ai-failure','cli-missing-scenario','drive-e2e','drive-release','drive-folder','github-release','ingest-e2e','ingest-install')) {
       Run $node @("scripts/$test.mjs")
     }
   } finally { Pop-Location }
@@ -81,13 +84,13 @@ try {
   # 구글 드라이브에 보내기 폴더를 만들고, 그 폴더를 이 메일과 공유하라고 안내한다(공유 = 가입 신청).
   if ($env:MY_CIVIL3D_ADMIN_EMAIL) {
     if ($env:MY_CIVIL3D_ADMIN_EMAIL -notmatch '^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$') { throw 'ADMIN_EMAIL 형식이 맞지 않습니다.' }
-    [IO.File]::WriteAllText((Join-Path $release 'team.json'), ([pscustomobject]@{ adminEmail = $env:MY_CIVIL3D_ADMIN_EMAIL } | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+    [IO.File]::WriteAllText((Join-Path $release 'team.json'), ([pscustomobject]@{ adminEmail = $env:MY_CIVIL3D_ADMIN_EMAIL; releaseManifestId = $env:MY_CIVIL3D_RELEASE_MANIFEST_ID; githubRepo = $env:MY_CIVIL3D_GITHUB_REPO; ingestUrl = $env:MY_CIVIL3D_INGEST_URL } | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
     Write-Host "관리자 메일을 넣었습니다: $($env:MY_CIVIL3D_ADMIN_EMAIL)"
   } else { Write-Host '알림: 관리자 메일(ADMIN_EMAIL)이 없어 team.json 없이 만듭니다(설치 후 /중앙 신청 <관리자 메일> 필요).' }
   # 자동 업데이트 도우미: 설치된 번들이 다음 버전을 설치할 때 쓰는 스크립트와 공개 키(서명 대상에 포함된다).
   $installer = Join-Path $contents 'installer'
   New-Item -ItemType Directory -Path $installer -Force | Out-Null
-  foreach ($name in @('install.ps1','package-common.ps1','release-public-key.xml','update.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $installer }
+  foreach ($name in @('install.ps1','package-common.ps1','release-public-key.xml','update.ps1','install-exe.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $installer }
   Write-BundleManifest $bundle
   # 서명: 비밀 키(MY_CIVIL3D_SIGNING_KEY 또는 _FILE)가 있으면 manifest에 서명한다. 없으면 개발용(설치 프로그램이 거절).
   $signing = [bool]($env:MY_CIVIL3D_SIGNING_KEY -or $env:MY_CIVIL3D_SIGNING_KEY_FILE)
@@ -123,5 +126,12 @@ try {
   ((Get-FileHash -LiteralPath $finalZip -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($finalZip)) | Set-Content -LiteralPath ($finalZip + '.sha256') -Encoding ASCII
   # zip 전체 서명(.sig): 중앙 서버가 받을 때 확인한다.
   if ($signing) { Run $node @((Join-Path $PSScriptRoot 'release-signing.mjs'),'sign-file',$finalZip) }
+  $finalExe = Join-Path $dist "MyCivil3DMcp-$($package.version)-win-x64.exe"
+  & (Join-Path $PSScriptRoot 'build-installer.ps1') -Archive $finalZip -Output $finalExe
+  if ($signing) { Run $node @((Join-Path $PSScriptRoot 'release-signing.mjs'),'sign-file',$finalExe) }
+  Run $node @((Join-Path $repo 'server/scripts/installer-exe.mjs'),$finalExe)
+  if ($signing -and $env:MY_CIVIL3D_GITHUB_REPO) { Run $node @((Join-Path $repo 'server/scripts/github-publish.mjs'),$finalExe) }
+  if ($signing -and $env:MY_CIVIL3D_RELEASE_MANIFEST_ID) { Run $node @((Join-Path $repo 'server/scripts/drive-publish.mjs'),$finalExe) }
+  Write-Host "설치 EXE 생성 완료: $finalExe"
   Write-Host "패키지 생성 완료: $finalZip ($([Math]::Round((Get-Item -LiteralPath $finalZip).Length / 1MB,1)) MB)"
 } finally { Remove-OwnedDirectory $work $workRoot }

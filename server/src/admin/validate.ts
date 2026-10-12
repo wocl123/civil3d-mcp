@@ -6,6 +6,7 @@ import { validParameter } from "../knowledge/parameters.js";
 
 // [찾는 모양, 이유] (설치 쪽 server/src/sync/privacy.ts 와 같은 규칙)
 const PATTERNS: [RegExp, string][] = [
+  [/\b(sk|pk|ghp|gho)[-_][A-Za-z\d]{16,}/, "키 형태의 문자열"],
   [/[A-Za-z]:[\\/]/, "드라이브 경로"],
   [/\\\\[\w.-]+\\/, "네트워크 경로"],
   [/[\w.+-]+@[\w-]+\.[\w.-]+/, "메일 주소"],

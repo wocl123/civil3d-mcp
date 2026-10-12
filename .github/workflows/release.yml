@@ -1,71 +1,23 @@
-# 배포 파이프라인: 패키지를 만들고(전체 테스트 포함), 태그면 GitHub Release에 올린다.
-#   - 태그 v<버전> (예: v0.2.0): 빌드·서명 → 태그와 server/package.json 버전 확인 → Release에 zip, .sha256, .sig 게시
-#   - ci/** 브랜치 push, 수동 실행: 빌드와 검사만 하고, 결과는 Actions 산출물로 남긴다(게시 안 함)
-# Civil 3D가 없는 GitHub 러너에서는 Autodesk 공식 참조 패키지(NuGet)로 플러그인을 빌드한다(-NuGetAutodesk).
-name: release
-
+# Optional build verification. Signed binary releases are published from 배포하기.bat to the public release-only repository.
+name: package-check
 on:
-  push:
-    tags: ['v*']
-    branches: ['ci/**']
   workflow_dispatch:
-
 permissions:
-  contents: write   # Release 게시
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
+  contents: read
 jobs:
   package:
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-
-      # 동봉할 Node 원본(약 35MB)을 버전별로 보관한다. 해시는 package.ps1이 검사한다.
-      - uses: actions/cache@v4
-        with:
-          path: .package-cache
-          key: node-runtime-${{ hashFiles('scripts/node-runtime.json') }}
-
-      - name: Check tag matches version
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
+      - name: Build and verify development package
+        shell: powershell
         run: |
-          $version = (Get-Content server/package.json -Raw | ConvertFrom-Json).version
-          if ("v$version" -ne '${{ github.ref_name }}') { throw "태그 ${{ github.ref_name }} 와 server/package.json 버전 $version 이 다릅니다." }
-
-      # 서명 비밀 키는 저장소 Secret RELEASE_SIGNING_KEY 에만 있다. 태그 빌드는 서명이 없으면 실패한다.
-      - name: Build package (tests included)
-        shell: pwsh
-        env:
-          MY_CIVIL3D_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
-          # 관리자 메일(비밀 아님, 저장소 Variables ADMIN_EMAIL). 있으면 zip에 team.json을 넣는다(구글 드라이브 공유 안내).
-          MY_CIVIL3D_ADMIN_EMAIL: ${{ vars.ADMIN_EMAIL }}
-        run: |
-          $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/package.ps1', '-NuGetAutodesk')
-          if ('${{ github.ref }}'.StartsWith('refs/tags/v')) { $arguments += '-RequireSignature' }
-          & powershell @arguments
+          & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1 -NuGetAutodesk
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MyCivil3DMcp-package
-          path: |
-            dist/*.zip
-            dist/*.sha256
-            dist/*.sig
-          retention-days: 14
-
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create '${{ github.ref_name }}' (Get-ChildItem dist -Include *.zip,*.sha256,*.sig -File -Recurse).FullName --title '${{ github.ref_name }}' --generate-notes

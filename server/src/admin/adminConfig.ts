@@ -11,11 +11,10 @@ export type AdminConfig = {
   minCases: number;      // 설정값 제안에 필요한 수정 건수
   minShare: number;      // 해당 수정 중 같은 방향인 비율
   reportDays: number;    // /검토 보고 기간(일)
-  githubRepo: string;    // 배포본을 받을 GitHub 저장소 "owner/repo" (/중앙 배포, gh CLI)
   downloadId?: string;   // 공용 배포 파일(MyCivil3DMcp-release/…latest….zip)의 구글 드라이브 파일 ID(/중앙 배포 링크). 링크 공유: 보기
 };
 
-const DEFAULTS: AdminConfig = { schema: 1, minInstalls: 2, minCases: 5, minShare: 0.8, reportDays: 30, githubRepo: "wocl123/civil3d-mcp" };
+const DEFAULTS: AdminConfig = { schema: 1, minInstalls: 2, minCases: 5, minShare: 0.8, reportDays: 30 };
 
 export const adminDir = () => join(dataDir(), "admin");
 

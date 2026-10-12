@@ -8,7 +8,8 @@
 // 1분마다(가벼운 확인): 관리자 PC면 새 사용자 폴더 수(팔레트 아래 줄에 표시).
 
 import { readdir } from "node:fs/promises";
-import { driveSettings } from "../data/settings.js";
+import { webMemberSync } from "../ingest/memberSync.js";
+import { driveSettings, loadTeam } from "../data/settings.js";
 import { adminSync, newMemberCount } from "../admin/adminSync.js";
 import { memberSync } from "../drive/memberSync.js";
 import { checkTracked } from "../tracking/tracker.js";
@@ -80,7 +81,7 @@ async function syncOnce(): Promise<SyncResult> {
 
   // 1) 수정 추적
   try {
-    result.tracked = await checkTracked(await currentDrawingScope());
+    if (process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") result.tracked = await checkTracked(await currentDrawingScope());
   } catch (error) {
     process.stderr.write(`MyCivil3DMcp tracking check failed: ${String(error)}\n`);
   }
@@ -94,11 +95,15 @@ async function syncOnce(): Promise<SyncResult> {
 
   // 3) 구글 드라이브
   const drive = await driveSettings();
+  const team = await loadTeam();
   if (!drive?.enabled) return result;
   try {
     if (drive.admin) {
+      if (process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") throw new Error("관리자 수집은 관리자실행.bat에서 실행하세요.");
       const done = await adminSync(drive, state);
       Object.assign(result, { sent: done.sent, candidates: done.candidates, official: done.official, members: done.members, linkFailures: done.linkFailures, problems: done.problems });
+    } else if (team?.ingestUrl) {
+      Object.assign(result, await webMemberSync(team.ingestUrl, state));
     } else {
       Object.assign(result, await memberSync(drive, state));
     }
@@ -108,8 +113,11 @@ async function syncOnce(): Promise<SyncResult> {
     result.error = state.lastError;
   }
 
-  state.sentPackages = (state.sentPackages ?? 0) + result.sent;
-  state.sentCandidates = (state.sentCandidates ?? 0) + result.candidates;
+  // Web transport persists each confirmed receipt itself, including partial successes.
+  if (drive.admin || !team?.ingestUrl) {
+    state.sentPackages = (state.sentPackages ?? 0) + result.sent;
+    state.sentCandidates = (state.sentCandidates ?? 0) + result.candidates;
+  }
   await saveState(state);
   return result;
 }

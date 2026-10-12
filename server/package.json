@@ -1,6 +1,6 @@
 {
   "name": "my-civil3d-mcp-server",
-  "version": "0.1.3",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "engines": {
@@ -18,7 +18,9 @@
     "law:fetch": "npm run build && node scripts/law-fetch.mjs",
     "test:design": "npm run build && node scripts/design-regression.mjs",
     "test:tools": "npm run build && node scripts/tool-contract.mjs",
-    "test:drive": "npm run build && node scripts/drive-e2e.mjs",
+    "test:drive": "npm run build && node scripts/drive-e2e.mjs && node scripts/drive-release.mjs && node scripts/drive-folder.mjs",
+    "test:github": "npm run build && node scripts/github-release.mjs",
+    "test:ingest": "npm run build && node ../scripts/build-ingest.mjs && node scripts/ingest-e2e.mjs && node scripts/ingest-install.mjs",
     "smoke:cli": "npm run build && node scripts/cli-smoke.mjs && node scripts/cli-missing-scenario.mjs",
     "test:safety": "npm run build && node scripts/safety-regression.mjs",
     "test:delete": "npm run build && node scripts/delete-scenario.mjs",

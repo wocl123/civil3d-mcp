@@ -3,6 +3,8 @@
 //   Codex:  codex app-server 에 JSON-RPC로 account/rateLimits/read 요청
 //   Gemini: 조회 방법이 없음
 
+import { observedQuota } from "./cliFailure.js";
+import { locateCli, cliPath } from "./cliLocator.js";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -67,7 +69,7 @@ export function parseClaudeQuota(value: unknown, now = Date.now()): QuotaInfo {
   const fresh = typeof capturedAt === "number" && Number.isFinite(capturedAt) &&
     capturedAt <= now && now - capturedAt <= 60 * 60 * 1000;
   if (fresh && snapshot) {
-    for (const [key, label] of [["five_hour", "5h"], ["seven_day", "7d"]] as const) {
+    for (const [key, label] of [["five_hour", "5시간"], ["seven_day", "7일"]] as const) {
       const window = snapshot.rate_limits[key];
       if (!window) continue;
       windows.push({
@@ -164,6 +166,17 @@ async function queryClaudeQuota(): Promise<QuotaInfo> {
   });
 }
 
+// Recent recorded quota can enrich a CLI denial without another network request.
+export async function cachedQuota(provider: Provider): Promise<QuotaInfo | undefined> {
+  if (provider !== "claude") return undefined;
+  try {
+    const recorded = JSON.parse(await readFile(claudeQuotaFile, "utf8"));
+    const snapshot = parseClaudeQuota(recorded);
+    if (Date.now() - recorded.capturedAt <= 15 * 60000 && snapshot.status === "available") return snapshot;
+  } catch { /* No fresh status-line snapshot. */ }
+  return claudeCache && Date.now() - claudeCache.at < 45000 ? claudeCache.quota : undefined;
+}
+
 // Claude: SDK 조회 → 실패하면 상태줄 기록 → 그것도 없으면 "조회 못 함".
 async function readClaudeQuota(forceRefresh: boolean): Promise<QuotaInfo> {
   if (!forceRefresh && claudeCache && Date.now() - claudeCache.at < 45000) return claudeCache.quota;
@@ -199,10 +212,16 @@ async function readClaudeQuota(forceRefresh: boolean): Promise<QuotaInfo> {
 // Codex: app-server 를 띄워 초기화 → 한도 요청 (최대 20초).
 async function readCodexQuota(): Promise<QuotaInfo> {
   const windows = process.platform === "win32";
+  const location = await locateCli("codex");
+  const env = { ...process.env, CI: "1" };
+  if (location) {
+    for (const key of Object.keys(env)) if (/^path$/i.test(key)) delete env[key as keyof typeof env];
+    Object.assign(env, { [windows ? "Path" : "PATH"]: await cliPath("codex", location) });
+  }
   const child = spawn(
     windows ? "cmd.exe" : "codex",
     windows ? ["/d", "/s", "/c", "codex", "app-server", "--listen", "stdio://"] : ["app-server", "--listen", "stdio://"],
-    { cwd: tmpdir(), env: { ...process.env, CI: "1" }, windowsHide: true, stdio: ["pipe", "pipe", "ignore"] }
+    { cwd: tmpdir(), env, windowsHide: true, stdio: ["pipe", "pipe", "ignore"] }
   );
   child.stdin.on("error", () => { /* 읽기 전에 끝날 수 있다. */ });
   const lines = createInterface({ input: child.stdout });
@@ -254,6 +273,8 @@ async function readCodexQuota(): Promise<QuotaInfo> {
 }
 
 export async function getQuota(provider: Provider, forceRefresh = false): Promise<QuotaInfo> {
+  const observed = observedQuota(provider);
+  if (observed && !forceRefresh) return observed;
   if (provider === "claude") return await readClaudeQuota(forceRefresh);
   if (provider === "gemini") {
     return {

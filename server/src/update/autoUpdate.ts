@@ -11,16 +11,18 @@
 // 개발 폴더에서 돌거나(버전 dev) 드라이브를 쓰지 않는 PC는 아무것도 하지 않는다.
 // 팔레트는 /api/version 으로 상태를 받아 아래 줄에 작게 보여 준다.
 
-import { createHash } from "node:crypto";
+import { createHash, verify } from "node:crypto";
 import { spawn } from "node:child_process";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { driveSettings, type DriveSettings } from "../data/settings.js";
+import { driveSettings, loadTeam, type DriveSettings } from "../data/settings.js";
 import { install } from "../data/install.js";
 import { current, releaseFile } from "../admin/releases.js";
-import { downloadUrl, findDriveRoot, memberFolderName, STATUS_FILE } from "../drive/driveFolders.js";
+import { findDriveRoot, memberFolderName, STATUS_FILE } from "../drive/driveFolders.js";
 import { writeAtomic } from "../files.js";
+import { readDriveRelease, downloadDriveFile, trustedReleaseKey } from "./driveRelease.js";
+import { readGitHubRelease, downloadGitHubAsset } from "./githubRelease.js";
 import { dataDir } from "../paths.js";
 import { bundleContents, isRelease, productVersion } from "../version.js";
 
@@ -57,7 +59,7 @@ export function checkForUpdate(): Promise<UpdateState> {
 async function check(): Promise<UpdateState> {
   if (!isRelease) return state = { current: productVersion, state: "dev" };
   const drive = await driveSettings();
-  if (!drive?.enabled) return state = { current: productVersion, state: "offline" };
+  if (!(await loadTeam())?.githubRepo && !(await loadTeam())?.releaseManifestId && !drive?.enabled) return state = { current: productVersion, state: "offline" };
   try {
     const release = await publishedRelease(drive);
     if (!release) return state = { current: productVersion, state: "offline" };
@@ -68,15 +70,15 @@ async function check(): Promise<UpdateState> {
 
     // 복사: 이미 받아 둔 파일이 맞으면 다시 받지 않는다(드라이브 파일은 여기서 내려받아진다)
     await mkdir(updatesDir(), { recursive: true });
-    const zip = join(updatesDir(), `MyCivil3DMcp-${release.version}-win-x64.zip`);
+    const zip = join(updatesDir(), release.file ?? `MyCivil3DMcp-${release.version}-win-x64.zip`);
     const sha = (data: Buffer) => createHash("sha256").update(data).digest("hex");
     const existing = existsSync(zip) ? await readFile(zip) : undefined;
     if (!existing || existing.length !== release.size || sha(existing) !== release.sha256) {
       const local = existsSync(release.path);
-      if (!local && !release.downloadId) throw new Error("배포 파일이 아직 드라이브에 다 내려오지 않았습니다. 다음 확인 때 다시 합니다.");
+      if (!local && !release.downloadId && !release.downloadUrl) throw new Error("배포 파일이 아직 드라이브에 다 내려오지 않았습니다. 다음 확인 때 다시 합니다.");
       let data: Buffer | undefined;
       try {
-        data = local ? await readFile(release.path) : await download(release.downloadId!, release.size);
+        data = local ? await readFile(release.path) : release.downloadUrl ? await downloadGitHubAsset(release.downloadUrl, release.size!) : await download(release.downloadId!, release.size);
       } catch (error) {
         await reportLinkFailure(release);
         throw error;
@@ -87,6 +89,12 @@ async function check(): Promise<UpdateState> {
           : "링크로 받은 설치 파일이 배포 정보와 다릅니다(관리자가 올리는 중이거나 링크가 바뀜). 다음 확인 때 다시 합니다.");
       }
       await writeFile(zip, data);
+    }
+    if (release.signature) {
+      const bytes = await readFile(zip);
+      if (!verify("sha256", bytes, await trustedReleaseKey(), Buffer.from(release.signature, "base64")))
+        throw new Error("설치 EXE 서명이 맞지 않습니다.");
+      await writeAtomic(zip + ".json", JSON.stringify({ size: release.size, sha256: release.sha256, signature: release.signature }));
     }
     await removeOldDownloads(release.version);
 
@@ -101,22 +109,13 @@ async function check(): Promise<UpdateState> {
 }
 
 // 배포 중인 버전과 그 zip 위치(보내기 폴더) 또는 링크(downloadId). 없으면 undefined.
-type Published = { version?: string; sha256?: string; size?: number; minVersion?: string; path: string; downloadId?: string; publishedAt?: string; status?: string };
+type Published = { version?: string; sha256?: string; size?: number; minVersion?: string; path: string; downloadId?: string; publishedAt?: string; status?: string; file?: string; signature?: string; downloadUrl?: string };
 
 const LINK_GRACE_MS = 60 * 60 * 1000;   // 배포 직후에는 공용 파일이 아직 올라가는 중일 수 있다
 
 // 관리자의 공용 배포 파일을 링크로 내려받는다("링크가 있는 모든 사용자" 공유). 크기 이상은 받지 않는다.
 async function download(id: string, size?: number): Promise<Buffer> {
-  let response: Response;
-  try {
-    response = await fetch(downloadUrl(id), { redirect: "follow", signal: AbortSignal.timeout(10 * 60 * 1000) });
-  } catch (error) {
-    throw new Error(`설치 파일을 링크로 받지 못했습니다(${error instanceof Error ? error.message : String(error)}).`);
-  }
-  if (!response.ok) throw new Error(`설치 파일을 링크로 받지 못했습니다(HTTP ${response.status}). 관리자가 링크 공유를 "링크가 있는 모든 사용자"로 했는지 확인하세요.`);
-  const data = Buffer.from(await response.arrayBuffer());
-  if (size && data.length > size * 2) throw new Error("링크로 받은 파일이 너무 큽니다.");
-  return data;
+  return downloadDriveFile(id, size ?? 1024 * 1024 * 1024);
 }
 
 // 링크로 받지 못했다고 보내기 폴더에 알린다(배포하고 1시간이 지난 뒤에만). 관리자 PC가 이 폴더에 zip을 따로 넣어 준다.
@@ -126,7 +125,11 @@ async function reportLinkFailure(release: Published): Promise<void> {
   if (Number.isFinite(published) && Date.now() - published < LINK_GRACE_MS) return;
   await writeAtomic(release.status, JSON.stringify({ linkFailed: release.version, at: new Date().toISOString() }, null, 1)).catch(() => undefined);
 }
-async function publishedRelease(drive: DriveSettings): Promise<Published | undefined> {
+async function publishedRelease(drive: DriveSettings | undefined): Promise<Published | undefined> {
+  const team = await loadTeam();
+  if (team?.githubRepo) { const release = await readGitHubRelease(team.githubRepo); return release && { ...release, path: "" }; }
+  if (team?.releaseManifestId) return { ...await readDriveRelease(team.releaseManifestId), path: "" };
+  if (!drive?.enabled) return undefined;
   if (drive.admin) {
     const live = current();
     return live && { version: live.release.version, sha256: live.release.sha256, size: live.release.size, minVersion: live.minVersion, path: releaseFile(live.release) };
@@ -162,7 +165,7 @@ async function scheduleInstall(zip: string, version: string): Promise<void> {
   const source = process.env.MY_CIVIL3D_INSTALLER_DIR ?? join(bundleContents, "installer");
   const helper = join(updatesDir(), `installer-${productVersion}`);
   await mkdir(helper, { recursive: true });
-  for (const name of ["install.ps1", "package-common.ps1", "release-public-key.xml", "update.ps1"]) {
+  for (const name of ["install.ps1", "package-common.ps1", "release-public-key.xml", "update.ps1", ...(zip.endsWith(".exe") ? ["install-exe.ps1"] : [])]) {
     if (!existsSync(join(source, name))) throw new Error(`업데이트 도우미 파일이 없습니다: ${name}`);
     await copyFile(join(source, name), join(helper, name));
   }

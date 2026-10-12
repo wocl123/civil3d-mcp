@@ -6,12 +6,9 @@
 // GitHub Release에서 받을 때는 zip 전체 서명(.sig)을 공개 키로 확인한다. 설치 프로그램은 번들 안의 서명을 따로 확인한다.
 
 import { createHash, verify } from "node:crypto";
-import { execFile } from "node:child_process";
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { copyFile, mkdtemp } from "node:fs/promises";
+import { copyFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { tmpdir } from "node:os";
-import { promisify } from "node:util";
 import { adminDir } from "./adminConfig.js";
 import { RELEASE_PUBLIC_KEY } from "./releaseKey.js";
 
@@ -111,35 +108,16 @@ export async function addRelease(zip: string, signature: string, expectedSha256:
   return release;
 }
 
-// GitHub Release에서 zip, .sha256, .sig를 받아 확인하고 보관한다. 이 PC의 GitHub CLI(gh) 로그인을 쓴다(비공개 저장소).
-// MY_CIVIL3D_RELEASE_SOURCE: 테스트용. 그 폴더에 있는 세 파일을 GitHub 대신 쓴다.
-export async function fetchRelease(repo: string, version: string): Promise<Release> {
-  if (!VERSION.test(version)) throw new ReleaseError("버전은 0.1.2 처럼 적어 주세요.");
-  const tag = `v${version}`;
+// Legacy ZIP support for migrating installs/tests; production publication uses scripts/drive-publish.mjs.
+export async function fetchRelease(_unused: string, version: string): Promise<Release> {
+  if (!VERSION.test(version)) throw new ReleaseError("버전 형식이 맞지 않습니다.");
+  const source = process.env.MY_CIVIL3D_RELEASE_SOURCE;
+  if (!source) throw new ReleaseError("배포하기.bat에서 Google Drive로 배포하세요.");
   const name = `MyCivil3DMcp-${version}-win-x64.zip`;
-  const work = await mkdtemp(join(tmpdir(), "mycivil3d-release-"));
-  try {
-    const source = process.env.MY_CIVIL3D_RELEASE_SOURCE;
-    if (source) {
-      for (const file of [name, name + ".sha256", name + ".sig"]) await copyFile(join(source, file), join(work, file));
-    } else {
-      try {
-        await promisify(execFile)("gh", ["release", "download", tag, "--repo", repo, "--dir", work,
-          "--pattern", name, "--pattern", name + ".sha256", "--pattern", name + ".sig"], { timeout: 10 * 60 * 1000, windowsHide: true });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new ReleaseError("GitHub CLI(gh)가 없습니다. 설치하고 gh auth login 으로 로그인해 주세요.");
-        const message = String((error as { stderr?: unknown }).stderr || (error as Error).message).trim().slice(0, 300);
-        throw new ReleaseError(`GitHub에서 ${tag}를 받지 못했습니다(${message}). 빌드가 끝났는지, gh auth login 이 되어 있는지 확인하세요.`);
-      }
-    }
-    for (const file of [name, name + ".sha256", name + ".sig"])
-      if (!existsSync(join(work, file))) throw new ReleaseError(`${tag}에 ${file}이(가) 없습니다(서명된 릴리스만 받는다).`);
-    const expected = /^[a-f\d]{64}/i.exec(readFileSync(join(work, name + ".sha256"), "utf8").trim())?.[0];
-    if (!expected) throw new ReleaseError(".sha256 파일 형식이 맞지 않습니다.");
-    return await addRelease(join(work, name), readFileSync(join(work, name + ".sig"), "ascii"), expected, tag);
-  } finally {
-    rmSync(work, { recursive: true, force: true });
-  }
+  const zip = join(source, name);
+  const expected = /^[a-f\d]{64}/i.exec(readFileSync(zip + ".sha256", "utf8").trim())?.[0];
+  if (!expected) throw new ReleaseError(".sha256 파일 형식이 맞지 않습니다.");
+  return addRelease(zip, readFileSync(zip + ".sig", "ascii"), expected, "local");
 }
 
 export const releaseFile = (release: Release) => join(folder(release.version), release.file);

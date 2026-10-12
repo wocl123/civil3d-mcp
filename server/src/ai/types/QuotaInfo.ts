@@ -6,4 +6,5 @@ export type QuotaInfo = {
   windows: QuotaWindow[];
   ordinaryUsageAllowed: boolean | null;   // 지금 일반 사용이 허용되는지(모르면 null)
   message: string;
+  limit?: { resetsAt: string | null; message: string };
 };

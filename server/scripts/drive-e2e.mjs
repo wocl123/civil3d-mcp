@@ -40,12 +40,20 @@ assert.equal(leak('{"tool":"composite_view"}', ['SITE']), undefined, 'Latin term
 assert.ok(leak('{"x":"FAKE-SITE 도면"}', ['FAKE-SITE']), 'a drawing name is caught');
 assert.equal(blank('부산신항에서는 D:\\설계\\a.dwg 기준', ['부산신항']), '<이름>에서는 <경로> 기준', 'Korean terms and paths are blanked');
 
+// Actual standalone administrator, without Civil 3D or a bridge.
+const standalone = join(temporary, 'standalone-admin');
+const standaloneOutput = execFileSync(process.execPath, [join(here, '..', 'build', 'admin', 'console.js'), '--once'], {
+  encoding: 'utf8', env: { ...process.env, MY_CIVIL3D_DATA_DIR: standalone, MY_CIVIL3D_DRIVE_DIR: dirs.drive }
+});
+assert.match(standaloneOutput, /동기화: 사용자 0/);
+assert.equal(JSON.parse(await readFile(join(standalone, 'settings.json'), 'utf8')).drive.admin, true);
+
 let stepFile = 0;
 async function run(dir, steps) {
   const file = join(temporary, `steps-${stepFile++}.json`);
   await writeFile(file, JSON.stringify(steps));
   const output = execFileSync(process.execPath, [join(here, 'fixtures', 'install-agent.mjs'), dir, file], { encoding: 'utf8',
-    env: { ...process.env, MY_CIVIL3D_SYNC: 'off', MY_CIVIL3D_DRIVE_DIR: dirs.drive, MY_CIVIL3D_RELEASE_SOURCE: releases, MY_CIVIL3D_RELEASE_PUBLIC_KEY_FILE: publicKeyFile } });
+    env: { ...process.env, MY_CIVIL3D_ADMIN_CONSOLE: '1', MY_CIVIL3D_SYNC: 'off', MY_CIVIL3D_DRIVE_DIR: dirs.drive, MY_CIVIL3D_RELEASE_SOURCE: releases, MY_CIVIL3D_RELEASE_PUBLIC_KEY_FILE: publicKeyFile } });
   const results = JSON.parse(output);
   const failed = results.find(item => item.error);
   if (failed) throw new Error(failed.error);
@@ -258,7 +266,7 @@ try {
 
   // A non-admin cannot review.
   const [notAdmin] = await run(dirs.b, [{ op: 'command', text: '/검토' }]);
-  assert.match(notAdmin, /관리자 PC가 아닙니다/);
+  assert.match(notAdmin, /관리자 기능은 관리자실행/);
 
   // B receives the approved knowledge and designs with the approved step.
   await mkdir(join(dirs.b, 'logs', '2020-01-01'), { recursive: true });
