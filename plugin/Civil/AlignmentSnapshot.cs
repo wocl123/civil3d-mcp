@@ -23,7 +23,10 @@ internal sealed class AlignmentSnapshot
     public required IReadOnlyList<AlignmentRelated> Related { get; init; }
 
     public static readonly string[] SectionNames =
-        ["curves", "elements", "key_points", "station_equations", "design_speeds", "superelevation", "offset", "related", "design_checks"];
+    [
+        "curves", "elements", "key_points", "station_equations", "design_speeds",
+        "superelevation", "offset", "related", "design_checks"
+    ];
 
     public static AlignmentSnapshot Read(Transaction transaction, Alignment alignment)
     {
@@ -31,7 +34,10 @@ internal sealed class AlignmentSnapshot
         List<string> unavailable = new();
         T? Try<T>(string part, Func<T> read)
         {
-            try { return read(); }
+            try
+            {
+                return read();
+            }
             catch (System.Exception ex)
             {
                 unavailable.Add($"{part}: {ex.Message}");
@@ -41,29 +47,36 @@ internal sealed class AlignmentSnapshot
 
         // ── 구간별로 읽기
         bool checks = alignment.UseDesignCheckSet;
+
         (List<AlignmentElement> elements, List<AlignmentCurve> curves) =
-            Try<(List<AlignmentElement>, List<AlignmentCurve>)?>("elements", () => ReadElements(alignment, checks)) ?? (new(), new());
+            Try<(List<AlignmentElement>, List<AlignmentCurve>)?>("elements", () => ReadElements(alignment, checks))
+            ?? (new(), new());
         List<AlignmentKeyPoint> keyPoints = Try("key_points", () => ReadKeyPoints(alignment)) ?? new();
-        List<AlignmentStationEquation> equations = Try("station_equations", () => alignment.StationEquations
-            .Select(item => new AlignmentStationEquation(Round(item.RawStationBack), Round(item.StationBack),
-                Round(item.StationAhead), item.EquationType.ToString())).ToList()) ?? new();
-        List<AlignmentDesignSpeed> speeds = Try("design_speeds", () => alignment.DesignSpeeds
-            .Select(item => new AlignmentDesignSpeed(Round(item.Station), StationText(alignment, item.Station), Round(item.Value))
-            { Comment = string.IsNullOrWhiteSpace(item.Comment) ? null : item.Comment }).ToList()) ?? new();
+        List<AlignmentStationEquation> equations = Try("station_equations", () => ReadEquations(alignment)) ?? new();
+        List<AlignmentDesignSpeed> speeds = Try("design_speeds", () => ReadDesignSpeeds(alignment)) ?? new();
         List<AlignmentSuperelevationStation> superelevation =
             Try("superelevation", () => ReadSuperelevation(alignment)) ?? new();
-        List<AlignmentOffsetInfo> offset = alignment.IsOffsetAlignment
-            ? Try("offset", () => ReadOffset(transaction, alignment)) is { } info ? [info] : []
-            : [];
-        List<AlignmentRelated> related = Try("related", () => ReadRelated(transaction, alignment)) is { } links ? [links] : [];
+
+        List<AlignmentOffsetInfo> offset = new();
+        if (alignment.IsOffsetAlignment && Try("offset", () => ReadOffset(transaction, alignment)) is { } info)
+        {
+            offset.Add(info);
+        }
+
+        List<AlignmentRelated> related = new();
+        if (Try("related", () => ReadRelated(transaction, alignment)) is { } links)
+        {
+            related.Add(links);
+        }
 
         // ── 개요: 요약, 설정, 구간별 개수
         AlignmentSummary summary = AlignmentQueries.Summarize(transaction, alignment);
         AlignmentSettings settings = new(
-            Round(alignment.ReferencePointStation), Point(alignment.ReferencePoint), Round(alignment.StationIndexIncrement),
-            alignment.SuperelevationType.ToString(), alignment.UseDesignSpeed,
-            alignment.UseDesignCriteriaFile, Blank(alignment.CriteriaFileName),
+            Round(alignment.ReferencePointStation), Point(alignment.ReferencePoint),
+            Round(alignment.StationIndexIncrement), alignment.SuperelevationType.ToString(),
+            alignment.UseDesignSpeed, alignment.UseDesignCriteriaFile, Blank(alignment.CriteriaFileName),
             checks, Blank(alignment.DesignCheckSetName), alignment.IsConnectedAlignment);
+
         int violations = elements.Sum(item => item.DesignViolations?.Count ?? 0);
         Dictionary<string, int> sections = new()
         {
@@ -77,13 +90,23 @@ internal sealed class AlignmentSnapshot
             ["related"] = related.Count,
             ["design_checks"] = violations
         };
-        if (!checks) unavailable.Add("design_checks: the alignment does not use a design check set.");
+
+        if (!checks)
+        {
+            unavailable.Add("design_checks: the alignment does not use a design check set.");
+        }
 
         return new AlignmentSnapshot
         {
             Overview = new AlignmentOverview(summary, settings, sections, unavailable),
-            Elements = elements, Curves = curves, KeyPoints = keyPoints, StationEquations = equations,
-            DesignSpeeds = speeds, Superelevation = superelevation, Offset = offset, Related = related
+            Elements = elements,
+            Curves = curves,
+            KeyPoints = keyPoints,
+            StationEquations = equations,
+            DesignSpeeds = speeds,
+            Superelevation = superelevation,
+            Offset = offset,
+            Related = related
         };
     }
 
@@ -92,6 +115,7 @@ internal sealed class AlignmentSnapshot
     {
         bool Overlaps(double start, double end) => (from is null || end >= from) && (to is null || start <= to);
         bool Within(double station) => (from is null || station >= from) && (to is null || station <= to);
+
         return name switch
         {
             "curves" => Curves.Where(item => Overlaps(item.StartStation, item.EndStation)),
@@ -102,75 +126,121 @@ internal sealed class AlignmentSnapshot
             "superelevation" => Superelevation.Where(item => Within(item.Station)),
             "offset" => Offset,
             "related" => Related,
-            "design_checks" => Elements.Where(item => item.DesignViolations is { Count: > 0 } && Overlaps(item.StartStation, item.EndStation)),
-            _ => throw new ArgumentException($"Unknown section '{name}'. Use one of: {string.Join(", ", SectionNames)}.")
+            "design_checks" => Elements.Where(
+                item => item.DesignViolations is { Count: > 0 } && Overlaps(item.StartStation, item.EndStation)),
+            _ => throw new ArgumentException(
+                $"Unknown section '{name}'. Use one of: {string.Join(", ", SectionNames)}.")
         };
     }
 
     // 요소(직선·원곡선·완화곡선 하나하나)와 곡선(요소를 Civil 3D 엔티티 단위로 묶은 것: 예 SCS 하나).
-    // 곡선에는 최소 반지름, 교각 합, 완화곡선 A(앞·뒤)를 모아 둔다.
     private static (List<AlignmentElement>, List<AlignmentCurve>) ReadElements(Alignment alignment, bool checks)
     {
         List<AlignmentElement> elements = new();
         List<AlignmentCurve> curves = new();
+
         for (int index = 0; index < alignment.Entities.Count; index++)
         {
             AlignmentEntity entity = alignment.Entities.GetEntityByOrder(index);
             string group = entity.EntityType.ToString();
+            bool isLine = entity.EntityType == AlignmentEntityType.Line;
+
+            // 직선은 곡선 번호 0, 곡선 요소는 이번에 만들 곡선의 번호.
+            int curveGroup = isLine ? 0 : curves.Count + 1;
+
             List<AlignmentElement> parts = new();
             for (int part = 0; part < entity.SubEntityCount; part++)
             {
-                AlignmentSubEntity sub = entity[part];
-                parts.Add(Describe(alignment, sub, elements.Count + parts.Count + 1,
-                    entity.EntityType == AlignmentEntityType.Line ? 0 : curves.Count + 1, group, checks));
+                int order = elements.Count + parts.Count + 1;
+                parts.Add(Describe(alignment, entity[part], order, curveGroup, group, checks));
             }
-            elements.AddRange(parts);
-            if (entity.EntityType == AlignmentEntityType.Line || parts.Count == 0) continue;
 
-            double[] radii = parts.Where(item => item.Radius is not null).Select(item => item.Radius!.Value).ToArray();
-            double[] deltas = parts.Where(item => item.DeltaDeg is not null).Select(item => item.DeltaDeg!.Value).ToArray();
-            AlignmentElement[] spirals = parts.Where(item => item.Kind == "Spiral").ToArray();
-            string[] turns = parts.Select(item => item.Turn).OfType<string>().Distinct().ToArray();
-            AlignmentElement first = parts[0], last = parts[^1];
-            curves.Add(new AlignmentCurve(curves.Count + 1, group, first.StartStation, last.EndStation,
-                first.StartStationText, last.EndStationText, Round(parts.Sum(item => item.Length)),
-                turns.Length == 1 ? turns[0] : turns.Length > 1 ? "mixed" : null,
-                radii.Length > 0 ? radii.Min() : null, deltas.Length > 0 ? Round(deltas.Sum()) : null,
-                spirals.FirstOrDefault()?.SpiralA, spirals.Length > 1 ? spirals[^1].SpiralA : null, parts.Count));
+            elements.AddRange(parts);
+
+            if (!isLine && parts.Count > 0)
+            {
+                curves.Add(SummarizeCurve(curves.Count + 1, group, parts));
+            }
         }
+
         return (elements, curves);
+    }
+
+    // 곡선 하나로 묶인 요소들: 최소 반지름, 교각 합, 완화곡선 A(앞·뒤)를 모아 둔다.
+    private static AlignmentCurve SummarizeCurve(int number, string group, List<AlignmentElement> parts)
+    {
+        double[] radii = parts.Where(item => item.Radius is not null).Select(item => item.Radius!.Value).ToArray();
+        double[] deltas = parts.Where(item => item.DeltaDeg is not null).Select(item => item.DeltaDeg!.Value).ToArray();
+        AlignmentElement[] spirals = parts.Where(item => item.Kind == "Spiral").ToArray();
+        string[] turns = parts.Select(item => item.Turn).OfType<string>().Distinct().ToArray();
+
+        string? turn = turns.Length switch
+        {
+            0 => null,
+            1 => turns[0],
+            _ => "mixed"
+        };
+        double? minRadius = radii.Length > 0 ? radii.Min() : null;
+        double? totalDelta = deltas.Length > 0 ? Round(deltas.Sum()) : null;
+        double? spiralInA = spirals.FirstOrDefault()?.SpiralA;
+        double? spiralOutA = spirals.Length > 1 ? spirals[^1].SpiralA : null;
+
+        AlignmentElement first = parts[0];
+        AlignmentElement last = parts[^1];
+        return new AlignmentCurve(
+            number, group, first.StartStation, last.EndStation, first.StartStationText, last.EndStationText,
+            Round(parts.Sum(item => item.Length)), turn, minRadius, totalDelta, spiralInA, spiralOutA, parts.Count);
     }
 
     // 요소 하나: 공통 값 + 종류별 값(직선 방위각, 원곡선 R·교각·접선장 등, 완화곡선 A·K·P 등).
     private static AlignmentElement Describe(Alignment alignment, AlignmentSubEntity sub, int order, int curveGroup,
         string group, bool checks)
     {
-        AlignmentElement element = new(order, curveGroup, sub.SubEntityType.ToString(), group,
-            Round(sub.StartStation), Round(sub.EndStation), StationText(alignment, sub.StartStation),
-            StationText(alignment, sub.EndStation), Round(sub.Length), Point(sub.StartPoint), Point(sub.EndPoint))
+        AlignmentElement element = new(
+            order, curveGroup, sub.SubEntityType.ToString(), group,
+            Round(sub.StartStation), Round(sub.EndStation),
+            StationText(alignment, sub.StartStation), StationText(alignment, sub.EndStation),
+            Round(sub.Length), Point(sub.StartPoint), Point(sub.EndPoint))
         {
             DesignViolations = checks ? Violations(sub) : null
         };
+
         return sub switch
         {
             // 방위각은 양 끝점으로 계산한다: 도북에서 시계 방향 각도(도).
-            AlignmentSubEntityLine line => element with { AzimuthDeg = Azimuth(line.StartPoint, line.EndPoint) },
+            AlignmentSubEntityLine line => element with
+            {
+                AzimuthDeg = Azimuth(line.StartPoint, line.EndPoint)
+            },
             AlignmentSubEntityArc arc => element with
             {
-                Radius = Round(arc.Radius), Turn = arc.Clockwise ? "right" : "left", DeltaDeg = Degrees(arc.Delta),
-                Tangent = Finite(arc.ExternalTangent), External = Finite(arc.ExternalSecant),
-                MidOrdinate = Finite(arc.MidOrdinate), Chord = Finite(arc.ChordLength), Center = Point(arc.CenterPoint),
-                PiPoint = Point(arc.PIPoint), PiStationText = StationText(alignment, arc.PIStation), Reverse = arc.ReverseCurve
+                Radius = Round(arc.Radius),
+                Turn = arc.Clockwise ? "right" : "left",
+                DeltaDeg = Degrees(arc.Delta),
+                Tangent = Finite(arc.ExternalTangent),
+                External = Finite(arc.ExternalSecant),
+                MidOrdinate = Finite(arc.MidOrdinate),
+                Chord = Finite(arc.ChordLength),
+                Center = Point(arc.CenterPoint),
+                PiPoint = Point(arc.PIPoint),
+                PiStationText = StationText(alignment, arc.PIStation),
+                Reverse = arc.ReverseCurve
             },
             AlignmentSubEntitySpiral spiral => element with
             {
-                SpiralA = Finite(spiral.A), RadiusIn = Finite(spiral.RadiusIn), RadiusOut = Finite(spiral.RadiusOut),
+                SpiralA = Finite(spiral.A),
+                RadiusIn = Finite(spiral.RadiusIn),
+                RadiusOut = Finite(spiral.RadiusOut),
                 Turn = spiral.Direction == SpiralDirectionType.DirectionRight ? "right" : "left",
-                DeltaDeg = Degrees(spiral.Delta), SpiralDefinition = spiral.SpiralDefinition.ToString(),
+                DeltaDeg = Degrees(spiral.Delta),
+                SpiralDefinition = spiral.SpiralDefinition.ToString(),
                 SpiralInOut = spiral.CurveType == SpiralCurveType.InCurve ? "in" : "out",
-                SpiralK = Finite(spiral.K), SpiralP = Finite(spiral.P),
-                LongTangent = Finite(spiral.LongTangent), ShortTangent = Finite(spiral.ShortTangent),
-                PiPoint = Point(spiral.SPIPoint), PiStationText = StationText(alignment, spiral.SPIStation)
+                SpiralK = Finite(spiral.K),
+                SpiralP = Finite(spiral.P),
+                LongTangent = Finite(spiral.LongTangent),
+                ShortTangent = Finite(spiral.ShortTangent),
+                PiPoint = Point(spiral.SPIPoint),
+                PiStationText = StationText(alignment, spiral.SPIStation)
             },
             _ => element
         };
@@ -181,12 +251,19 @@ internal sealed class AlignmentSnapshot
     {
         try
         {
-            List<string> failed = sub.DesignChecks().Where(check => !sub.ValidateDesignCheck(check))
-                .Select(check => string.IsNullOrWhiteSpace(check.Description) ? check.Name : $"{check.Name}: {check.Description}")
+            List<string> failed = sub.DesignChecks()
+                .Where(check => !sub.ValidateDesignCheck(check))
+                .Select(check => string.IsNullOrWhiteSpace(check.Description)
+                    ? check.Name
+                    : $"{check.Name}: {check.Description}")
                 .ToList();
+
             return failed.Count > 0 ? failed : null;
         }
-        catch (System.Exception) { return null; }
+        catch (System.Exception)
+        {
+            return null;
+        }
     }
 
     // 주요 측점(기하 점, PI 점)은 Civil 3D에서 받는다. 같은 측점·종류의 중복은 합친다.
@@ -194,21 +271,49 @@ internal sealed class AlignmentSnapshot
     {
         IEnumerable<Station> stations = alignment.GetStationSet(StationTypes.GeometryPoint)
             .Concat(alignment.GetStationSet(StationTypes.PIPoint));
+
         return stations
-            .Select(item => new AlignmentKeyPoint(item.GeometryStationType.ToString(), Round(item.RawStation),
+            .Select(item => new AlignmentKeyPoint(
+                item.GeometryStationType.ToString(), Round(item.RawStation),
                 StationText(alignment, item.RawStation), Point(item.Location)))
-            .GroupBy(item => (item.Type, item.Station)).Select(items => items.First())
-            .OrderBy(item => item.Station).ToList();
+            .GroupBy(item => (item.Type, item.Station))
+            .Select(items => items.First())
+            .OrderBy(item => item.Station)
+            .ToList();
+    }
+
+    private static List<AlignmentStationEquation> ReadEquations(Alignment alignment)
+    {
+        return alignment.StationEquations
+            .Select(item => new AlignmentStationEquation(
+                Round(item.RawStationBack), Round(item.StationBack), Round(item.StationAhead),
+                item.EquationType.ToString()))
+            .ToList();
+    }
+
+    private static List<AlignmentDesignSpeed> ReadDesignSpeeds(Alignment alignment)
+    {
+        return alignment.DesignSpeeds
+            .Select(item => new AlignmentDesignSpeed(
+                Round(item.Station), StationText(alignment, item.Station), Round(item.Value))
+            {
+                Comment = string.IsNullOrWhiteSpace(item.Comment) ? null : item.Comment
+            })
+            .ToList();
     }
 
     // 편경사 임계 측점과 차로별 횡단경사(%).
     private static List<AlignmentSuperelevationStation> ReadSuperelevation(Alignment alignment)
     {
         List<AlignmentSuperelevationStation> stations = new();
+
         foreach (SuperelevationCurve curve in alignment.SuperelevationCurves)
+        {
             foreach (SuperelevationCriticalStation station in curve.CriticalStations)
-                stations.Add(new AlignmentSuperelevationStation(curve.Name, Round(station.Station),
-                    StationText(alignment, station.Station), station.StationType.ToString(), station.TransitionRegionType.ToString())
+            {
+                stations.Add(new AlignmentSuperelevationStation(
+                    curve.Name, Round(station.Station), StationText(alignment, station.Station),
+                    station.StationType.ToString(), station.TransitionRegionType.ToString())
                 {
                     Description = Blank(station.TransitionDescription),
                     LeftOutLanePercent = Slope(station, SuperelevationCrossSegmentType.LeftOutLaneCrossSlope),
@@ -216,6 +321,9 @@ internal sealed class AlignmentSnapshot
                     RightInLanePercent = Slope(station, SuperelevationCrossSegmentType.RightInLaneCrossSlope),
                     RightOutLanePercent = Slope(station, SuperelevationCrossSegmentType.RightOutLaneCrossSlope)
                 });
+            }
+        }
+
         return stations.OrderBy(item => item.Station).ToList();
     }
 
@@ -225,18 +333,33 @@ internal sealed class AlignmentSnapshot
         try
         {
             double value = station.GetSlope(type);
-            return double.IsFinite(value) ? Math.Round(Math.Abs(value) > 1 ? value : value * 100, 3) : null;
+            if (!double.IsFinite(value))
+            {
+                return null;
+            }
+
+            double percent = Math.Abs(value) > 1 ? value : value * 100;
+            return Math.Round(percent, 3);
         }
-        catch (System.Exception) { return null; }
+        catch (System.Exception)
+        {
+            return null;
+        }
     }
 
     // 오프셋 선형이면 부모 선형과 오프셋 거리·방향.
     private static AlignmentOffsetInfo ReadOffset(Transaction transaction, Alignment alignment)
     {
         OffsetAlignmentInfo info = alignment.OffsetAlignmentInfo;
-        Alignment? parent = info.ParentAlignmentId.IsNull ? null
-            : transaction.GetObject(info.ParentAlignmentId, OpenMode.ForRead) as Alignment;
-        return new AlignmentOffsetInfo(parent?.Name, parent?.Handle.ToString(), Round(info.NominalOffset), info.Side.ToString());
+
+        Alignment? parent = null;
+        if (!info.ParentAlignmentId.IsNull)
+        {
+            parent = transaction.GetObject(info.ParentAlignmentId, OpenMode.ForRead) as Alignment;
+        }
+
+        return new AlignmentOffsetInfo(
+            parent?.Name, parent?.Handle.ToString(), Round(info.NominalOffset), info.Side.ToString());
     }
 
     // 관련 객체: 종단, 종단 뷰 수, 샘플 라인 그룹, 자식 오프셋 선형.
@@ -244,36 +367,75 @@ internal sealed class AlignmentSnapshot
     {
         List<ProfileSummary> profiles = new();
         foreach (ObjectId id in alignment.GetProfileIds())
+        {
             if (transaction.GetObject(id, OpenMode.ForRead) is Profile profile)
+            {
                 profiles.Add(AlignmentQueries.SummarizeProfile(alignment, profile));
+            }
+        }
+
         List<string> groups = new();
         foreach (ObjectId id in alignment.GetSampleLineGroupIds())
-            if (transaction.GetObject(id, OpenMode.ForRead) is SampleLineGroup group) groups.Add(group.Name);
+        {
+            if (transaction.GetObject(id, OpenMode.ForRead) is SampleLineGroup group)
+            {
+                groups.Add(group.Name);
+            }
+        }
+
         List<string> children = new();
         foreach (ObjectId id in alignment.GetChildOffsetAlignmentIds())
-            if (transaction.GetObject(id, OpenMode.ForRead) is Alignment child) children.Add(child.Name);
+        {
+            if (transaction.GetObject(id, OpenMode.ForRead) is Alignment child)
+            {
+                children.Add(child.Name);
+            }
+        }
+
         return new AlignmentRelated(profiles, alignment.GetProfileViewIds().Count, groups, children);
     }
 
     // 측점 표기(측점 방정식 반영, 예 "0+120.000"). 못 구하면 숫자 그대로.
     internal static string StationText(Alignment alignment, double station)
     {
-        try { return alignment.GetStationStringWithEquations(station); }
-        catch (System.Exception) { return station.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture); }
+        try
+        {
+            return alignment.GetStationStringWithEquations(station);
+        }
+        catch (System.Exception)
+        {
+            return station.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
+        }
     }
 
     private static double? Azimuth(Point2d start, Point2d end)
     {
-        double dx = end.X - start.X, dy = end.Y - start.Y;
-        if (dx == 0 && dy == 0) return null;
+        double dx = end.X - start.X;
+        double dy = end.Y - start.Y;
+        if (dx == 0 && dy == 0)
+        {
+            return null;
+        }
+
         double degrees = Math.Atan2(dx, dy) * 180 / Math.PI;
-        return Math.Round(degrees < 0 ? degrees + 360 : degrees, 4);
+        if (degrees < 0)
+        {
+            degrees += 360;
+        }
+
+        return Math.Round(degrees, 4);
     }
 
     // ── 숫자 정리(소수 4자리, 무한대·NaN은 비움)
-    private static double? Degrees(double radians) => double.IsFinite(radians) ? Math.Round(Math.Abs(radians) * 180 / Math.PI, 4) : null;
+
+    private static double? Degrees(double radians) =>
+        double.IsFinite(radians) ? Math.Round(Math.Abs(radians) * 180 / Math.PI, 4) : null;
+
     private static double[] Point(Point2d point) => [Math.Round(point.X, 4), Math.Round(point.Y, 4)];
+
     private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
+
     internal static double? Finite(double value) => double.IsFinite(value) ? Math.Round(value, 4) : null;
+
     internal static double Round(double value) => double.IsFinite(value) ? Math.Round(value, 4) : 0;
 }

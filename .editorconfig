@@ -1,0 +1,35 @@
+# 코드 모양 규칙 (Visual Studio, VS Code, dotnet format, Prettier가 읽는다)
+# 가독성 원칙은 docs/코드_스타일.md 참고.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{ts,mjs,js,json}]
+indent_size = 2
+max_line_length = 120
+
+[*.cs]
+indent_size = 4
+max_line_length = 120
+
+# if/for/foreach/while 본문은 한 줄이어도 항상 중괄호로 감싼다.
+csharp_prefer_braces = true:warning
+dotnet_diagnostic.IDE0011.severity = warning
+
+# 중괄호는 새 줄에서 연다 (Allman).
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+
+# 한 줄에 문장 하나, 블록도 한 줄로 붙이지 않는다.
+csharp_preserve_single_line_statements = false
+csharp_preserve_single_line_blocks = true
+
+# 긴 식은 연산자 앞에서 줄을 바꾼다.
+dotnet_style_operator_placement_when_wrapping = beginning_of_line
