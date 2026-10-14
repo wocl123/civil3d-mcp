@@ -20,6 +20,7 @@
     "law:fetch": "npm run build && node scripts/law-fetch.mjs",
     "test:design": "npm run build && node scripts/design-regression.mjs",
     "test:tools": "npm run build && node scripts/tool-contract.mjs",
+    "test:admin": "npm run build && node scripts/admin-menu.mjs",
     "test:drive": "npm run build && node scripts/drive-e2e.mjs && node scripts/drive-release.mjs && node scripts/drive-folder.mjs",
     "test:github": "npm run build && node scripts/github-release.mjs",
     "test:ingest": "npm run build && node ../scripts/build-ingest.mjs && node scripts/ingest-e2e.mjs && node scripts/ingest-install.mjs",

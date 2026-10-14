@@ -1,5 +1,5 @@
 // Standalone admin process: no Civil 3D, bridge, HTTP port, AI or GitHub needed.
-import { createInterface } from "node:readline/promises";
+import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 import { join } from "node:path";
 import { appDataDir } from "../paths.js";
@@ -37,9 +37,17 @@ async function sync() {
 if (process.argv.includes("--once")) {
   console.log(await sync());
 } else {
-  const input = createInterface({ input: stdin, output: stdout });
-  console.log("My Civil 3D MCP 관리자\n10분마다 수집합니다. 새 설치는 자동 등록되며, 사용자 목록에서 수신 상태를 확인할 수 있습니다.");
-  console.log("명령: 동기화, 사용자, 검토, 보고, 1 승인, 2 반려 사유, /검토 사례, 종료\n배포는 배포하기.bat에서 실행합니다.");
+  const { adminMenu } = await import("./menu.js");
+  // readline의 줄 반복자는 미리 들어온 줄도 버리지 않는다(붙여 넣기·테스트 입력).
+  const input = createInterface({ input: stdin, terminal: stdin.isTTY });
+  const lines = input[Symbol.asyncIterator]();
+  const ask = async (prompt: string) => {
+    stdout.write(prompt);
+    const next = await lines.next();
+    return next.done ? undefined : String(next.value);
+  };
+
+  console.log("My Civil 3D MCP 관리자 · 창을 켜 두면 10분마다 새 데이터를 가져옵니다. 배포는 배포하기.bat에서 합니다.");
   try {
     console.log(await sync());
   } catch (error) {
@@ -48,39 +56,17 @@ if (process.argv.includes("--once")) {
 
   // Commands and the background import share a single queue; the store is mutable.
   let queued = Promise.resolve<unknown>(undefined);
-  const enqueue = <T>(fn: () => Promise<T>): Promise<T> => {
+  const run = <T>(fn: () => Promise<T>): Promise<T> => {
     const task = queued.then(fn);
     queued = task.catch(() => undefined);
     return task;
   };
 
   // 10분마다 자동 동기화(입력한 명령과 겹치지 않게 같은 대기열로 돌린다).
-  const syncInBackground = () => void enqueue(sync).then(console.log, error => console.error(String(error)));
+  const syncInBackground = () => void run(sync).then(text => console.log(`\n[자동] ${text}`), error => console.error(String(error)));
   const clock = setInterval(syncInBackground, 10 * 60 * 1000);
   try {
-    while (true) {
-      const text = (await input.question("관리자> ")).trim();
-      if (text === "종료" || text === "exit") {
-        break;
-      }
-
-      if (!text) {
-        continue;
-      }
-
-      try {
-        console.log(await enqueue(async () => {
-          if (text === "동기화" || text === "/중앙 동기화") {
-            return sync();
-          }
-
-          const command = ({ 사용자: "/중앙 사용자", 검토: "/검토", 보고: "/검토 보고", 상태: "/중앙" } as Record<string,string>)[text] ?? text;
-          return await centralCommand(command, "admin-console") ?? "알 수 없는 명령입니다.";
-        }));
-      } catch (error) {
-        console.error(String(error));
-      }
-    }
+    await adminMenu({ ask, run, sync, print: text => console.log(text), openFiles: stdout.isTTY === true });
   } finally {
     clearInterval(clock);
     input.close();
