@@ -1,4 +1,4 @@
-import { inChangeRequest } from "./requestContext.js";
+import { currentRequestId, inChangeRequest } from "./requestContext.js";
 // 변경의 커밋과 재검토는 서로 다른 결과다. 커밋 뒤의 오류가 "변경 없음"으로 전달되어서는 안 된다.
 import { randomUUID } from "node:crypto";
 import { callPlugin } from "../bridge/pluginClient.js";
@@ -10,7 +10,7 @@ import { checkAlignmentCriteria } from "../criteria/alignmentCriteria.js";
 import { checkProfileCriteria } from "../criteria/profileCriteria.js";
 import { assess, fullItems } from "../criteria/reportBuilder.js";
 import { loadFix, logChange, registerFixes } from "./changeStore.js";
-import { fixLabels } from "./describe.js";
+import { fixKind, fixLabels } from "./describe.js";
 import { failureGuide } from "../errors/failureGuide.js";
 import type { ChangeLogEntry } from "./types/ChangeLogEntry.js";
 import type { StoredFix } from "./types/StoredFix.js";
@@ -22,7 +22,7 @@ const messageOf = (error: unknown) => error instanceof Error ? error.message : S
 export async function applyFix(
   fixId: string,
   offered: string[],
-  requestId = process.env.MY_CIVIL3D_REQUEST_ID ?? "none",
+  requestId = currentRequestId(),
   reapplyOperation?: string
 ) {
   if (!offered.includes(fixId)) {
@@ -63,7 +63,7 @@ export async function applyFix(
 
       // 되돌린 삭제는 옛 계획으로 다시 실행하지 않는다. 되돌리기는 "지우지 않겠다"는 결정이고,
       // 다시 지우려면 새 계획(그때의 목록과 영향)을 보고 동의해야 한다.
-      if (fix.remove) {
+      if (fixKind(fix) === "delete") {
         throw new Error("되돌린 삭제는 다시 실행하지 않습니다. 다시 삭제하려면 새로 요청해 주세요.");
       }
 
@@ -93,7 +93,7 @@ export async function applyFix(
       title: fix.title,
       target: fix.target,
       labels: fixLabels(fix),
-      kind: fix.remove ? "delete" : fix.create ? "create" : "change",
+      kind: fixKind(fix),
       drawingId: scope.drawingId!,
       revision: scope.state
     };
@@ -136,6 +136,7 @@ export async function applyFix(
     operation.state = "applied";
     operation.revision = revision;
     operation.result = result;
+    operation.undoAvailable = result.undoAvailable as boolean | undefined;
     const warnings: string[] = [];
     try {
       await saveOperation(operation);
@@ -182,7 +183,9 @@ export async function applyFix(
       operationId: operation.operationId,
       fix: fix.title,
       ...appliedDetails(fix, result),
-      undo: "팔레트의 되돌리기 버튼으로 취소할 수 있음",
+      ...(operation.undoAvailable === undefined ? {} : { undoAvailable: operation.undoAvailable }),
+      undo: operation.undoAvailable !== false ? "팔레트의 되돌리기 버튼으로 취소할 수 있음"
+      : "이 선택·표시 작업은 자동 Undo 대상이 아님. 객체 분리·숨김은 분리 해제로 복원",
       warnings,
       recheck: recheckResult
     };
@@ -191,6 +194,14 @@ export async function applyFix(
 
 // 수정안 종류에 맞는 플러그인 요청: 만들기 / 지우기 / 속성 바꾸기 / 값 바꾸기
 function pluginRequest(fix: StoredFix) {
+  if (fix.civil) {
+    return ["drawing.civil_apply" as const, { plan: fix.civil }] as const;
+  }
+
+  if (fix.layers) {
+    return ["drawing.layer_apply" as const, fix.layers] as const;
+  }
+
   if (fix.create) {
     return ["alignment.create" as const, fix.create] as const;
   }
@@ -216,6 +227,15 @@ function pluginRequest(fix: StoredFix) {
 
 // 적용 결과에서 수정안 종류별로 알려 줄 값.
 function appliedDetails(fix: StoredFix, result: Record<string, unknown>) {
+  if (fix.civil) {
+    return { civil: result };
+  }
+
+  if (fix.layers) {
+    return { createdLayers: result.createdLayers, deletedLayers: result.deletedLayers,
+      editedLayers: result.editedLayers, deletedObjects: result.deletedObjects };
+  }
+
   if (fix.create) {
     return { created: result };
   }

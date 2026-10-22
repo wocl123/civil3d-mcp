@@ -25,11 +25,15 @@ const localAppData = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");
 const KNOWN_DIRS: Record<Provider, string[]> = {
   claude: [join(home, ".local", "bin"), join(appData, "npm"), join(localAppData, "Programs", "claude")],
   codex: [join(appData, "npm"), join(localAppData, "Programs", "codex")],
-  gemini: [join(appData, "npm")]
+  gemini: [join(localAppData, "agy", "bin"), join(home, ".local", "bin")]
 };
+
+// 팔레트의 provider id는 유지하고, Google 개인 계정은 지원되는 Antigravity로 실행한다.
+export const cliCommand = (provider: Provider): string => provider === "gemini" ? "agy" : provider;
 
 export type CliLocation = { dir: string; file: string };
 const found = new Map<Provider, { location: CliLocation; at: number }>();
+const paths = new Map<Provider, { key: string; at: number; value: Promise<string[]> }>();
 
 // 레지스트리의 PATH 값 하나를 읽는다. %USERPROFILE% 같은 변수는 Windows가 새 프로세스에 하듯 펼친다.
 function regPath(key: string): Promise<string[]> {
@@ -54,7 +58,7 @@ const onlyDirs = () => process.env.MY_CIVIL3D_CLI_DIRS?.split(delimiter).filter(
 const windowsDir = join(process.env.SystemRoot ?? "C:\\Windows", "System32");
 
 // 찾아볼 폴더 목록(중복 제거).
-async function searchDirs(provider: Provider): Promise<string[]> {
+async function searchDirs(provider: Provider, fresh = false): Promise<string[]> {
   const only = onlyDirs();
   if (only) {
     // 동봉 Node로 실행 중이면 그 Node 옆에 설치한 CLI도 본다.
@@ -62,15 +66,28 @@ async function searchDirs(provider: Provider): Promise<string[]> {
       return [cliPrefix(provider), runtimeDir(), ...only, windowsDir];
     }
 
-    return [...only, windowsDir];
+    return [cliPrefix(provider), ...only, windowsDir];
   }
 
+  const current = process.env.PATH ?? process.env.Path ?? "";
+  const key = `${current}|${cliPrefix(provider)}`;
+  const cached = paths.get(provider);
+  if (!fresh && cached?.key === key && Date.now() - cached.at < POSITIVE_TTL_MS) {
+    return cached.value;
+  }
+
+  const value = readSearchDirs(provider, current);
+  paths.set(provider, { key, at: Date.now(), value });
+  return value;
+}
+
+async function readSearchDirs(provider: Provider, current: string): Promise<string[]> {
   const [user, machine] = await Promise.all([
     regPath("HKCU\\Environment"),
     regPath("HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")
   ]);
-  const current = (process.env.PATH ?? process.env.Path ?? "").split(delimiter).filter(Boolean);
-  return [...new Set([cliPrefix(provider), ...current, ...user, ...machine, ...KNOWN_DIRS[provider]])];
+  const inherited = current.split(delimiter).filter(Boolean);
+  return [...new Set([cliPrefix(provider), ...inherited, ...user, ...machine, ...KNOWN_DIRS[provider]])];
 }
 
 // CLI 실행 파일 위치. 없으면 undefined(= 설치 안 됨).
@@ -82,7 +99,7 @@ export async function locateCli(provider: Provider): Promise<CliLocation | undef
 
   for (const dir of await searchDirs(provider)) {
     for (const extension of EXTENSIONS) {
-      const file = join(dir, provider + extension);
+      const file = join(dir, cliCommand(provider) + extension);
       if (existsSync(file)) {
         const location = { dir, file };
         found.set(provider, { location, at: Date.now() });
@@ -96,7 +113,10 @@ export async function locateCli(provider: Provider): Promise<CliLocation | undef
 }
 
 // 설치 창을 닫은 뒤에는 기억해 둔 결과를 쓰지 않고 다시 찾는다.
-export const forgetCli = (provider: Provider) => found.delete(provider);
+export function forgetCli(provider: Provider): void {
+  found.delete(provider);
+  paths.delete(provider);
+}
 
 // CLI 프로세스의 PATH: CLI 폴더 먼저, 그다음 새로 읽은 사용자·시스템 PATH.
 export async function cliPath(provider: Provider, location: CliLocation): Promise<string> {
@@ -105,5 +125,5 @@ export async function cliPath(provider: Provider, location: CliLocation): Promis
 
 // 설치 창의 PATH: 새로 읽은 사용자·시스템 PATH(npm과 새로 설치한 것이 보이게).
 export async function freshPath(provider: Provider): Promise<string> {
-  return withRuntimePath(await searchDirs(provider));
+  return withRuntimePath(await searchDirs(provider, true));
 }

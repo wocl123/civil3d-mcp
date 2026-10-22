@@ -77,6 +77,23 @@ public sealed class PluginEntry : IExtensionApplication
         ChatPalette.Show();
     }
 
+    [CommandMethod("MYC3DOBJECTVIEWER", CommandFlags.UsePickSet | CommandFlags.Redraw)]
+    public void OpenObjectViewer()
+    {
+        Document? document = App.DocumentManager.MdiActiveDocument;
+        if (document is not null)
+        {
+            DrawingViewer.Open(document);
+        }
+    }
+
+    [CommandMethod("MYC3DNATIVEWORKFLOW", CommandFlags.UsePickSet | CommandFlags.Redraw)]
+    public void OpenNativeWorkflow()
+    {
+        Document? document = App.DocumentManager.MdiActiveDocument;
+        if (document is not null) NativeCivilWorkflows.Open(document);
+    }
+
     [CommandMethod("MYC3DCONNECTION")]
     public void ShowConnection()
     {

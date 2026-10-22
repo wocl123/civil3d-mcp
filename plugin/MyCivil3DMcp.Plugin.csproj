@@ -35,10 +35,15 @@
     <Reference Include="AcDbMgd" HintPath="$(AcadDir)\AcDbMgd.dll" Private="false" />
     <Reference Include="acmgd" HintPath="$(AcadDir)\acmgd.dll" Private="false" />
     <Reference Include="AeccDbMgd" HintPath="$(CivilDir)\AeccDbMgd.dll" Private="false" />
+    <Reference Include="AeccPressurePipesMgd" HintPath="$(CivilDir)\AeccPressurePipesMgd.dll" Private="false" />
     <Reference Include="AecBaseMgd" HintPath="$(AecDir)\AecBaseMgd.dll" Private="false" />
+    <Reference Include="AecPropDataMgd" HintPath="$(AecDir)\AecPropDataMgd.dll" Private="false" />
   </ItemGroup>
   <ItemGroup>
     <Using Remove="System.Drawing" />
     <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="UI/Assets/*.svg" LogicalName="ProviderIcons.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

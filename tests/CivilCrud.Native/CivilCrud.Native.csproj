@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AcadDir>C:\Program Files\Autodesk\AutoCAD 2025</AcadDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="accoremgd" HintPath="$(AcadDir)/accoremgd.dll" Private="false" />
+    <Reference Include="AcDbMgd" HintPath="$(AcadDir)/AcDbMgd.dll" Private="false" />
+    <Reference Include="acmgd" HintPath="$(AcadDir)/acmgd.dll" Private="false" />
+    <Reference Include="AeccDbMgd" HintPath="$(AcadDir)/C3D/AeccDbMgd.dll" Private="false" />
+    <Reference Include="AeccPressurePipesMgd" HintPath="$(AcadDir)/C3D/AeccPressurePipesMgd.dll" Private="false" />
+    <Reference Include="AecBaseMgd" HintPath="$(AcadDir)/ACA/AecBaseMgd.dll" Private="false" />
+    <Reference Include="AecPropDataMgd" HintPath="$(AcadDir)/ACA/AecPropDataMgd.dll" Private="false" />
+  </ItemGroup>
+</Project>

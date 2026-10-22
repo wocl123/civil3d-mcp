@@ -20,6 +20,13 @@ type Guide = Omit<FailureGuide, "drawingChanged"> & { mayHaveChanged?: true };
 
 // [오류 문구 정규식, 안내]. 위에서부터 처음 맞는 것을 쓴다.
 const GUIDES: [RegExp, Guide][] = [
+  [/요청을 취소했습니다|Palette request has ended|This operation was aborted/, {
+    kind: "request_cancelled",
+    meaning: "요청이 중지됐다. 이미 보낸 도면 변경은 작업 카드에서 결과를 확인해야 한다.",
+    userAction: ASK_NOTHING,
+    next: `${NO_RETRY} 이미 적용한 작업이 있으면 그 결과와 되돌리기 방법을 알린다.`,
+    mayHaveChanged: true
+  }],
   [/Method not found|Unknown bridge method/, {
     kind: "old_plugin",
     meaning: "Civil 3D에 불러온 플러그인이 서버보다 옛 버전이라 이 기능이 없다.",

@@ -25,6 +25,7 @@ import { loadAdminConfig } from "./adminConfig.js";
 import { adminStore, type AdminStore } from "./adminStore.js";
 import { current, releaseFile } from "./releases.js";
 import { groupKey } from "./review.js";
+import { caseCleanupText, cleanupDriveCases } from "./caseCleanup.js";
 import { Invalid, validCandidates, validPackage, type CandidateIn } from "./validate.js";
 
 // linkFailures: 링크로 설치 파일을 받지 못해 zip을 따로 넣어 준 사용자 수(링크가 바뀌었을 수 있다)
@@ -172,6 +173,11 @@ export async function adminSync(drive: DriveSettings, state: SyncState): Promise
 
   store.saveMembers();
   store.saveCandidates();
+
+  const cleaned = await cleanupDriveCases(store, drive.root);
+  if (cleaned.removedRecords || cleaned.pendingCases) {
+    result.problems.push(caseCleanupText(cleaned));
+  }
 
   // 3) 이 PC의 승인 지식
   if (store.official.version !== (state.officialVersion ?? 0)) {

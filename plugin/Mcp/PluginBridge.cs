@@ -44,8 +44,9 @@ public static class PluginBridge
     internal static string? SessionToken => _token;
     public static int Port { get; private set; } = DefaultPort;
 
-    private static string Folder => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MyCivil3DMcp");
+    private static string Folder => Environment.GetEnvironmentVariable("MY_CIVIL3D_CONNECTION_DIR") is { Length: > 0 } directory
+        ? Path.GetFullPath(directory)
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MyCivil3DMcp");
 
     public static string ConnectionFilePath => Path.Combine(Folder, "connection.json");
 
@@ -318,6 +319,7 @@ public static class PluginBridge
             return Failure(id, -32001, "Unauthorized.");
         }
 
+        string? method = requestObject["method"]?.ToString();
         try
         {
             if (requestObject["params"] is not null and not JsonObject)
@@ -327,8 +329,6 @@ public static class PluginBridge
 
             JsonObject? parameters = requestObject["params"] as JsonObject;
             JsonObject? context = requestObject["context"] as JsonObject;
-            string? method = requestObject["method"]?.ToString();
-
             object result = await RunMethodAsync(method, parameters, context);
             return new { jsonrpc = "2.0", id, result };
         }
@@ -347,6 +347,7 @@ public static class PluginBridge
         }
         catch (System.Exception ex)
         {
+            NodeService.LogBridgeError(method, ex);
             return Failure(id, -32603, ex.Message);
         }
     }
@@ -367,6 +368,12 @@ public static class PluginBridge
         {
             // ── 도면 조회
             "drawing.status" => await Read(doc => DrawingQueries.GetStatus(doc)),
+            "drawing.chat_context" => await Read(doc => DrawingChatContext.Read(doc)),
+            "dimension.list" => await Read(doc => DimensionChanges.List(doc, Offset(), Limit(50))),
+            "point.list" => await Read(doc => PointChanges.List(doc, Offset(), Limit(50))),
+            "drawing.cleanup" => await Read(doc => DrawingCleanup.Inspect(doc, Offset(), Limit(50))),
+            "text.list" => await Read(doc => TextChanges.List(doc, parameters, Offset(), Limit(50))),
+            "drawing.zoom" => await Read(doc => DrawingView.Zoom(doc, parameters)),
             "drawing.objects" => await Read(doc => DrawingQueries.GetObjects(
                 doc, Offset(), Limit(20), parameters?["layer"]?.ToString())),
             "drawing.layers" => await Read(doc => DrawingQueries.GetLayers(doc, Offset(), Limit(50))),
@@ -376,6 +383,33 @@ public static class PluginBridge
             "drawing.selection" => await Read(doc => DrawingSelection.Get(doc)),
             "drawing.summary" => await Read(doc => DrawingSummary.Read(doc)),
             "drawing.delete_preview" => await Read(doc => DrawingDeletion.Preview(doc, parameters)),
+            "drawing.layer_preview" => await Read(doc => DrawingLayers.Preview(doc, parameters)),
+            "drawing.civil_preview" => await Read(doc => CivilPlans.Preview(doc, parameters)),
+            "surface.list" => await Read(doc => SurfaceChanges.List(doc, Offset(), Limit(20))),
+            "cogo.list" => await Read(doc => CogoChanges.List(doc, Offset(), Limit(50))),
+            "featureLine.list" => await Read(doc => FeatureLineChanges.List(doc, Offset(), Limit(50))),
+            "sections.list" => await Read(doc => SectionChanges.List(doc, parameters ?? new JsonObject())),
+            "pressure.runs" => await Read(doc => PressureRunChanges.List(doc, parameters ?? new JsonObject())),
+            "catchments.list" => await Read(doc => CatchmentChanges.List(doc, parameters ?? new JsonObject())),
+            "propertySets.list" => await Read(doc => PropertySetChanges.List(doc, parameters ?? new JsonObject())),
+            "parcels.list" => await Read(doc => ParcelChanges.List(doc, parameters ?? new JsonObject())),
+            "surface.analysis" => await Read(doc => SurfaceAnalysisChanges.List(doc, parameters ?? new JsonObject())),
+            "corridors.list" => await Read(doc => CorridorChanges.List(doc, parameters ?? new JsonObject())),
+            "civil.utility_list" => await Read(doc => CivilUtilityChanges.List(doc, parameters ?? new JsonObject())),
+            "surface.sample" => await Read(doc => CivilUtilityChanges.SampleSurface(doc, parameters ?? new JsonObject())),
+            "pressure.list" => await Read(doc => PressureChanges.List(doc, parameters ?? new JsonObject())),
+            "block.list" => await Read(doc => AnnotationExtensions.ListBlocks(doc, Offset(), Limit(50))),
+            "native.workflows" => await Read(_ => NativeCivilWorkflows.List()),
+            "civil.labels" => await Read(doc => CivilLabelChanges.List(doc, Offset(), Limit(50))),
+            "point.metadata" => await Read(doc => PointMetadata.List(doc, parameters ?? new JsonObject())),
+            "volume.get" => await Read(doc => VolumeChanges.Get(doc, ReadString(parameters?["surface"]))),
+            "civil.styles" => await Read(doc => CivilStyles.List(doc, ReadString(parameters?["kind"]), Offset(), Limit(50))),
+            "network.catalog" => await Read(doc => NetworkCatalog.List(doc, parameters ?? new JsonObject(), Offset(), Limit(50))),
+            "network.parts" => await Read(doc => NetworkPartAccess.List(doc, ReadString(parameters?["network"]),
+                parameters?["kind"]?.GetValue<string>(), Offset(), Limit(50))),
+            "profileView.list" => await Read(doc => ProfileViewChanges.List(doc, Offset(), Limit(50))),
+            "network.list" => await Read(doc => NetworkChanges.List(doc, parameters?["nameContains"]?.GetValue<string>(), Offset(), Limit(50))),
+            "surface.get" => await Read(doc => SurfaceChanges.Get(doc, ReadString(parameters?["surface"]))),
 
             // ── 선형·종단 조회
             "alignment.list" => await Read(doc => AlignmentQueries.ListAlignments(doc, Offset(), Limit(50))),
@@ -406,6 +440,8 @@ public static class PluginBridge
 
             // ── 도면 편집
             "change.apply" => await Edit(doc => DesignChanges.Apply(doc, ReadChanges(parameters?["changes"]))),
+            "drawing.layer_apply" => await Edit(doc => DrawingLayers.Apply(doc, parameters)),
+            "drawing.civil_apply" => await Edit(doc => CivilPlans.Apply(doc, parameters)),
             "alignment.create" => await Edit(doc => AlignmentCreation.Create(doc, ReadCreate(parameters))),
             "drawing.delete" => await Edit(
                 doc => DrawingDeletion.Delete(doc, DrawingDeletion.ReadTargets(parameters?["targets"]))),

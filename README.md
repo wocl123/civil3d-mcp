@@ -33,6 +33,33 @@ binaries are not bundled.
 
 ## Source layout
 
+### Drawing editing tools (0.1.14)
+
+All edits first produce a plan card and use `apply_drawing_change` after agreement.
+Plans are bound to the drawing/revision; stale plans and repeated applies are rejected.
+
+| Object | Create | Edit | Delete |
+| --- | --- | --- | --- |
+| Alignment | From a 2D polyline | Properties, design speeds, computed arc-radius fixes | With related-object preview |
+| Layer | Name, ACI colour, locked/frozen/off state | Colour and state | Unused, or explicitly including supported objects |
+| TIN surface | XYZ points, standard breaklines, outer boundary, or empty | Properties, add/delete vertices, breaklines, boundary, raise/lower, rebuild | Local surfaces without dependent designs |
+| Profile | Layout PVIs with optional symmetric curves; EG from a surface | Properties, replace layout PVIs; computed elevation/curve-length fixes | With related-object preview |
+
+`plan_drawing_display` selects objects or a layer's objects, sets the current layer,
+isolates/hides objects individually, restores isolation, or queues the native Object Viewer.
+Frozen/off layers are not changed implicitly. Selection and viewer actions have no automatic Undo;
+the palette hides that button when the plug-in reports it unavailable.
+Surface profiles and layout profiles are objects; creating a profile does not place a profile-view grid.
+`list_surfaces` and `get_surface` read surface properties and references.
+
+`npm test` in `server` runs the core regression suite. `tests/ProfileLayout.Smoke`
+tests layout validation without CAD. `tests/CivilCrud.Native` and
+`server/scripts/native-civil.mjs` exercise the real Civil 3D 2025 database in a dedicated
+Core Console process with a temporary profile and drawing; they never attach to a user's drawing.
+Pass `--persisted` to the native runner to save a fixture DWG and reopen it in a new process
+before testing surface, alignment, profile and layer editing/deletion. Packaging against the
+default local Civil 3D 2025 installation runs both native modes; NuGet-only CI skips them.
+
 ```text
 plugin/
   Commands/       Civil 3D command entry point
@@ -70,6 +97,13 @@ their own file.
 
 ## Use inside Civil 3D
 
+To try changes locally, close Civil 3D and run `내부배포.bat`. It builds and replaces this PC's plug-in with a backed-up internal build, without bumping the release version or publishing. Open Civil 3D normally afterward; no NETLOAD is needed. Use `내부배포.bat -Restore` to restore the previous installation. See [internal deployment](docs/내부배포.md).
+
+`내부테스트.bat` is a separate automated regression tool. It builds the DLL/server and runs internal checks without changing the release version.
+Load `.package-cache/internal-test/load.scr` using Civil 3D's `SCRIPT` command in a separate test profile;
+finish the manual checks before recording acceptance. See [internal testing and release order](docs/내부테스트.md).
+`배포하기.bat` now requires acceptance for the current source and DLL/server before assigning a release version.
+
 1. Open Civil 3D 2025. Run `NETLOAD` and select
    `plugin\bin\Release\net8.0-windows\MyCivil3DMcp.Plugin.dll`.
 2. Run `MYC3DCONNECTION` to check the plug-in bridge and local Node service.
@@ -77,8 +111,9 @@ their own file.
    Claude, Codex, and Gemini with their sign-in state; the conversation appears
    as bubbles, with answers rendered from a small Markdown subset (headings,
    bold, lists, tables) and a 복사 button that copies tables as tab-separated
-   rows for Excel; the bottom line shows this question's tokens, the session total,
-   and the account's remaining quota (↻ refreshes it).
+   rows for Excel; the bottom line shows the selected AI's icon, usage bar and
+   5-hour/weekly used percentages with reset countdowns (↻ refreshes them).
+   Hover over the strip for this question's tokens, the session total and reset dates.
 4. Click an AI to use it. An unchecked AI is checked first and becomes usable
    only after its installed CLI confirms an existing account login.
 5. Type a question and press Enter (Shift+Enter adds a line). While the AI
@@ -117,7 +152,7 @@ Civil 3D commands for testing the read-only drawing queries.
 | --- | --- | --- |
 | Claude | `claude auth status` | `claude auth login` |
 | Codex | `codex login status` | `codex login` |
-| Gemini | Short headless model request | Run `gemini` and complete its login |
+| Gemini (Antigravity) | Short headless model request through `agy` | Run `agy` and complete Google sign-in |
 
 The palette never asks for passwords or API keys. Gemini's check can use account
 quota because its CLI has no documented noninteractive login-status command.
@@ -134,15 +169,48 @@ installed after Civil 3D started is therefore found without restarting.
 Picking an AI in the palette that is not installed asks first: "설치할까요?" with
 [설치] and [취소]. Only [설치] opens `server\setup\setup-ai-cli.ps1 -Provider <ai>
 -Action install` for that one AI in its own PowerShell window: Claude's official
-installer (`irm https://claude.ai/install.ps1 | iex`), or `npm install -g @openai/codex`
-/ `@google/gemini-cli` (Node.js is already required), followed by the CLI's own sign-in
-in the browser with the user's own account. An installed AI whose login is not
-confirmed asks "로그인할까요?" the same way (`-Action login`). Afterwards, clicking the
-AI again checks it. `npm run smoke:cli` checks that the script is valid PowerShell,
+installer (`irm https://claude.ai/install.ps1 | iex`), `npm install -g @openai/codex`,
+or Google's official Antigravity installer (`https://antigravity.google/cli/install.ps1`),
+followed by the CLI's own sign-in with the user's account.
+The EXE includes Node.js and npm for Codex. Antigravity is a native executable and needs neither.
+Codex and Antigravity install into the current user's
+`%LOCALAPPDATA%\MyCivil3DMcp\cli` folder without a separate system Node installation.
+Gemini uses Antigravity's `agy` executable and Google sign-in. An obsolete `gemini` installation
+does not count as installed; the palette offers Antigravity installation instead.
+Existing Antigravity installs in `%LOCALAPPDATA%\agy\bin` are also detected.
+An installed AI whose login is not
+confirmed asks "로그인할까요?" the same way (`-Action login`). Complete authentication in that console,
+close it, then press the palette's refresh button (↻). Refresh checks the AI whose setup window
+was opened, confirms login, selects it when ready, and updates quota. Failed or incomplete login stays unavailable.
+`npm run smoke:cli` checks that the script is valid PowerShell,
 runs its read-only `-Action check` for each AI, and checks that installed CLIs are
-found with a stale PATH.
+found with a stale PATH. It also opens real short-lived consoles to verify interactive
+input/output and failure reporting, and simulates missing-CLI installation and sign-in.
+The palette reports a window as opened only after its console is ready; launch failures allow retry.
 
 ## Palette AI, MCP, and memory
+
+Palette requests use a shared loopback HTTP MCP host inside the local service.
+Tool modules load once; each question receives a separate session and a short-lived
+capability tied to its request ID, drawing and previously offered fix IDs. Completion,
+cancellation and expiry revoke that capability. External clients still use the stdio
+entry point. AI CLI processes themselves remain isolated per question.
+
+The plug-in reads the current drawing identity, selection, and lightweight alignment /
+profile list in one `drawing.chat_context` call, without scanning every model-space
+object or constructing full alignment geometry snapshots. Older plug-ins use the
+previous individual queries. CLI PATH discovery is cached for one minute and refreshed
+after setup.
+
+An exact `진행` / `적용해줘` reply to the immediately preceding single applicable plan
+uses the same guarded apply path as its button, without another AI request. Multiple
+plans, negative replies and other questions continue to the AI. Revision, ownership,
+cancellation and duplicate-apply checks remain active.
+
+`turns.jsonl` records `timing.contextMs`, `beforeAiMs`, `prepareMs`, `firstCliEventMs`,
+`firstToolMs` and `cliMs` when applicable. `npm run test:performance` tests authority
+isolation, revocation, direct apply, old plug-in fallback and MCP preparation timings.
+These timings exclude network/model inference; they are not an end-to-end AI benchmark.
 
 All user data lives in one folder per Windows user,
 `%LOCALAPPDATA%\MyCivil3DMcp\data`, never in the installation folder, so it is
@@ -166,15 +234,16 @@ CLI reads, and starts the CLI there:
 | --- | --- | --- |
 | Claude | Replaces the default system prompt (`--system-prompt-file`) | Built-in tools, claude.ai connectors, other MCP servers, skills, user hooks and settings |
 | Codex | Replaces the built-in instructions (`model_instructions_file`) | User config, plugins, shell, browser, and other built-in tools |
-| Gemini | `GEMINI.md` in the workspace | Extensions and other MCP servers |
+| Gemini (Antigravity) | `GEMINI.md` and `.agents/mcp_config.json` | Request-specific Windows profile, scoped Civil 3D MCP permission; commands, file writes and web access denied |
 
 The palette uses its own models, not the user's CLI settings: Claude `sonnet`
 with `medium` effort and Codex `gpt-5.6-sol` with `medium` reasoning effort.
 To change them, create `data/palette-models.json`, for example
 `{"claude": {"model": "opus", "effort": "high"}, "codex": {"model": "gpt-6-sol"}}`;
-fields left out keep the defaults. Edits to the skill file apply to the next question. Gemini's setup follows its documented settings format but was
-not verified: the test account's Gemini CLI login was rejected by Google
-(`IneligibleTierError`).
+fields left out keep the defaults. Edits to the skill file apply to the next question.
+Gemini uses Antigravity's default model unless overridden. Antigravity runs with a temporary
+Windows profile for each request, reusing its Windows keyring login without copying credentials.
+Its streaming responses, tool events, errors and token usage are handled by the palette.
 
 ### Knowledge
 
@@ -242,7 +311,7 @@ the same curve is not checked.
    three answers (`MY_CIVIL3D_OFFERED_FIXES`); any other id is refused, so the AI
    can only apply a fix the user has seen. A request for an arbitrary value
    ("반지름 500으로 바꿔줘") is not possible.
-3. The plug-in (`change.apply`, `plugin/Civil/DesignChanges.cs`) applies all
+3. The plug-in (`change.apply`, `plugin/Civil/Workflow/DesignChanges.cs`) applies all
    values in one transaction inside one UNDO group, so one Ctrl+Z reverts them.
    The drawing instance and revision must still match the proposal, and each
    value must still equal its original value; otherwise nothing changes.
@@ -257,6 +326,46 @@ the same curve is not checked.
 read-only. Applied automatically today: PVI elevation, vertical curve length (at
 its PVI), the radius of a single arc, and a new alignment from a plan. Adding spirals and changing
 superelevation are shown as fixes to make by hand.
+
+**Creating, editing and deleting layers.** `plan_layer_create` accepts names, ACI colours
+(1–255, default 7), and locked, frozen and off states (default false). Existing layers
+keep their properties. `plan_layer_edit` plans changes to those properties; omitted
+values stay unchanged, while false unlocks, thaws or turns a layer on. The current
+layer cannot be frozen and xref layers cannot be edited.
+
+`plan_layer_delete` first reports objects and related effects without deleting them.
+After the user agrees to include objects, `deleteObjects=true` makes a new plan for
+confirmation. It includes layout/block definition objects, network pipes and structures,
+and dependent labels, including objects on other layers. Block definition edits affect
+all instances of that block. Layer 0, Defpoints, the current layer and xref layers stay
+protected; unsupported Civil object types are refused. A changed object list, remaining
+settings references or an unplanned dependent deletion cancels the entire transaction.
+All plans use the existing Apply/Undo cards and drawing/revision checks. Layer edits
+also invalidate saved answers.
+
+**Dimensions, points and cleanup.** `plan_dimension_create/edit/delete` supports ordinary
+AutoCAD dimensions: aligned, rotated, radial, diametric, angular and ordinate creation;
+text, text position, style, layer and rotated-dimension angle edits; and deletion by
+handle or all dimensions across layouts. Civil labels and leaders are separate objects.
+`plan_point_create/edit/delete` handles AutoCAD POINT entities, including points at
+LINE endpoints and 2D/3D polyline vertices in WCS. It does not create COGO points or
+change point display settings. `list_dimensions` and plan cards show the dimension kind
+in Korean, the value rounded to 3 decimals (degrees for angular) and the shown text.
+`list_drawing_texts` reads TEXT/MTEXT content, height, rotation, style, colour, layer and
+position; `plan_text_create/edit/delete` creates text, replaces content or runs
+find/replace, and changes height, rotation, style, layer, colour or position.
+`plan_geometry_create/delete` draws and deletes lines, polylines, axis-aligned rectangles,
+circles and arcs from explicit WCS values. `zoom_drawing` zooms the view to handles, a
+window or a point; it changes no drawing data and needs no plan.
+`inspect_drawing_cleanup` scans every object type, including hidden, off, frozen and
+locked objects, and reports deletion candidates: exact zero-length lines/polylines,
+empty text, extra duplicate LINEs, POINTs and block references with identical geometry
+and display properties, references to empty block definitions, empty TIN surfaces and
+empty alignments. Each candidate lists cautions (layer state, hidden, linked data, Civil
+object); locked-layer and Civil candidates are reported only. Cleanup deletion requires exact
+candidate handles and the normal agreed plan; it never runs PURGE. All these edits
+use drawing/revision checks and guarded Apply/Undo. `npm run test:primitives` checks
+their MCP contracts; the native harness checks real geometry and Undo.
 
 **Creating an alignment from a polyline.** The palette works in turns, as the
 `선형생성` rule describes. A polyline the user selected before asking is used at once:
@@ -276,7 +385,7 @@ gives is checked against it; the proviso allows up to 20 km/h less. Roads inside
 housing estates take the LH ceiling of 20 km/h. Urban areas also settle the maximum
 superelevation. The uses and conditions are written to the alignment's Description,
 for example "용도: 도로, 관망 / 기준: LH_설계지침_토목 / 도로 구분: 집산도로 / 지역:
-도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%" (`server/src/civil/alignmentRecord.ts`).
+도시지역 / 편경사 지역: 도시지역 / 최대편경사: 6%" (`server/src/civil/alignment/alignmentRecord.ts`).
 Later checks read them (and say so in their notes), so nobody is asked again; the
 profile check derives its road function and terrain from them. With 도로 the alignment is a Centerline laid
 out to the criteria; otherwise it is a Utility alignment with curves only where asked.
@@ -296,7 +405,7 @@ checked as before. Then:
 2. The user changes radii ("IP2는 400"), the name, or the direction, and the plan
    is made again.
 3. When the user agrees, `apply_drawing_change` creates the alignment
-   (`alignment.create`, `plugin/Civil/AlignmentCreation.cs`): fixed lines from IP to
+   (`alignment.create`, `plugin/Civil/Alignment/AlignmentCreation.cs`): fixed lines from IP to
    IP, then a free curve or spiral-curve-spiral between each pair. It uses no site
    and the drawing's default alignment style, label set, and layer, and records the
    design speed. The polyline must still have the vertices the plan was made from.
@@ -390,12 +499,16 @@ additions, changes, and deletions in each open drawing, so any edit makes earlie
 answers unusable; restarting Civil 3D does too. Answers expire after seven days.
 `POST /api/memory/clear` erases this memory but not the knowledge files.
 
-The palette shows input, output, and cached tokens for the most recent question
+The palette's bottom strip follows the selected AI: Claude or Codex icon, usage
+bar, and used percentages with reset countdowns such as `7% 4h 7m · 60% 1d 10h`.
+Countdowns update while the palette is open; expired or unavailable values are not
+shown as zero. The strip wraps in a narrow palette and follows the dark/light theme.
+Its tooltip shows input, output, and cached tokens for the most recent question
 and totals for questions sent through this local service since it started.
 The totals exclude CLI activity outside this palette and Gemini login probes.
 Claude also reports its CLI's estimated USD cost when available. For Codex,
 **한도 새로고침** reads the account's available quota windows through the Codex
-app-server and shows remaining percentages and local reset times. If the account
+app-server. Detailed local reset times are in the tooltip. If the account
 backend reports that ordinary usage is blocked, the palette shows that status.
 For Claude, **한도 새로고침** uses Anthropic's Agent SDK `get_usage` control request
 with the existing Claude Code login. It shows the same 5-hour and 7-day windows
@@ -404,7 +517,7 @@ The SDK labels this API experimental, so a future SDK upgrade may require an
 adapter change. If the direct lookup fails and a recent optional status-line
 snapshot exists, the service uses that snapshot. It never reads or stores Claude
 credentials itself. Gemini does not expose a documented headless quota read;
-use `/stats model` in Gemini for its interactive report.
+use `/usage` in Antigravity for its interactive report.
 
 If Civil 3D already loaded an earlier version of the DLL, restart Civil 3D
 before loading the rebuilt DLL.
@@ -439,6 +552,18 @@ Legacy installations without an intake URL retain the per-user Drive-folder tran
 | `/설정값` | Applied settings and their sources |
 
 The standalone administrator console offers users, review, reporting, approval/rejection and case triage.
+Its numbered screens clear on navigation and paginate long output with n/p. Use 0/Enter/Esc to go back,
+q to exit, and Esc to stop a running task. Progress shows elapsed time and a bounded deadline.
+Opening the console does not wait for synchronization; automatic imports run every ten minutes when
+the main menu has been idle for thirty seconds. Local review and user lists remain available offline.
+Knowledge approvals are saved first and delivered by the next manual or automatic import.
+Completing or discarding a case also removes its turn/tool/change/feedback records from imported
+Drive packages. Other cases in a mixed package remain; empty packages are deleted. Offline or
+failed deletions stay pending across restarts and retry during imports or menu 8. The home screen
+shows the pending count. Replayed packages cannot restore the removed text in the local store.
+Drive for Desktop synchronizes these changes to the cloud; files in Drive trash still count toward
+storage until permanently deleted ([Google Drive help](https://support.google.com/drive/answer/2375102)).
+The BAT reuses an up-to-date build and can use the installed bundle's Node when system Node is absent.
 Administrator role selection, review and deployment are not done in the user palette.
 
 New logs are rebuilt from allowed fields, de-identified and inspected before sending.
@@ -555,3 +680,7 @@ replace manual checks of WPF controls, CAD undo grouping, and API effects in Civ
 
 사용자는 공개 GitHub Release에서 설치 EXE를 받아 실행합니다. 데이터는 관리자 웹앱을 통해 비공개 Google Drive에 전송합니다. 관리자는 배포하기.bat과 관리자실행.bat을 사용합니다.
 설치·자동 업데이트·배포·복구 안내는 [배포 설치 안내](docs/배포_설치.md)를 참고하세요.
+
+## Code directories
+
+Feature directories group alignment, profile, surface, networks and other Civil functionality. See [코드 구조 안내](docs/코드구조.md) for implementation, models and MCP tool locations.

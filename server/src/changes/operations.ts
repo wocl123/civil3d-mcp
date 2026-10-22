@@ -1,4 +1,4 @@
-import { fixLabels } from "./describe.js";
+import { fixKind, fixLabels } from "./describe.js";
 import { callPlugin } from "../bridge/pluginClient.js";
 import { withFileLock } from "../files.js";
 import { readdir, readFile } from "node:fs/promises";
@@ -12,6 +12,7 @@ export type Operation = {
   state: "running" | "applied" | "rejected" | "unknown" | "undone" | "confirmed";   // confirmed: 사용자가 [확정]을 누름
   title: string; target: string; labels: string[]; kind?: "delete" | "create" | "change";
   drawingId: string; revision: string; result?: Record<string, unknown>; recheck?: unknown; warnings?: string[];
+  undoAvailable?: boolean;
 };
 export const operationFile = (id: string) => join(dataDir(), "changes", "operations", `${id}.json`);
 export const usageFile = (id: string) => join(dataDir(), "changes", "used", `${id}.json`);
@@ -71,7 +72,7 @@ export async function cancelledFix(fixId: string): Promise<boolean> {
 
 // kind: 팔레트 카드의 버튼 이름을 고른다(delete → [진행]/[취소]).
 export const fixCard = (fix: StoredFix) => ({ fixId: fix.id, title: fix.title, target: fix.target,
-  kind: fix.remove ? "delete" : fix.create ? "create" : "change",
+  kind: fixKind(fix),
   labels: fixLabels(fix),
   applicable: fix.applicable && !!fix.binding, reason: fix.reason });
 
@@ -91,6 +92,7 @@ export async function settleOperations(requestId: string): Promise<void> {
           : ["cancelled", "rejected"].includes(String(receipt.state)) ? "rejected" : "unknown";
         operation.revision = String(receipt.revision);
         operation.result = receipt;
+        operation.undoAvailable = receipt.undoAvailable as boolean | undefined;
         if (operation.state === "applied") {
           operation.recheck = { state: "failed", error: "AI 요청이 종료되어 재검토하지 못했습니다." };
         }
@@ -119,6 +121,7 @@ export async function operationStatus(fixId: string, offered: string[]): Promise
     operation.state = ["applied", "undone", "rejected"].includes(String(receipt.state)) ? receipt.state as Operation["state"] : "unknown";
     operation.revision = String(receipt.revision);
     operation.result = receipt;
+    operation.undoAvailable = receipt.undoAvailable as boolean | undefined;
     await saveOperation(operation);
     return operation;
   });

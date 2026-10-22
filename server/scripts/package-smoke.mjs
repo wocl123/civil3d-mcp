@@ -10,7 +10,19 @@ import { startFakeCivil } from './fixtures/fake-civil.mjs';
 const bundle = resolve(process.argv[2]);
 const runtime = join(bundle, 'Contents', 'node', 'node.exe');
 const server = join(bundle, 'Contents', 'server');
+for (const file of ['ai/aiCli.js', 'ai/paletteWorkspace.js', 'bridge/pluginClient.js', 'mcp/paletteHost.js',
+  'mcp/paletteContext.js', 'workflows/paletteChat.js', 'workflows/quickApply.js', 'civil/chatContext.js']) {
+  assert.deepEqual(await readFile(join(server, 'build', file)), await readFile(new URL('../build/' + file, import.meta.url)),
+    `bundled source differs from the verified build: ${file}`);
+}
+
 const temp = await mkdtemp(join(tmpdir(), 'mycivil3d-bundle-'));
+// 배포본의 Claude 도우미가 실제로 로드되는지 확인한다. 로그인 조회나 AI 요청은 보내지 않는다.
+const quotaHelper = join(server, 'claude-quota');
+await readFile(join(quotaHelper, 'readQuota.mjs'), 'utf8');
+execFileSync(runtime, ['--input-type=module', '-e',
+  "import { query } from '@anthropic-ai/claude-agent-sdk'; if (typeof query !== 'function') process.exit(1);"],
+{ cwd: quotaHelper, windowsHide: true, encoding: 'utf8', timeout: 15000 });
 const empty = join(temp, 'empty'); await mkdir(empty);
 const connection = join(temp, 'connection.json');
 const bridge = await startFakeCivil(connection);
@@ -42,6 +54,7 @@ try {
     import assert from 'node:assert/strict';
     import { writeFile } from 'node:fs/promises';
     import { paletteLaunch } from ${JSON.stringify(uri + '/ai/paletteWorkspace.js')};
+    import { openPaletteMcp } from ${JSON.stringify(uri + '/mcp/paletteHost.js')};
     import { getQuota } from ${JSON.stringify(uri + '/ai/quota.js')};
     import { loadCriteria } from ${JSON.stringify(uri + '/criteria/criteriaStore.js')};
     for (const provider of ['claude','codex','gemini']) {
@@ -49,6 +62,21 @@ try {
       assert.ok(launch.cwd.startsWith(process.env.MY_CIVIL3D_DATA_DIR));
     }
     await loadCriteria('도로구조규칙');
+    const lease = await openPaletteMcp({requestId:'bundle-http',drawingId:'fake-drawing-1',offeredFixes:[]});
+    try {
+      const headers = {...lease.headers,'Content-Type':'application/json',Accept:'application/json, text/event-stream'};
+      const initialized = await fetch(lease.url,{method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',id:1,
+        method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'bundle-http',version:'1'}}})});
+      assert.equal(initialized.status,200);
+      assert.ok((await initialized.json()).result);
+      headers['Mcp-Session-Id'] = initialized.headers.get('mcp-session-id');
+      await fetch(lease.url,{method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})});
+      const listed = await fetch(lease.url,{method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list'})});
+      const tools = (await listed.json()).result.tools;
+      assert.ok(tools.some(tool=>tool.name==='plan_drawing_display'));
+      assert.deepEqual(tools.filter(tool=>!tool.annotations.readOnlyHint).map(tool=>tool.name),['apply_drawing_change']);
+    } finally { await lease.close(); }
+    assert.equal((await fetch(lease.url,{headers:lease.headers})).status,403);
     const now = Date.now();
     const record = {capturedAt:now,rate_limits:{five_hour:{used_percentage:25,resets_at:Math.floor(now/1000)+3600}}};
     await writeFile(process.env.MY_CIVIL3D_CLAUDE_QUOTA_FILE,JSON.stringify(record));
@@ -64,7 +92,7 @@ try {
   mcp.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'bundle-smoke',version:'1'}}})+'\n');
   try { for(let i=0;i<50 && !output.includes('"id":1');i++) await new Promise(r=>setTimeout(r,100));assert.ok(output.includes('"id":1'),output); }
   finally { mcp.kill(); }
-  console.log('Bundle smoke passed: bundled Node, production dependencies, service authentication, bridge, MCP, default knowledge, isolated workspace, missing/stale quota.');
+  console.log('Bundle smoke passed: bundled Node, production dependencies, service authentication, bridge, stdio/HTTP MCP, revoked capability, default knowledge, isolated workspace, missing/stale quota.');
 } finally {
   const closed = new Promise(r=>child.once('close',r));
   if(child.exitCode===null){ child.kill();await closed; }

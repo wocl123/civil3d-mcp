@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../plugin/UI/QuotaWindowDisplay.cs" Link="QuotaWindowDisplay.cs" />
+    <Compile Include="../../plugin/UI/QuotaDisplay.cs" Link="QuotaDisplay.cs" />
+    <Compile Include="../../plugin/UI/QuotaStrip.cs" Link="QuotaStrip.cs" />
+    <Compile Include="../../plugin/UI/ProviderIcon.cs" Link="ProviderIcon.cs" />
+    <EmbeddedResource Include="../../plugin/UI/Assets/*.svg" LogicalName="ProviderIcons.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

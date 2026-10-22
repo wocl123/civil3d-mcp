@@ -35,6 +35,14 @@ export function describeRemove(remove: RemoveRequest): string {
 
 // 수정안·계획 하나의 변경 내용 줄들(팔레트 카드, 변경 기록).
 export function fixLabels(fix: FixOption): string[] {
+  if (fix.civil) {
+    return [fix.civil.summary, ...fix.civil.details];
+  }
+
+  if (fix.layers) {
+    return [fix.layers.summary, ...fix.layers.details];
+  }
+
   if (fix.create) {
     return [describeCreate(fix.create)];
   }
@@ -48,6 +56,19 @@ export function fixLabels(fix: FixOption): string[] {
   }
 
   return fix.changes.map(describe);
+}
+
+// 레이어 삭제도 기존 삭제 카드와 재적용 제한을 사용한다.
+export function fixKind(fix: FixOption): "delete" | "create" | "change" {
+  if (fix.civil) {
+    return fix.civil.kind;
+  }
+
+  if (fix.layers) {
+    return fix.layers.action === "edit" ? "change" : fix.layers.action;
+  }
+
+  return fix.remove ? "delete" : fix.create ? "create" : "change";
 }
 
 // 예: "VIP 0+420.00 종단곡선 길이 160 → 172 m"

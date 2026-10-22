@@ -20,6 +20,7 @@ export type ReviewItem = {
 
 // 띄어쓰기·대소문자·문장부호를 빼고 비교한다("10 m 단위" = "10m단위").
 const normalize = (text: string) => text.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[\s\p{P}\p{S}]+/gu, "");
+const failedTurn = (kind: unknown) => !!kind && kind !== "request_cancelled" && kind !== "fix_cancelled";
 export const groupKey = (content: string) => createHash("sha256").update(normalize(content)).digest("hex").slice(0, 10);
 
 // value가 step의 배수인지(소수 오차 허용).
@@ -201,7 +202,7 @@ export function report(store: Store, config: Config) {
   const turns = rows.filter(row => row.record.type === "turn");
   const failedTurns: Record<string, number> = {};
   for (const row of turns) {
-    if (row.record.errorKind) {
+    if (failedTurn(row.record.errorKind)) {
       failedTurns[String(row.record.errorKind)] = (failedTurns[String(row.record.errorKind)] ?? 0) + 1;
     }
   }
@@ -234,7 +235,7 @@ export function report(store: Store, config: Config) {
     const version = String(row.record.appVersion ?? "?");
     const entry = versions.get(version) ?? { turns: 0, failed: 0, installs: new Set<string>() };
     entry.turns++;
-    if (row.record.errorKind) {
+    if (failedTurn(row.record.errorKind)) {
       entry.failed++;
     }
 
@@ -312,7 +313,7 @@ export function problemCases(store: Store, status: CaseStatus = "new", limit = 1
         question: r.question,
         answer: r.answer
       });
-      if (r.errorKind) {
+      if (failedTurn(r.errorKind)) {
         item.signals.push(`실패(${r.errorKind})`);
       }
     } else if (r.type === "feedback" && typeof r.turnId === "string") {
@@ -387,12 +388,13 @@ export function decideCase(
     }
 
     const version = input.version && /^\d+\.\d+\.\d+$/.test(input.version) ? input.version : undefined;
-    store.cases[input.key] = { ...(current ?? {}), status: "done", ...(version ? { version } : {}), ...(note ? { note } : {}), decidedAt: now };
+    store.cases[input.key] = { ...(current ?? {}), status: "done", ...(version ? { version } : {}),
+      ...(note ? { note } : {}), decidedAt: now, driveCleanup: "pending" };
     // 처리가 끝났으면 내용은 지운다(분류·메모·고친 버전은 남는다). 사용자 데이터 → 검토 → 수정 → 재배포 → 삭제.
     store.scrubCase(match[1], match[2]);
   } else if (input.action === "discard") {
     store.scrubCase(match[1], match[2]);
-    store.cases[input.key] = { status: "discarded", ...(note ? { note } : {}), decidedAt: now };
+    store.cases[input.key] = { status: "discarded", ...(note ? { note } : {}), decidedAt: now, driveCleanup: "pending" };
   } else if (input.action === "reopen") {
     if (current?.status === "discarded") {
       throw new ReviewError("버린 사례는 되돌릴 수 없습니다(내용이 지워짐).");

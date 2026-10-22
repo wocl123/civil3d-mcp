@@ -74,6 +74,7 @@ function tomlPath(path: string): string {
 }
 
 type ModelChoice = { model?: string; effort?: string };
+type McpEndpoint = { url: string; headers: Record<string, string> };
 
 // 팔레트 AI는 사용자의 CLI 설정과 무관하게 정해진 모델을 쓴다.
 // data/palette-models.json 으로 바꿀 수 있다. 예: {"claude":{"model":"opus","effort":"high"}}
@@ -123,8 +124,9 @@ export async function paletteVersion(provider: Provider): Promise<string> {
 //   tools:        true면 이 프로젝트의 MCP 서버를 "palette" 프로필(읽기 전용 + 동의한 수정안 적용)로 붙인다.
 //   requestId:    MCP 서버로 전달돼, 계산한 수정안과 적용한 변경에 이 요청을 표시한다.
 //   offeredFixes: 이 요청에서 적용해도 되는 수정안 id(앞서 대화에서 사용자에게 보여 준 것).
-export async function paletteLaunch(provider: Provider, tools: boolean, requestId = "none", offeredFixes: string[] = [], drawingId = ""):
-Promise<CliLaunch> {
+export async function paletteLaunch(provider: Provider, tools: boolean, requestId = "none", offeredFixes: string[] = [], drawingId = "",
+  endpoint?: McpEndpoint):
+  Promise<CliLaunch> {
   if (!/^[\w-]{1,64}$/.test(requestId)) {
     throw new Error("Invalid request id.");
   }
@@ -153,7 +155,8 @@ Promise<CliLaunch> {
   if (provider === "claude") {
     await writeIfChanged(join(cwd, "palette-skill.md"), skill);
     await writeIfChanged(join(cwd, "claude-mcp.json"), JSON.stringify({
-      mcpServers: { [SERVER_NAME]: { type: "stdio", command: process.execPath, args: [mcpEntry], env: serverEnv } }
+      mcpServers: { [SERVER_NAME]: endpoint ? { type: "http", ...endpoint } :
+      { type: "stdio", command: process.execPath, args: [mcpEntry], env: serverEnv } }
     }, null, 2));
     const user = await paletteModel("claude");
     return {
@@ -194,7 +197,11 @@ Promise<CliLaunch> {
         "-c", `model_instructions_file=${tomlPath(instructions)}`,
         ...(user.model ? ["-c", `model='${user.model}'`] : []),
         ...(user.effort ? ["-c", `model_reasoning_effort='${user.effort}'`] : []),
-        ...(tools ? [
+        ...(tools && endpoint ? [
+          "-c", `${server}.url='${endpoint.url}'`,
+          "-c", `${server}.http_headers={Authorization='${endpoint.headers.Authorization}'}`,
+          "-c", `${server}.tool_timeout_sec=${TOOL_TIMEOUT_SECONDS}`
+        ] : tools ? [
           "-c", `${server}.command=${tomlPath(process.execPath)}`,
           "-c", `${server}.args=[${tomlPath(mcpEntry)}]`,
           "-c", `${server}.tool_timeout_sec=${TOOL_TIMEOUT_SECONDS}`,
@@ -205,22 +212,35 @@ Promise<CliLaunch> {
     };
   }
 
-  // ── Gemini: 작업 폴더의 GEMINI.md 와 .gemini/settings.json 을 읽는다.
+  // ── Gemini: Antigravity CLI. 인증은 OS keyring을 쓰고, 설정은 요청별로 격리한다.
   await writeIfChanged(join(cwd, "GEMINI.md"), skill);
-  await writeIfChanged(join(cwd, ".gemini", "settings.json"), JSON.stringify({
-    mcpServers: {
-      [SERVER_NAME]: {
-        command: process.execPath,
-        args: [mcpEntry],
-        env: serverEnv,
-        trust: true,
-        timeout: TOOL_TIMEOUT_SECONDS * 1000
-      }
+  const profile = join(cwd, ".gemini");
+  await writeIfChanged(join(profile, "antigravity-cli", "settings.json"), JSON.stringify({
+    permissions: {
+      allow: tools ? [`mcp(${SERVER_NAME}/*)`] : [],
+      deny: ["command(*)", "unsandboxed(*)", "write_file(*)", "read_url(*)", "execute_url(*)", ...(tools ? [] : ["mcp(*)"])]
     }
   }, null, 2));
+  await writeIfChanged(join(cwd, ".agents", "mcp_config.json"), JSON.stringify({
+    mcpServers: tools ? {
+      [SERVER_NAME]: endpoint ? {
+        serverUrl: endpoint.url, headers: endpoint.headers
+      } : {
+        command: process.execPath,
+        args: [mcpEntry],
+        env: serverEnv
+      }
+    } : {}
+  }, null, 2));
+  const user = await paletteModel("gemini");
   return {
     cwd,
-    env: {},
-    args: ["--output-format", "json", "-e", "none", ...(tools ? ["--skip-trust", "--allowed-mcp-server-names", SERVER_NAME] : [])]
+    // Windows의 agy는 USERPROFILE 아래에서 settings.json을 읽는다.
+    // 이 자식 프로세스에만 요청 폴더를 지정한다. 로그인은 기존 Windows keyring에서 재사용한다.
+    env: process.platform === "win32" ? { USERPROFILE: cwd } : {},
+    args: ["--input-format", "stream-json", "--output-format", "stream-json",
+      "--disable-slash-commands",
+      ...(user.model ? ["--model", user.model] : []),
+      ...(user.effort ? ["--effort", user.effort] : [])]
   };
 }

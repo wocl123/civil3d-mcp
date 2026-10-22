@@ -53,7 +53,8 @@ export function parseUsage(provider: Provider, output: unknown): TokenUsage {
     };
   }
 
-  // Gemini: 전체 값이 없으면 모델별 값을 더한다.
+  // Antigravity는 usage를 준다. 이전 Gemini 통계도 저장 기록 호환을 위해 읽는다.
+  const usage = record(data.usage);
   const stats = record(data.stats);
   const models = Object.values(record(stats.models));
   const modelTokens = models.map(model => record(record(model).tokens));
@@ -61,9 +62,9 @@ export function parseUsage(provider: Provider, output: unknown): TokenUsage {
   const modelOutput = sumKnown(modelTokens.map(tokens => count(tokens.candidates)));
   const modelCached = sumKnown(modelTokens.map(tokens => count(tokens.cached)));
   return {
-    inputTokens: count(stats.input_tokens) ?? modelInput,
-    outputTokens: count(stats.output_tokens) ?? modelOutput,
-    cachedInputTokens: count(stats.cached) ?? modelCached,
+    inputTokens: count(usage.input_tokens) ?? count(stats.input_tokens) ?? modelInput,
+    outputTokens: count(usage.output_tokens) ?? count(stats.output_tokens) ?? modelOutput,
+    cachedInputTokens: count(usage.cache_read_tokens) ?? count(stats.cached) ?? modelCached,
     costUsd: null
   };
 }

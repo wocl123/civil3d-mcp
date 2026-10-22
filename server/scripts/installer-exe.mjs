@@ -13,7 +13,8 @@ import { sandboxInstall } from '../../scripts/installer-sandbox.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const exe = resolve(process.argv[2]);
-const temp = await mkdtemp(join(tmpdir(), 'mycivil3d-exe-test-'));
+// Keep room below MAX_PATH when TEMP is inside a workspace on another drive.
+const temp = await mkdtemp(join(tmpdir(), 'mc-exe-'));
 const quote = text => "'" + text.replace(/'/g, "''") + "'";
 const readJson = async file => JSON.parse((await readFile(file, 'utf8')).replace(/^\s+/, ''));
 
@@ -93,6 +94,12 @@ try {
     const invoke = '& ' + quote(join(helper, 'install-exe.ps1')) + ' -Archive ' + quote(archive)
       + ' -DataDir ' + quote(data) + ' -DestinationRoot ' + quote(plugins) + ' -SkipRunningCheck';
     const update = powershell(invoke);
+    if (update.status !== 0) {
+      const log = join(data, 'logs', new Date().toLocaleString('sv-SE').slice(0, 10), 'installer.log');
+      const detail = await readFile(log, 'utf8').catch(() => 'Installer log was not created.');
+      await mkdir(join(repo, 'test-results'), { recursive: true });
+      await writeFile(join(repo, 'test-results', 'installer-exe-failure.log'), detail);
+    }
     assert.equal(update.status, 0, update.stdout + update.stderr);
     assertBundleMatchesManifest(join(plugins, 'MyCivil3DMcp.bundle'));
 

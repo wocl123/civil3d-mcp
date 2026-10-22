@@ -67,10 +67,23 @@ export type Official = {
 // 문제 사례 분류(검토자). 키: "<설치ID>:<질문 id>".
 //   todo: 처리하기로 함(분류·메모) / done: 처리 끝(고친 버전) / discarded: 버림(내용은 기록에서 지움)
 export type CaseCategory = "knowledge" | "code" | "ai" | "other";
-export type CaseTriage = { status: "todo" | "done" | "discarded"; category?: CaseCategory; note?: string; version?: string; decidedAt: string };
+export type CaseTriage = {
+  status: "todo" | "done" | "discarded";
+  category?: CaseCategory;
+  note?: string;
+  version?: string;
+  decidedAt: string;
+  driveCleanup?: "pending" | "done";
+};
 
 // 버릴 때 기록에서 지우는 내용 항목(숫자 통계는 남긴다).
 const CONTENT_FIELDS = ["question", "answer", "input", "title", "labels", "reason"];
+
+export function caseRecordKey(installId: string, record: Record<string, unknown>): string | undefined {
+  const id = record.type === "turn" ? record.id
+    : ["tool", "change", "feedback"].includes(String(record.type)) ? record.turnId : undefined;
+  return typeof id === "string" ? `${installId}:${id}` : undefined;
+}
 
 export type Decision = { at: string; id: string; decision: string; reason?: string; content?: string; version: number };
 
@@ -139,7 +152,17 @@ export class AdminStore {
   // 묶음 하나를 받는다: 기록은 달별 파일에 붙이고, 묶음 id를 남긴다.
   addPackage(installId: string, packageId: string, records: Record<string, unknown>[]): void {
     const receivedAt = new Date().toISOString();
-    const rows = records.map(record => ({ installId, packageId, receivedAt, record }));
+    const rows = records.map(record => {
+      const copy = { ...record };
+      const key = caseRecordKey(installId, copy);
+      if (key && ["done", "discarded"].includes(this.cases[key]?.status)) {
+        for (const field of CONTENT_FIELDS) {
+          delete copy[field];
+        }
+      }
+
+      return { installId, packageId, receivedAt, record: copy };
+    });
     if (rows.length) {
       const lines = rows.map(row => JSON.stringify(row)).join("\n") + "\n";
       appendFileSync(path("records", `${receivedAt.slice(0, 7)}.jsonl`), lines, "utf8");
@@ -176,9 +199,7 @@ export class AdminStore {
   // 질문 키("<설치ID>:<질문 id>")가 조건에 맞는 기록들의 내용 항목을 지운다(달별 파일을 다시 쓴다). 숫자 통계는 남는다.
   scrubWhere(match: (key: string) => boolean): number {
     const keyOf = (row: StoredRecord) => {
-      const record = row.record as Record<string, unknown>;
-      const id = record.id ?? record.turnId;
-      return typeof id === "string" ? `${row.installId}:${id}` : undefined;
+      return caseRecordKey(row.installId, row.record);
     };
 
     const hasContent = (row: StoredRecord) => {

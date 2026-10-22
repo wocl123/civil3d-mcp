@@ -14,7 +14,8 @@ import { parseCliFailure, formatCliFailure, rememberLimit, clearLimit, type CliF
 import { getQuota, cachedQuota } from "./quota.js";
 import { parseUsage } from "./usage.js";
 import { paletteLaunch } from "./paletteWorkspace.js";
-import { cliPath, locateCli } from "./cliLocator.js";
+import { cliCommand, cliPath, locateCli } from "./cliLocator.js";
+import { antigravityResult } from "./antigravity.js";
 import type { TokenUsage } from "./types/TokenUsage.js";
 import type { Provider } from "./types/Provider.js";
 import type { ProviderState } from "./types/ProviderState.js";
@@ -47,10 +48,10 @@ export const PROVIDERS = ["claude", "codex", "gemini"] as const;
 //   - 팔레트는 남은 시간을 보여 준다(sessionInfo).
 //   - data/state/ai-sessions.json 에도 저장해, 서비스가 다시 떠도 다시 고를 필요가 없다.
 // MY_CIVIL3D_AI_SESSION_MINUTES 로 길이를 바꿀 수 있다(기본 30분).
-const sessions = stateFile<{ state: ProviderState; checkedAt: number }>("ai-sessions", record => record.checkedAt);
+const sessions = stateFile<{ state: ProviderState; checkedAt: number; cli?: string }>("ai-sessions", record => record.checkedAt);
 const verified = sessions.map;
 function setVerified(provider: Provider, state: ProviderState): ProviderState {
-  verified.set(provider, { state, checkedAt: Date.now() });
+  verified.set(provider, { state, checkedAt: Date.now(), cli: cliCommand(provider) });
   sessions.save();
   return state;
 }
@@ -77,12 +78,18 @@ async function runCli(
   signal?: AbortSignal
 ): Promise<CliResult> {
   const windows = process.platform === "win32";
-  const executable = windows ? "cmd.exe" : provider;
-  const commandArgs = windows ? ["/d", "/s", "/c", provider, ...args] : args;
 
   // CLI를 실제 위치에서 찾고(cliLocator.ts), 그 폴더를 PATH 맨 앞에 둔다.
   // 그래서 Civil 3D가 켜진 뒤 설치한 CLI도 실행된다. Windows는 PATH 키 이름이 "Path"다.
   const location = await locateCli(provider);
+  if (!location) {
+    throw new Error(`${cliCommand(provider)} CLI is not installed.`);
+  }
+
+  // .exe는 절대 경로로 직접 실행한다. 배치 shim만 cmd.exe를 거친다.
+  const batch = windows && /\.(cmd|bat)$/i.test(location.file);
+  const executable = batch ? "cmd.exe" : location.file;
+  const commandArgs = batch ? ["/d", "/s", "/c", cliCommand(provider), ...args] : args;
   const env: Record<string, string | undefined> = { ...process.env, ...extraEnv, CI: "1" };
   if (location) {
     for (const key of Object.keys(env)) {
@@ -182,12 +189,23 @@ async function runCli(
       }
     });
 
-    child.stdin.end(input);
+    child.stdin.end(provider === "gemini" && args.includes("--input-format")
+      ? JSON.stringify({ event: "user", message: { content: input } }) + "\n"
+      : input);
   });
 }
 
 async function isInstalled(provider: Provider): Promise<boolean> {
   return (await locateCli(provider)) !== undefined;
+}
+
+async function probeGemini(): Promise<CliResult> {
+  const launch = await paletteLaunch("gemini", false);
+  try {
+    return await runCli("gemini", launch.args, "Reply with OK only. Do not use any tools.", 60000, launch.cwd, launch.env);
+  } finally {
+    await rm(launch.cwd, { recursive: true, force: true });
+  }
 }
 
 // 현재 상태: missing(설치 안 됨) / unchecked(확인 전 또는 세션 끝) / ready / unauthenticated.
@@ -197,7 +215,7 @@ export async function getProviderState(provider: Provider): Promise<ProviderStat
   }
 
   const record = verified.get(provider);
-  if (!record || Date.now() - record.checkedAt > SESSION_MS) {
+  if (!record || (provider === "gemini" && record.cli !== "agy") || Date.now() - record.checkedAt > SESSION_MS) {
     return "unchecked";
   }
 
@@ -237,7 +255,7 @@ export async function verifyProvider(provider: Provider): Promise<ProviderState>
       ? await runCli(provider, ["auth", "status"], "", 15000)
       : provider === "codex"
         ? await runCli(provider, ["login", "status"], "", 15000)
-        : await runCli(provider, ["--output-format", "json", "-p", "Reply with OK."], "", 60000);
+        : await probeGemini();
 
     const failure = parseCliFailure(provider, result);
     if (failure) {
@@ -262,12 +280,12 @@ export async function verifyProvider(provider: Provider): Promise<ProviderState>
     }
 
     if (provider === "gemini" && ready) {
-      try {
-        const output = JSON.parse(result.stdout) as { response?: string; error?: unknown };
-        ready = typeof output.response === "string" && !output.error;
-      } catch {
-        ready = false;
+      const output = antigravityResult(result.stdout);
+      if (typeof output.response !== "string" || !output.response.trim()) {
+        throw new Error("Gemini(Antigravity) 로그인 확인 중 응답을 받지 못했습니다. 다시 시도해 주세요.");
       }
+
+      ready = !output.error && (!output.status || output.status === "SUCCESS");
     }
 
     return setVerified(provider, ready ? "ready" : "unauthenticated");
@@ -313,6 +331,21 @@ function chatEvent(provider: Provider, line: string): ChatEvent | undefined {
     }
   }
 
+  if (provider === "gemini" && event.event === "step_update") {
+    const step = event.step_update;
+    if (step?.step_type === "agent_response" && typeof step.text_delta === "string") {
+      return { type: "text", text: step.text_delta };
+    }
+
+    if (step?.step_type === "tool" && step.state === "ACTIVE") {
+      const params = step.tool_info?.parameters;
+      const name = params?.ToolName ?? params?.toolName ?? step.tool_name;
+      if (typeof name === "string") {
+        return { type: "tool", name };
+      }
+    }
+  }
+
   return undefined;
 }
 
@@ -328,6 +361,7 @@ export type AskOptions = {
   offeredFixes?: string[];
   drawingId?: string;
   signal?: AbortSignal;
+  onTiming?: (stage: string, ms: number) => void;
 };
 
 export async function askProvider(
@@ -339,8 +373,22 @@ export async function askProvider(
 
   // 1) CLI 실행 (명령 인자와 작업 폴더는 paletteWorkspace.ts 가 정한다)
   const requestId = options.requestId ?? randomUUID();
-  const launch = await paletteLaunch(
-    provider, options.tools === true, requestId, options.offeredFixes, options.drawingId);
+  const prepared = performance.now();
+  const mcp = options.tools === true
+    ? await (await import("../mcp/paletteHost.js")).openPaletteMcp({
+      requestId, drawingId: options.drawingId ?? "", offeredFixes: options.offeredFixes ?? []
+    })
+    : undefined;
+  let launch: Awaited<ReturnType<typeof paletteLaunch>>;
+  try {
+    launch = await paletteLaunch(
+      provider, options.tools === true, requestId, options.offeredFixes, options.drawingId, mcp);
+  } catch (error) {
+    await mcp?.close();
+    throw error;
+  }
+
+  options.onTiming?.("prepareMs", Math.round(performance.now() - prepared));
   const onEvent = options.onEvent;
   const onLine = onEvent
     ? (line: string) => {
@@ -351,9 +399,21 @@ export async function askProvider(
     }
     : undefined;
   let result: CliResult;
+  const running = performance.now();
+  let firstEvent = true;
+  const progress = onLine ? (line: string) => {
+    if (firstEvent) {
+      firstEvent = false;
+      options.onTiming?.("firstCliEventMs", Math.round(performance.now() - running));
+    }
+
+    onLine(line);
+  } : undefined;
   try {
-    result = await runCli(provider, launch.args, prompt, 200000, launch.cwd, launch.env, onLine, options.signal);
+    result = await runCli(provider, launch.args, prompt, 200000, launch.cwd, launch.env, progress, options.signal);
   } finally {
+    options.onTiming?.("cliMs", Math.round(performance.now() - running));
+    await mcp?.close();
     // 요청별 폴더는 이 실행이 소유한다. 인증 파일은 여기 저장하지 않는다.
     await rm(launch.cwd, { recursive: true, force: true }).catch(error => process.stderr.write(`Workspace cleanup failed: ${String(error)}\n`));
   }
@@ -386,8 +446,8 @@ export async function askProvider(
   }
 
   if (provider === "gemini") {
-    const parsed = JSON.parse(result.stdout) as { response?: string; error?: unknown };
-    if (parsed.error || typeof parsed.response !== "string") {
+    const parsed = antigravityResult(result.stdout);
+    if (parsed.error || typeof parsed.response !== "string" || !parsed.response.trim() || (parsed.status && parsed.status !== "SUCCESS")) {
       throw new Error("Gemini returned no answer.");
     }
 

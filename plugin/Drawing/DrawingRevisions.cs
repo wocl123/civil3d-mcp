@@ -8,7 +8,7 @@ namespace MyCivil3DMcp.Plugin;
 /// 열린 도면마다 고유 ID와 객체 변경 횟수를 둔다.
 /// Node 서비스는 이 값으로 저장한 답과 수정안이 아직 맞는지 판단한다.
 /// </summary>
-// 리비전 = "<세션>-<횟수>". 도면 객체(Entity: 선, 폴리선, 선형, 종단 등)가 추가·수정·삭제될 때마다 1씩 오른다.
+// 리비전 = "<세션>-<횟수>". 도면 객체와 레이어가 추가·수정·삭제될 때마다 1씩 오른다.
 // 뷰포트·사전·Xrecord 같은 비도면 객체의 변경은 세지 않는다: 화면 이동이나 명령 실행만으로도
 // AutoCAD가 이런 객체를 고쳐, 읽기만 했는데 리비전이 올라 수정안이 "도면이 바뀜"으로 거절되었다.
 // 도면은 네이티브 포인터(UnmanagedObject)로 구별한다. document.Database가 돌려주는 .NET 래퍼는
@@ -35,6 +35,30 @@ internal static class DrawingRevisions
     private static readonly List<Recorder> Recorders = new();
     private static readonly object Gate = new();
     private static bool _started;
+    private static readonly Dictionary<IntPtr, int> ReadRollbacks = new();
+
+    // Some Civil "get" APIs initialize persistent caches and require write access.
+    // The callback is synchronous under the document lock; its nested transaction ALWAYS aborts.
+    // Ignore only events from this disposable, rolled-back observation, not real edits.
+    internal static T ReadWithRollback<T>(Database database, Func<Transaction, T> read)
+    {
+        IntPtr key = database.UnmanagedObject;
+        lock (Gate) ReadRollbacks[key] = ReadRollbacks.GetValueOrDefault(key) + 1;
+        try
+        {
+            using Transaction temporary = database.TransactionManager.StartTransaction();
+            T result = read(temporary);
+            temporary.Abort();
+            return result;
+        }
+        finally
+        {
+            lock (Gate)
+            {
+                if (--ReadRollbacks[key] == 0) ReadRollbacks.Remove(key);
+            }
+        }
+    }
 
     public static void Start()
     {
@@ -165,7 +189,11 @@ internal static class DrawingRevisions
             return;
         }
 
-        bool counted = item is Entity;
+        bool counted = item is Entity or LayerTableRecord
+            or Autodesk.Civil.DatabaseServices.Styles.StyleBase or Autodesk.Civil.DatabaseServices.Styles.LabelStyleComponent
+            or Autodesk.Civil.DatabaseServices.PointGroup or Autodesk.Civil.DatabaseServices.PointDescriptionKeySet
+            or Autodesk.Civil.DatabaseServices.PointDescriptionKey or Autodesk.Civil.DatabaseServices.CatchmentGroup
+            or Autodesk.Aec.PropertyData.DatabaseServices.PropertySet or Autodesk.Aec.PropertyData.DatabaseServices.PropertySetDefinition;
         string type = "?";
         string handle = "";
         try
@@ -180,6 +208,7 @@ internal static class DrawingRevisions
 
         lock (Gate)
         {
+            if (ReadRollbacks.ContainsKey(database.UnmanagedObject)) return;
             Change change = new(DateTime.Now, kind, type, handle, counted, DrawingSelection.BridgeRunning);
 
             Recent.Enqueue(change);

@@ -285,6 +285,26 @@ public static class DrawingQueries
                 center = Coordinates(circle.Center),
                 radius = circle.Radius
             },
+            DBText text => new
+            {
+                content = text.TextString,
+                height = text.Height,
+                rotationDegrees = Math.Round(text.Rotation * 180 / Math.PI, 2),
+                position = Coordinates(text.Position)
+            },
+            MText text => new
+            {
+                content = text.Text,
+                height = text.TextHeight,
+                rotationDegrees = Math.Round(text.Rotation * 180 / Math.PI, 2),
+                position = Coordinates(text.Location)
+            },
+            Dimension dimension => new
+            {
+                measurement = dimension.Measurement,
+                textOverride = dimension.DimensionText,
+                style = dimension.DimensionStyleName
+            },
             _ => null
         };
 

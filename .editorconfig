@@ -33,3 +33,7 @@ csharp_preserve_single_line_blocks = true
 
 # 긴 식은 연산자 앞에서 줄을 바꾼다.
 dotnet_style_operator_placement_when_wrapping = beginning_of_line
+
+# Windows CMD는 한글 BAT의 LF 줄바꿈을 잘못 해석할 수 있다.
+[*.bat]
+end_of_line = crlf

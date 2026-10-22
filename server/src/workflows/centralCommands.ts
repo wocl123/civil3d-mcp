@@ -23,7 +23,8 @@ import { install } from "../data/install.js";
 import { driveSettings, loadTeam, loadSettings, saveSettings, validEmail, type DriveSettings } from "../data/settings.js";
 import { PARAMETERS, isParameterKey, parameterSummary } from "../knowledge/parameters.js";
 import { adminDir, driveFileId, loadAdminConfig, saveAdminConfig } from "../admin/adminConfig.js";
-import { adminStore } from "../admin/adminStore.js";
+import { adminStore, type AdminStore } from "../admin/adminStore.js";
+import { caseCleanupText, cleanupDriveCases } from "../admin/caseCleanup.js";
 import { current, fetchRelease, listReleases, publish, readRelease, ReleaseError, removeRelease } from "../admin/releases.js";
 import { type CaseStatus, casesMarkdown, cleanupContent, decide, decideCase, problemCases as findCases, report as buildReport, ReviewError, reviewItems, type ReviewItem } from "../admin/review.js";
 import { ensureMemberFolder, findDriveRoot, findMemberFolders, LATEST_ZIP, RELEASE_FOLDER } from "../drive/driveFolders.js";
@@ -34,14 +35,15 @@ import { lastShown, parseDecision, pick, setShown } from "./shownLists.js";
 const DRIVE_WEB = "https://drive.google.com/drive/my-drive";
 
 // 이 명령들 중 하나면 답 글을, 아니면 undefined(→ 다음 명령 처리기나 AI로).
-export async function centralCommand(question: string, conversation?: string): Promise<string | undefined> {
+export async function centralCommand(question: string, conversation?: string,
+  options: { localAdminMenu?: boolean } = {}): Promise<string | undefined> {
   const text = question.trim();
   if (text === "/설정값") {
     return parametersText();
   }
 
   if (/^\/중앙(\s|$)/.test(text)) {
-    return central(text.replace(/^\/중앙\s*/, ""), conversation);
+    return central(text.replace(/^\/중앙\s*/, ""), conversation, options.localAdminMenu === true);
   }
 
   if (text === "/검토") {
@@ -60,10 +62,14 @@ export async function centralCommand(question: string, conversation?: string): P
     return cleanup();
   }
 
+  if (text === "/검토 드라이브정리") {
+    return await isAdmin() ? cleanupCaseSources(adminStore()) : NOT_ADMIN;
+  }
+
   // "1 승인" 같은 답은 마지막 목록이 검토 목록일 때만 받는다.
   const listed = lastShown(conversation, "review");
   const reply = listed ? parseDecision(text) : undefined;
-  return reply && listed ? reviewDecide(reply, listed, conversation) : undefined;
+  return reply && listed ? reviewDecide(reply, listed, conversation, options.localAdminMenu === true) : undefined;
 }
 
 const failure = (error: unknown) => error instanceof ReviewError || error instanceof ReleaseError
@@ -90,7 +96,7 @@ const shareSteps = (folder: string, email?: string) => [
 ].join("\n");
 
 // /중앙 ... 처리.
-async function central(rest: string, conversation?: string): Promise<string> {
+async function central(rest: string, conversation?: string, localAdminMenu = false): Promise<string> {
   const [command, ...args] = rest.split(/\s+/).filter(Boolean);
   if (!command) {
     return statusText();
@@ -222,7 +228,7 @@ async function central(rest: string, conversation?: string): Promise<string> {
   }
 
   if (command === "사용자") {
-    return members(args, conversation, drive);
+    return members(args, conversation, drive, localAdminMenu);
   }
 
   if (command === "배포") {
@@ -296,28 +302,12 @@ async function statusText(): Promise<string> {
 }
 
 // /중앙 사용자 [<번호> 차단|해제]
-async function members(args: string[], conversation: string | undefined, drive: DriveSettings): Promise<string> {
+async function members(args: string[], conversation: string | undefined, drive: DriveSettings,
+  localAdminMenu = false): Promise<string> {
   const store = adminStore();
   if (!args.length) {
-    const root = findDriveRoot(drive.root);
-    if (!root) {
+    if (!localAdminMenu && !await discoverMembers(store, drive)) {
       return NO_DRIVE;
-    }
-
-    const own = (await install()).installId;
-    for (const folder of await findMemberFolders(root)) {
-      if (folder.installId === own || store.members[folder.installId]) {
-        continue;
-      }
-
-      const today = new Date().toISOString().slice(0, 10);
-      store.members[folder.installId] = {
-        installId: folder.installId,
-        folder: folder.name,
-        firstSeen: today,
-        lastSeen: today,
-        seen: false
-      };
     }
 
     const rows = Object.values(store.members).sort((a, b) => a.firstSeen.localeCompare(b.firstSeen));
@@ -328,13 +318,17 @@ async function members(args: string[], conversation: string | undefined, drive: 
     }
 
     store.saveMembers();
-    void watch();
+    if (!localAdminMenu) {
+      void watch();
+    }
+
     return [
       `### 사용자 ${rows.length}명`,
       ...(lines.length ? lines : ["아직 없습니다."]),
       "",
       "자동 수신 사용자는 설치ID로 등록됩니다. 실제 사용자 신원은 수집하지 않습니다.",
       "웹 수신 설치는 자동 등록됩니다. 구버전 폴더 방식만 공유받은 폴더의 바로가기를 추가하세요.",
+      ...(localAdminMenu ? ["새 사용자는 메인 메뉴의 1번에서 가져온 뒤 표시됩니다."] : []),
       "모르는 폴더면: /중앙 사용자 <번호> 차단 (그리고 드라이브에서 바로가기 삭제)"
     ].join("\n");
   }
@@ -372,6 +366,27 @@ async function members(args: string[], conversation: string | undefined, drive: 
   return action === "차단"
     ? `${row.folder}: 차단했습니다. 웹 수신 사용자는 Drive 동기화 후 추가 전송도 거절됩니다.`
     : `${row.folder}: 차단을 풀었습니다.`;
+}
+
+async function discoverMembers(store: AdminStore, drive: DriveSettings): Promise<boolean> {
+  const root = findDriveRoot(drive.root);
+  if (!root) {
+    return false;
+  }
+
+  const own = (await install()).installId;
+  for (const folder of await findMemberFolders(root)) {
+    if (folder.installId === own || store.members[folder.installId]) {
+      continue;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    store.members[folder.installId] = {
+      installId: folder.installId, folder: folder.name, firstSeen: today, lastSeen: today, seen: false
+    };
+  }
+
+  return true;
 }
 
 // 공용 배포 파일의 공유 링크를 정하는 방법.
@@ -502,7 +517,7 @@ async function reviewList(conversation?: string): Promise<string> {
 
 // "1 승인" / "2 반려 사유" 처리. 반려에는 사유가 필요하다.
 async function reviewDecide(
-  reply: NonNullable<ReturnType<typeof parseDecision>>, listed: string[], conversation?: string
+  reply: NonNullable<ReturnType<typeof parseDecision>>, listed: string[], conversation?: string, localAdminMenu = false
 ): Promise<string> {
   if (!await isAdmin()) {
     return NOT_ADMIN;
@@ -530,12 +545,14 @@ async function reviewDecide(
 
   // 결정한 항목은 목록에서 뺀다(남은 번호로 이어서 답할 수 있게). 승인했으면 바로 동기화해 나눠 준다.
   setShown(conversation, "review", listed.filter(id => !ids.includes(id)));
-  if (reply.decision === "approved") {
+  if (reply.decision === "approved" && !localAdminMenu) {
     await runSync();
   }
 
   const head = `${reply.decision === "approved" ? "승인" : "반려"}했습니다 (중앙 지식 v${store.official.version}).`;
-  return [head, "", ...lines].join("\n");
+  const delivery = localAdminMenu && reply.decision === "approved"
+    ? "1번 또는 자동 가져오기에서 사용자 PC로 전달합니다." : "";
+  return [head, delivery, "", ...lines].filter(Boolean).join("\n");
 }
 
 // /검토 보고 : 최근 기간의 실패·도구 통계와 수정 추적 결과.
@@ -656,14 +673,16 @@ async function problemCases(rest: string, conversation?: string): Promise<string
 
     if (match[2] === "버림") {
       decideCase(store, { key, action: "discard", note: words });
-      return `${match[1]}번을 버렸습니다. 관리자 보관함에서 그 질문·답·의견 내용을 지웠습니다(통계 숫자만 남음).`;
+      return `${match[1]}번을 버렸습니다. 관리자 보관함에서 그 질문·답·의견 내용을 지웠습니다(통계 숫자만 남음).\n` +
+        await cleanupCaseSources(store, [key]);
     }
 
     if (match[2] === "완료") {
       const [first, ...note] = words.split(/\s+/);
       const version = /^\d+\.\d+\.\d+$/.test(first ?? "") ? first : undefined;
       decideCase(store, { key, action: "done", version, note: (version ? note : [first, ...note]).filter(Boolean).join(" ") });
-      return `${match[1]}번을 완료로 표시했습니다${version ? `(${version}에서 고침)` : ""}. 그 내용은 지웠습니다(분류·메모·버전은 남음).`;
+      return `${match[1]}번을 완료로 표시했습니다${version ? `(${version}에서 고침)` : ""}. 그 내용은 지웠습니다(분류·메모·버전은 남음).\n` +
+        await cleanupCaseSources(store, [key]);
     }
 
     decideCase(store, { key, action: "reopen" });
@@ -680,5 +699,14 @@ async function cleanup(): Promise<string> {
   }
 
   const result = cleanupContent(adminStore());
-  return `정리했습니다. 질문 ${result.scrubbed}건의 내용을 지웠습니다(숫자 통계는 남음). 분류 전·할 일 사례 ${result.kept}건은 그대로 두었습니다.`;
+  return `정리했습니다. 질문 ${result.scrubbed}건의 내용을 지웠습니다(숫자 통계는 남음). 분류 전·할 일 사례 ${result.kept}건은 그대로 두었습니다.\n` +
+    await cleanupCaseSources(adminStore());
+}
+
+async function cleanupCaseSources(store: AdminStore, keys?: string[]): Promise<string> {
+  if (process.env.MY_CIVIL3D_ADMIN_CONSOLE !== "1") {
+    return "Drive 원본 삭제는 관리자실행.bat의 다음 동기화에서 처리합니다.";
+  }
+
+  return caseCleanupText(await cleanupDriveCases(store, (await driveSettings())?.root, keys));
 }

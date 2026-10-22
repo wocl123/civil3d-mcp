@@ -11,7 +11,7 @@ import { checkAlignmentCriteria } from "./alignmentCriteria.js";
 import { checkProfileCriteria } from "./profileCriteria.js";
 import type { CheckItem } from "./types/CheckItem.js";
 import type { CriteriaReport } from "./types/CriteriaReport.js";
-import { readRecord, writeRecord } from "../civil/alignmentRecord.js";
+import { readRecord, writeRecord } from "../civil/alignment/alignmentRecord.js";
 
 const PAGE = 200;        // 선형 목록을 한 번에 읽는 개수
 const CONCURRENCY = 3;   // 동시에 검토하는 선형 수

@@ -4,11 +4,11 @@ import { withDrawing } from "../bridge/boundOperation.js";
 // 비교는 모두 이 코드가 하고, AI는 결과를 설명만 한다.
 
 import { callPlugin } from "../bridge/pluginClient.js";
-import { readSection } from "../civil/civilData.js";
-import type { AlignmentCurve } from "../civil/types/AlignmentCurve.js";
-import type { AlignmentDesignSpeed } from "../civil/types/AlignmentDesignSpeed.js";
-import type { AlignmentElement } from "../civil/types/AlignmentElement.js";
-import type { AlignmentSuperelevation } from "../civil/types/AlignmentSuperelevation.js";
+import { readSection } from "../civil/shared/civilData.js";
+import type { AlignmentCurve } from "../civil/alignment/types/AlignmentCurve.js";
+import type { AlignmentDesignSpeed } from "../civil/alignment/types/AlignmentDesignSpeed.js";
+import type { AlignmentElement } from "../civil/alignment/types/AlignmentElement.js";
+import type { AlignmentSuperelevation } from "../civil/alignment/types/AlignmentSuperelevation.js";
 import { loadParameters } from "../knowledge/parameters.js";
 import { findRow, loadCriteria, options, table } from "./criteriaStore.js";
 import { describeSpeeds, designSpeedLimits, speedAt } from "./designSpeed.js";
@@ -19,7 +19,7 @@ import { label, ReportBuilder } from "./reportBuilder.js";
 import { maxSuperelevation } from "./superelevation.js";
 import {
   APARTMENT_ROAD, notRoadNote, readRecord, superelevationArea, writeRecord, type Region, type RoadClass
-} from "../civil/alignmentRecord.js";
+} from "../civil/alignment/alignmentRecord.js";
 import type { CriteriaSet } from "./types/CriteriaSet.js";
 import type { CriteriaReport } from "./types/CriteriaReport.js";
 

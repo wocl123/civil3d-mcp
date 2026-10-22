@@ -23,7 +23,7 @@ import { deflection, distance, polylinePath } from "./polylinePath.js";
 import {
   APARTMENT_ROAD, orderUses, REGIONS, ROAD_CLASSES, superelevationArea, writeRecord,
   type AlignmentUse, type Region, type RoadClass
-} from "../civil/alignmentRecord.js";
+} from "../civil/alignment/alignmentRecord.js";
 import { designSpeedLimits } from "../criteria/designSpeed.js";
 import type { AlignmentCreateRequest, PlannedIp, PlanPoint, PolylineVertex } from "./types/AlignmentLayout.js";
 

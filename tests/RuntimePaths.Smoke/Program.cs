@@ -24,6 +24,9 @@ try
     Equal(RuntimePaths.Version(plugin), "development");
     File.WriteAllText(Path.Combine(bundle, "Contents", "version.json"), "{\"version\":\"0.1.0\"}");
     Equal(RuntimePaths.Version(plugin), "0.1.0");
+    File.WriteAllText(Path.Combine(bundle, "Contents", "internal-deployment.json"), "{}");
+    Equal(RuntimePaths.Version(plugin), "0.1.0 (internal)");
+    Equal(RuntimePaths.IsInternal(plugin).ToString(), "True");
     Console.WriteLine("Runtime paths passed: bundle, override, missing runtime, PATH fallback, development, Korean/space paths, version.");
 }
 finally { Directory.Delete(root, true); }

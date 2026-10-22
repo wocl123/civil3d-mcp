@@ -72,14 +72,15 @@ export async function storeFix(
 
   // id에 요청을 넣는다: 같은 수정안을 나중 답변에서 다시 계산해도 새 id가 생겨,
   // 한 답변에서 보여 준 id를 다른 답변이 가로채지 않는다.
-  const plan = JSON.stringify(fix.create ?? fix.remove ?? fix.edit ?? fix.changes);
+  const plan = JSON.stringify(fix.create ?? fix.remove ?? fix.edit ?? fix.layers ?? fix.civil ?? fix.changes);
   const hash = createHash("sha256")
     .update(requestId() + JSON.stringify(context) + version + plan)
     .digest("hex");
   fix.id = "fx-" + hash.slice(0, 10);
 
   // 자동 적용 가능: conflict가 아니고, 생성·삭제·속성 편집 계획이거나 모든 변경을 플러그인이 지원할 때.
-  const isPlan = fix.create !== undefined || fix.remove !== undefined || fix.edit !== undefined;
+  const isPlan = fix.create !== undefined || fix.remove !== undefined
+    || fix.edit !== undefined || fix.layers !== undefined || fix.civil !== undefined;
   const allSupported = fix.changes.length > 0 && fix.changes.every(supported);
   fix.applicable = !!context && fix.status !== "conflict" && (isPlan || allSupported);
 

@@ -1,10 +1,12 @@
 // A fake Civil 3D plug-in bridge for tests: the 본선 alignment and its profiles
 // (fake-alignment.mjs), five polylines and alignment creation (fake-polyline.mjs).
 import { createServer } from 'node:net';
+import { applyCivil, previewCivil, restoreCivil, listNetworks } from './fake-civil-plans.mjs';
 import { writeFileSync } from 'node:fs';
 import { applyChanges, handle as handleAlignment } from './fake-alignment.mjs';
 import { capture } from './fake-capture.mjs';
 import { created, handlePolyline, polylines } from './fake-polyline.mjs';
+import { applyLayers, layerInfo, layerNames, previewLayers, restoreLayers } from './fake-layers.mjs';
 
 const token = 'a'.repeat(64);
 let selected = [];
@@ -47,6 +49,15 @@ function deletePreview(params) {
 
 function answer(request) {
   if (failures.has(request.method)) throw new Error(failures.get(request.method));
+  if (request.method === 'drawing.chat_context') {
+    const read = (method, params = {}) => answer({ ...request, method, params });
+    const page = read('alignment.list');
+    return { status: read('drawing.status'), selection: read('drawing.selection'), alignments: {
+      ...page, items: page.items.map(alignment => ({ ...alignment,
+        profiles: read('alignment.section', { alignment: alignment.handle, section: 'related', offset: 0, limit: 200 }).items[0]?.profiles ?? [] }))
+    } };
+  }
+
   if (request.context && (request.context.drawingId !== drawingId || request.context.revision !== `sess1-${revision}`))
     throw new Error('Drawing changed since the calculation started. Run the check again.');
   if (request.method === 'change.cancel') {
@@ -70,7 +81,9 @@ function answer(request) {
     if (entry.state === 'confirmed') throw new Error('확정한 작업이라 되돌리기 기록이 없습니다.');
     if (entry.state === 'undone') return entry;
     if (entry.revision !== `sess1-${revision}`) throw new Error('undo conflict: drawing changed');
-    if (entry.previous) entry.previous.forEach(before => Object.assign(alignments.items.find(a => a.handle === before.handle), before));
+    if (entry.previousCivil) restoreCivil(entry.previousCivil);
+    else if (entry.previousLayers) restoreLayers(entry.previousLayers);
+    else if (entry.previous) entry.previous.forEach(before => Object.assign(alignments.items.find(a => a.handle === before.handle), before));
     else if (entry.deleted) entry.deleted.forEach(target => removed.delete(target.handle));
     else if (entry.name) created.delete(entry.name);
     else applyChanges({ params: { changes: entry.originalChanges.map((c, i) => ({ ...c, from: entry.changes[i].after, to: entry.changes[i].before })) } });
@@ -79,12 +92,15 @@ function answer(request) {
     if (failures.has('after.undo')) throw new Error(failures.get('after.undo'));
     return entry;
   }
-  if (request.method === 'change.apply' || request.method === 'alignment.create' || request.method === 'drawing.delete' || request.method === 'alignment.edit') {
+  const writes = ['change.apply', 'alignment.create', 'drawing.delete', 'alignment.edit', 'drawing.layer_apply', 'drawing.civil_apply'];
+  if (writes.includes(request.method)) {
     const id = request.params.operationId;
     if (!request.context) throw new Error('missing drawing context');
     if (operations.get(id)?.state === "cancelled") throw new Error("operation cancelled");
     if (operations.has(id)) return operations.get(id);
-    const result = request.method === 'change.apply' ? applyChanges(request)
+    const result = request.method === 'drawing.civil_apply' ? applyCivil(request.params)
+      : request.method === 'change.apply' ? applyChanges(request)
+      : request.method === 'drawing.layer_apply' ? applyLayers(request.params)
       : request.method === 'drawing.delete' ? deleteTargets(request.params.targets)
       : request.method === 'alignment.edit' ? editAlignments(request.params.edits)
       : handlePolyline(request);
@@ -106,6 +122,14 @@ function answer(request) {
     case 'alignment.list': return handlePolyline(request) ?? { ...alignments, items: alignments.items.filter(item => !removed.has(item.handle)) };
     case 'drawing.delete_preview': return deletePreview(request.params ?? {});
     case 'alignment.edit_preview': return editPreview(request.params ?? {});
+    case 'drawing.layer_preview': return previewLayers(request.params);
+    case 'drawing.civil_preview': return previewCivil(request.params);
+    case 'network.list': return listNetworks(request.params);
+    case 'drawing.layers': {
+      const names = layerNames();
+      const offset = request.params?.offset ?? 0, limit = request.params?.limit ?? 50;
+      return { totalCount: names.length, items: names.slice(offset, offset + limit).map(name => layerInfo(name)) };
+    }
     case 'drawing.capture': return capture(request.params ?? {}, polylines, [...created.values()]);
     case 'drawing.selection': {
       // Like the plug-in: every object counted by type and layer, the first 20 in detail.
@@ -124,7 +148,7 @@ function answer(request) {
 }
 
 // Starts the bridge and writes the connection file the server reads.
-export function startFakeCivil(connectionFile) {
+export function startFakeCivil(connectionFile, override) {
   const server = createServer(socket => {
     let line = '';
     socket.on('data', chunk => {
@@ -132,7 +156,13 @@ export function startFakeCivil(connectionFile) {
       if (!line.includes('\n')) return;
       const request = JSON.parse(line.slice(0, line.indexOf('\n')));
       let reply;
-      try { reply = { result: answer(request) }; }
+      try {
+        reply = { result: override?.(request) ?? answer(request) };
+        if (failures.has('after.disconnect') && request.method === 'drawing.layer_apply') {
+          socket.end();
+          return;
+        }
+      }
       catch (error) { reply = { error: { code: -32000, message: error.message, drawingChanged: failures.has("after.commit") || failures.has("after.undo") ? "unknown" : false } }; }
       socket.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, ...reply }) + '\n');
     });

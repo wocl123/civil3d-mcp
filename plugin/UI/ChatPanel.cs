@@ -36,7 +36,8 @@ internal sealed class ChatPanel : UserControl
     private readonly TextBox _input = new();
     private readonly TextBlock _placeholder = new();
     private readonly Button _send = new() { Content = "보내기" };
-    private readonly TextBlock _usage = new() { TextWrapping = TextWrapping.Wrap };
+    private Button? _refresh;
+    private readonly QuotaStrip _usage;
 
     // 아래 줄 오른쪽의 작은 버전 표시. 업데이트가 준비되면 "v0.1.0 → 0.1.1"만 보이고 설명은 툴팁에 둔다.
     private readonly TextBlock _version = new()
@@ -70,6 +71,7 @@ internal sealed class ChatPanel : UserControl
     private readonly Dictionary<string, TimeSpan> _sessionLengths = new();
     private readonly DispatcherTimer _sessionClock = new() { Interval = TimeSpan.FromSeconds(1) };
     private string? _selected;
+    private string? _pendingSetupProvider;
 
     // ── 대화 상태
     // 이 대화의 id. 서비스는 이 id로 최근 대화를 찾아 질문과 함께 AI에 보낸다.
@@ -82,15 +84,17 @@ internal sealed class ChatPanel : UserControl
     private readonly Dictionary<string, Action<JsonNode>> _cards = new();
 
     // ── 사용량 줄
-    private string _lastUsage = "이번 —";
-    private string _totalUsage = "누적 —";
-    private string _quota = "한도 —";
+    private readonly Dictionary<string, string> _lastUsage = new();
+    private readonly Dictionary<string, string> _totalUsage = new();
+    private readonly Dictionary<string, QuotaDisplay> _quota = new();
+    private readonly HashSet<string> _readingQuota = new();
 
     /// <summary>입력칸이 키보드 포커스를 얻거나 잃을 때.</summary>
     public event Action<bool>? InputFocusChanged;
 
     public ChatPanel()
     {
+        _usage = new QuotaStrip(_theme.Text, _theme.Muted, _theme.Border, _theme.Attention, _theme.Error);
         FontFamily = new FontFamily("Malgun Gothic");
         FontSize = 12.5;
         Foreground = _theme.Text;
@@ -121,7 +125,15 @@ internal sealed class ChatPanel : UserControl
 
         _sessionClock.Tick += (_, _) => TickSessions();
         _sessionClock.Start();
-        _statusClock.Tick += async (_, _) => await RefreshVersionAsync();
+        _statusClock.Tick += async (_, _) =>
+        {
+            UpdateFooter();
+            await RefreshVersionAsync();
+            if (IsVisible && _selected is not null && !_busy)
+            {
+                await RefreshUsageAsync(_selected, refreshQuota: false);
+            }
+        };
         _statusClock.Start();
     }
 
@@ -443,16 +455,10 @@ internal sealed class ChatPanel : UserControl
     {
         DockPanel footer = new() { Margin = new Thickness(12, 0, 10, 8) };
 
-        Button refresh = SmallButton("↻", "계정 사용 한도를 새로 읽습니다.");
-        refresh.Click += async (_, _) =>
-        {
-            if (_selected is not null)
-            {
-                await RefreshUsageAsync(_selected, refreshQuota: true);
-            }
-        };
-        DockPanel.SetDock(refresh, Dock.Right);
-        footer.Children.Add(refresh);
+        _refresh = SmallButton("↻", "AI 설치·로그인 상태와 사용 한도를 새로 확인합니다.");
+        _refresh.Click += async (_, _) => await RefreshConnectionAsync();
+        DockPanel.SetDock(_refresh, Dock.Right);
+        footer.Children.Add(_refresh);
 
         _version.Foreground = _theme.Muted;
         DockPanel.SetDock(_version, Dock.Right);
@@ -478,8 +484,6 @@ internal sealed class ChatPanel : UserControl
         DockPanel.SetDock(_members, Dock.Right);
         footer.Children.Add(_members);
 
-        _usage.Foreground = _theme.Muted;
-        _usage.FontSize = 11.5;
         _usage.VerticalAlignment = VerticalAlignment.Center;
         footer.Children.Add(_usage);
 
@@ -500,7 +504,10 @@ internal sealed class ChatPanel : UserControl
         // 누를 때마다 다시 확인한다. 방금 설치·로그인한 CLI도 바로 잡힌다.
         if (_states[name] != "ready")
         {
-            await CheckProviderAsync(name);
+            if (!await CheckProviderAsync(name))
+            {
+                return;
+            }
 
             if (_states[name] == "missing")
             {
@@ -515,32 +522,32 @@ internal sealed class ChatPanel : UserControl
             {
                 AskSetup(name, "login",
                     $"{Display(name)} 로그인이 확인되지 않았습니다. 로그인할까요?\n" +
-                    $"로그인 창이 열리고 브라우저에서 계정으로 로그인합니다. (터미널에서 {LoginCommand(name)}를 직접 실행해도 됩니다.)");
+                    $"로그인 창의 안내에 따라 로그인합니다. (터미널에서 {LoginCommand(name)}를 직접 실행해도 됩니다.)");
                 UpdateChips();
                 return;
             }
         }
 
         _selected = name;
+        _pendingSetupProvider = null;
         UpdateChips();
         UpdateControls();
         await RefreshUsageAsync(name, refreshQuota: false);
         _input.Focus();
     }
 
-    private async Task CheckProviderAsync(string name)
+    private async Task<bool> CheckProviderAsync(string name)
     {
         SetBusy(true);
         try
         {
-            JsonNode data = await PaletteApiClient.RequestAsync(
-                HttpMethod.Post, "/api/provider/check", new { provider = name });
-            _states[name] = data["state"]?.ToString() ?? "unauthenticated";
-            ReadSession(name, data["session"]);
+            await ReadProviderAsync(name);
+            return true;
         }
         catch (System.Exception ex)
         {
             AddNotice("인증 확인 실패: " + ex.Message, error: true);
+            return false;
         }
         finally
         {
@@ -648,8 +655,8 @@ internal sealed class ChatPanel : UserControl
             // 답 아래 한 줄과 사용량 줄
             bool cached = data["cached"]?.GetValue<bool>() == true;
             meta.Text = AnswerMeta(provider, data, cached, clock.Elapsed);
-            _lastUsage = cached ? "이번 0" : "이번 " + Tokens(data["usage"]?["inputTokens"]);
-            _totalUsage = Totals(data["totals"]);
+            _lastUsage[provider] = cached ? "이번 0" : "이번 " + Tokens(data["usage"]?["inputTokens"]);
+            _totalUsage[provider] = Totals(data["totals"]);
             UpdateFooter();
 
             // 수정안 카드와 적용 내역
@@ -747,6 +754,70 @@ internal sealed class ChatPanel : UserControl
 
     // ── 상태 새로 읽기
 
+    // 설치·로그인 창을 연 AI부터 확인한다. 선택 전에도 새로고침으로 연결을 마칠 수 있다.
+    private async Task RefreshConnectionAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        string? provider = _pendingSetupProvider ?? _selected;
+        SetBusy(true);
+        try
+        {
+            await RefreshProvidersAsync();
+            if (provider is not null)
+            {
+                await ReadProviderAsync(provider);
+                CompleteConnectionRefresh(provider);
+            }
+
+            if (_selected is not null)
+            {
+                await RefreshUsageAsync(_selected, refreshQuota: true);
+            }
+        }
+        catch (System.Exception ex)
+        {
+            AddNotice("AI 연결 확인 실패: " + ex.Message, error: true);
+        }
+        finally
+        {
+            UpdateChips();
+            SetBusy(false);
+        }
+    }
+
+    private async Task ReadProviderAsync(string name)
+    {
+        JsonNode data = await PaletteApiClient.RequestAsync(
+            HttpMethod.Post, "/api/provider/check", new { provider = name });
+        _states[name] = data["state"]?.ToString() ?? "unauthenticated";
+        ReadSession(name, data["session"]);
+    }
+
+    private void CompleteConnectionRefresh(string provider)
+    {
+        if (_states[provider] == "ready")
+        {
+            _selected = provider;
+            _pendingSetupProvider = null;
+            AddNotice($"{Display(provider)} 연결을 확인했습니다. 이제 사용할 수 있습니다.");
+            return;
+        }
+
+        if (_selected == provider)
+        {
+            _selected = null;
+        }
+
+        string message = _states[provider] == "missing"
+            ? "CLI 설치가 확인되지 않았습니다. 설치 창의 오류를 확인해 주세요."
+            : "로그인이 확인되지 않았습니다. PowerShell 창에서 인증을 마친 뒤 새로고침을 눌러 주세요.";
+        AddNotice(Display(provider) + " " + message, error: true);
+    }
+
     // AI마다 설치·로그인 상태와 세션.
     private async Task RefreshProvidersAsync()
     {
@@ -784,98 +855,32 @@ internal sealed class ChatPanel : UserControl
     // 고른 AI의 누적 사용량과(원하면) 한도.
     private async Task RefreshUsageAsync(string provider, bool refreshQuota)
     {
+        if (!_readingQuota.Add(provider))
+        {
+            return;
+        }
+
+        UpdateFooter();
         try
         {
             JsonNode usage = await PaletteApiClient.RequestAsync(HttpMethod.Get, "/api/usage?provider=" + provider);
-            if (_selected == provider)
-            {
-                _totalUsage = Totals(usage["totals"]);
-            }
-
+            _totalUsage[provider] = Totals(usage["totals"]);
             UpdateFooter();
 
             string query = "/api/quota?provider=" + provider + (refreshQuota ? "&refresh=1" : "");
             JsonNode data = await PaletteApiClient.RequestAsync(HttpMethod.Get, query);
-            if (_selected != provider)
-            {
-                return;
-            }
-
-            _quota = QuotaText(data["quota"]);
+            _quota[provider] = QuotaDisplay.Read(data["quota"]);
         }
         catch (System.Exception)
         {
-            _quota = "한도 조회 실패";
+            _quota[provider] = QuotaDisplay.Failed;
+        }
+        finally
+        {
+            _readingQuota.Remove(provider);
         }
 
         UpdateFooter();
-    }
-
-    // 한도 한 줄: 한도에 걸렸으면 복구 예정 시각, 아니면 남은 한도(창마다).
-    private static string QuotaText(JsonNode? quota)
-    {
-        if (quota?["limit"] is JsonNode limit)
-        {
-            string message = (limit["message"]?.ToString() ?? "사용 한도에 도달했습니다.").Split('\n')[0];
-
-            if (DateTimeOffset.TryParse(limit["resetsAt"]?.ToString(), out DateTimeOffset recovery))
-            {
-                return message + $" · 복구 예정 {recovery.ToLocalTime():MM/dd HH:mm}";
-            }
-
-            return message + " · 복구 시각 확인 불가";
-        }
-
-        if (quota?["status"]?.ToString() != "available")
-        {
-            return "한도 정보 없음";
-        }
-
-        IEnumerable<string> windows = (quota["windows"]?.AsArray() ?? []).Select(QuotaWindowText);
-        string restricted = quota["ordinaryUsageAllowed"]?.ToString() == "false" ? "사용 제한됨 · " : "";
-        return restricted + "남은 한도 " + string.Join(" · ", windows);
-    }
-
-    private static string QuotaWindowText(JsonNode? window)
-    {
-        string? text = window?["remainingPercent"]?.ToString();
-        bool parsed = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value);
-        double remaining = parsed ? value : 0;
-
-        string percent;
-        if (remaining <= 0)
-        {
-            percent = "0";
-        }
-        else if (remaining < 0.1)
-        {
-            percent = "<0.1";
-        }
-        else
-        {
-            percent = remaining.ToString("0.#", CultureInfo.InvariantCulture);
-        }
-
-        string result = $"{window?["label"]} {percent}%";
-
-        if (DateTimeOffset.TryParse(window?["resetsAt"]?.ToString(), out DateTimeOffset reset))
-        {
-            if (reset > DateTimeOffset.UtcNow)
-            {
-                string word = remaining <= 0 ? "복구" : "재설정";
-                result += $" · {word} {reset.ToLocalTime():MM/dd HH:mm}";
-            }
-            else
-            {
-                result += " · 재설정 확인 필요";
-            }
-        }
-        else if (remaining <= 0)
-        {
-            result += " · 복구 시각 확인 불가";
-        }
-
-        return result;
     }
 
     // ── 대화 항목
@@ -1057,6 +1062,7 @@ internal sealed class ChatPanel : UserControl
         string state = applied ? change["state"]?.ToString() ?? "applied" : "planned";
         bool applicable = applied || change["applicable"]?.GetValue<bool>() == true;
         bool deleting = change["kind"]?.ToString() == "delete";
+        bool undoAvailable = change["undoAvailable"]?.GetValue<bool>() ?? true;
         string conversation = _conversation;
 
         // ── 카드 본문: 제목, 항목들, 상태 줄
@@ -1123,13 +1129,13 @@ internal sealed class ChatPanel : UserControl
             bool canApply = state is "planned" or "undone" || (state == "applied" && hasOperation);
             apply.IsEnabled = !_busy && applicable && canApply;
             cancel.IsEnabled = !_busy && state == "planned";
-            undo.IsEnabled = !_busy && hasOperation && state == "applied";
+            undo.IsEnabled = !_busy && hasOperation && state == "applied" && undoAvailable;
 
             // 되돌린 삭제는 끝난 카드다.
             apply.Visibility = deleting && state == "undone" ? Visibility.Collapsed : Visibility.Visible;
 
             // 되돌리기는 작업이 끝난 뒤에, 취소는 삭제 계획이 아직 적용 전일 때만 보인다.
-            undo.Visibility = done ? Visibility.Visible : Visibility.Collapsed;
+            undo.Visibility = done && undoAvailable ? Visibility.Visible : Visibility.Collapsed;
             cancel.Visibility = deleting && state == "planned" ? Visibility.Visible : Visibility.Collapsed;
 
             // 확정하거나 취소하면 버튼을 모두 숨긴다.
@@ -1148,6 +1154,7 @@ internal sealed class ChatPanel : UserControl
         _cards[fixId] = next =>
         {
             operationId = next["operationId"]?.ToString() ?? operationId;
+            undoAvailable = next["undoAvailable"]?.GetValue<bool>() ?? true;
             state = next["state"]?.ToString() ?? "applied";
             applicable = true;
 
@@ -1221,6 +1228,7 @@ internal sealed class ChatPanel : UserControl
                 JsonNode result = await PaletteApiClient.RequestAsync(
                     HttpMethod.Post, path, new { conversation, fixId, operationId });
                 operationId = result["operationId"]?.ToString() ?? operationId;
+                undoAvailable = result["undoAvailable"]?.GetValue<bool>() ?? undoAvailable;
 
                 if (reverting)
                 {
@@ -1264,6 +1272,7 @@ internal sealed class ChatPanel : UserControl
                     JsonNode receipt = await PaletteApiClient.RequestAsync(
                         HttpMethod.Post, "/api/change/status", new { conversation, fixId });
                     operationId = receipt["operationId"]?.ToString() ?? operationId;
+                    undoAvailable = receipt["undoAvailable"]?.GetValue<bool>() ?? undoAvailable;
                     state = receipt["state"]?.ToString() ?? "unknown";
 
                     if (state == "applied")
@@ -1442,7 +1451,17 @@ internal sealed class ChatPanel : UserControl
                 JsonNode data = await PaletteApiClient.RequestAsync(
                     HttpMethod.Post, "/api/provider/setup", new { provider = name, action });
                 bool opened = data["opened"]?.GetValue<bool>() == true;
-                AddNotice(data["message"]?.ToString() ?? "창을 열었습니다.", error: !opened);
+                if (opened)
+                {
+                    _pendingSetupProvider = name;
+                }
+
+                AddNotice(data["message"]?.ToString() ?? "창의 실행을 확인하지 못했습니다.", error: !opened);
+                if (!opened)
+                {
+                    yes.IsEnabled = true;
+                    no.IsEnabled = true;
+                }
             }
             catch (System.Exception ex)
             {
@@ -1645,14 +1664,22 @@ internal sealed class ChatPanel : UserControl
         {
             chip.IsEnabled = !_busy;
         }
+
+        if (_refresh is not null)
+        {
+            _refresh.IsEnabled = !_busy;
+        }
+
+        UpdateFooter();
     }
 
-    // 사용량 줄: 이번 · 누적 · 한도.
+    // 고른 AI의 아이콘·사용률·재설정까지 남은 시간. 토큰 상세는 툴팁에 둔다.
     private void UpdateFooter()
     {
-        _usage.Text = _selected is null
-            ? "AI를 고르면 사용량과 한도가 표시됩니다."
-            : $"{_lastUsage} · {_totalUsage} · {_quota}";
+        QuotaDisplay? quota = _selected is null ? null : _quota.GetValueOrDefault(_selected);
+        string tokens = _selected is null ? "" : _lastUsage.GetValueOrDefault(_selected, "이번 —")
+            + " · " + _totalUsage.GetValueOrDefault(_selected, "누적 —");
+        _usage.Show(_selected, quota, tokens, DateTimeOffset.UtcNow);
     }
 
     private void SetBusy(bool busy)

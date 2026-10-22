@@ -1,7 +1,7 @@
 // 설계속도 관련 계산: 측점별 설계속도, 도로 구분·지역별 기준 속도(제8조).
 
-import type { AlignmentDesignSpeed } from "../civil/types/AlignmentDesignSpeed.js";
-import { APARTMENT_ROAD, type Region, type RoadClass } from "../civil/alignmentRecord.js";
+import type { AlignmentDesignSpeed } from "../civil/alignment/types/AlignmentDesignSpeed.js";
+import { APARTMENT_ROAD, type Region, type RoadClass } from "../civil/alignment/alignmentRecord.js";
 import { findRow, table } from "./criteriaStore.js";
 import { label } from "./reportBuilder.js";
 import type { CriteriaSet } from "./types/CriteriaSet.js";

@@ -20,6 +20,8 @@ const gemini = parseUsage('gemini', { stats: { models: {
 assert.equal(gemini.inputTokens, 40);
 assert.equal(gemini.outputTokens, 19);
 assert.equal(gemini.cachedInputTokens, 8);
+assert.deepEqual(parseUsage('gemini', { usage: { input_tokens: 40, output_tokens: 19, cache_read_tokens: 8 } }),
+  { inputTokens: 40, outputTokens: 19, cachedInputTokens: 8, costUsd: null });
 
 addUsage('claude', claude);
 const totals = addUsage('claude', claude);

@@ -1,10 +1,10 @@
 // 종단 기준 미달 항목의 수정안 계산(종단곡선 K·길이, 종단경사).
 // 상태(feasible / conflict / unverified)의 뜻은 alignmentFixes.ts 와 같다.
 
-import type { ProfileCurve } from "../../civil/types/ProfileCurve.js";
-import type { ProfilePvi } from "../../civil/types/ProfilePvi.js";
-import type { ProfileSummary } from "../../civil/types/ProfileSummary.js";
-import type { ProfileTangent } from "../../civil/types/ProfileTangent.js";
+import type { ProfileCurve } from "../../civil/profile/types/ProfileCurve.js";
+import type { ProfilePvi } from "../../civil/profile/types/ProfilePvi.js";
+import type { ProfileSummary } from "../../civil/profile/types/ProfileSummary.js";
+import type { ProfileTangent } from "../../civil/profile/types/ProfileTangent.js";
 import type { FixOption } from "../types/FixOption.js";
 import { step } from "../../knowledge/parameters.js";
 import { ceilTo, floorTo, round, station } from "../../geometry.js";

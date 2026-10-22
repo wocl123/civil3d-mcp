@@ -1,4 +1,4 @@
-﻿# -NuGetAutodesk: Civil 3D가 없는 PC·CI에서 Autodesk 공식 참조 패키지(NuGet)로 플러그인을 빌드한다.
+# -NuGetAutodesk: Civil 3D가 없는 PC·CI에서 Autodesk 공식 참조 패키지(NuGet)로 플러그인을 빌드한다.
 param([string]$AcadDir = 'C:\Program Files\Autodesk\AutoCAD 2025', [string]$NodeArchive, [switch]$NuGetAutodesk, [switch]$RequireSignature)
 $ErrorActionPreference = 'Stop'
 if ($env:MY_CIVIL3D_INGEST_URL -and $env:MY_CIVIL3D_INGEST_URL -notmatch '^https://script\.google\.com/macros/s/[\w-]{20,200}/exec$') { throw '자동 수신 URL 형식 오류' }
@@ -44,11 +44,24 @@ try {
     Run $node @($npm,'ci','--no-audit','--no-fund')
     Run $node @($npm,'run','build')
     Run $node @((Join-Path $repo 'scripts/build-ingest.mjs'))
-    foreach ($test in @('smoke','design-regression','tool-contract','safety-regression','delete-scenario','edit-scenario','reconnect-scenario','service-smoke','service-lifetime','memory-smoke','knowledge-smoke','usage-smoke','ai-failure','cli-missing-scenario','drive-e2e','drive-release','drive-folder','github-release','ingest-e2e','ingest-install')) {
+    Run $node @('scripts/performance-scenario.mjs')
+    Run $node @('scripts/primitive-scenario.mjs')
+    Run $node @('scripts/admin-cleanup.mjs')
+    foreach ($test in @('smoke','design-regression','tool-contract','safety-regression','delete-scenario','edit-scenario','layer-scenario','layer-state-scenario','civil-scenario','admin-menu','admin-worker','admin-terminal','admin-launcher','internal-launcher','reconnect-scenario','service-smoke','service-lifetime','memory-smoke','knowledge-smoke','usage-smoke','ai-failure','cli-missing-scenario','setup-window','internal-test-gate','drive-e2e','drive-release','drive-folder','github-release','ingest-e2e','ingest-install')) {
       Run $node @("scripts/$test.mjs")
     }
   } finally { Pop-Location }
   Run dotnet @('run','--project',(Join-Path $repo 'tests/RuntimePaths.Smoke/RuntimePaths.Smoke.csproj'),'-c','Release')
+  Run dotnet @('run','--project',(Join-Path $repo 'tests/QuotaFooter.Preview/QuotaFooter.Preview.csproj'),'-c','Release')
+  Run dotnet @('run','--project',(Join-Path $repo 'tests/ProviderSetup.Smoke/ProviderSetup.Smoke.csproj'),'-c','Release')
+  Run dotnet @('run','--project',(Join-Path $repo 'tests/ProfileLayout.Smoke/ProfileLayout.Smoke.csproj'),'-c','Release')
+  # 설치된 2025 엔진에서는 새 도면과 저장·재열기 도면을 모두 검사한다. NuGet CI는 실행하지 않는다.
+  if (-not $NuGetAutodesk -and $AcadDir -eq 'C:\Program Files\Autodesk\AutoCAD 2025') {
+    Run dotnet @('build',(Join-Path $repo 'tests/CivilCrud.Native/CivilCrud.Native.csproj'),'-c','Release','-clp:ErrorsOnly')
+    Run $node @((Join-Path $repo 'server/scripts/plugin-load.mjs'))
+    Run $node @((Join-Path $repo 'server/scripts/native-civil.mjs'))
+    Run $node @((Join-Path $repo 'server/scripts/native-civil.mjs'),'--persisted')
+  }
   New-Item -ItemType Directory -Path (Join-Path $contents 'plugin'),(Join-Path $contents 'server'),(Join-Path $contents 'licenses') -Force | Out-Null
   $pluginOut = Join-Path $repo 'plugin/bin/Release/net8.0-windows'
   foreach ($name in @('MyCivil3DMcp.Plugin.dll','MyCivil3DMcp.Plugin.deps.json','MyCivil3DMcp.Plugin.runtimeconfig.json')) {
@@ -56,18 +69,27 @@ try {
   }
   Copy-Item -LiteralPath $runtime -Destination (Join-Path $contents 'node') -Recurse
   Copy-Item -LiteralPath (Join-Path $runtime 'LICENSE') -Destination (Join-Path $contents 'licenses/Node-LICENSE.txt')
+  Copy-Item -LiteralPath (Join-Path $repo 'plugin/UI/Assets/simple-icons-LICENSE.md') -Destination (Join-Path $contents 'licenses/Simple-Icons-LICENSE.md')
   $server = Join-Path $contents 'server'
   foreach ($name in @('build','skills','knowledge-defaults','setup','package.json','package-lock.json')) {
     Copy-Item -LiteralPath (Join-Path $repo "server/$name") -Destination $server -Recurse
   }
   Push-Location $server
   try { Run $node @($npm,'ci','--omit=dev','--no-audit','--no-fund') } finally { Pop-Location }
+  # Claude 계정 한도 조회 도우미. 사용자 CLI 설정이나 상태줄 설정을 바꾸지 않는다.
+  $quotaHelper = Join-Path $server 'claude-quota'
+  New-Item -ItemType Directory -Path $quotaHelper -Force | Out-Null
+  foreach ($name in @('readQuota.mjs','package.json','package-lock.json')) {
+    Copy-Item -LiteralPath (Join-Path $repo "server/claude-quota/$name") -Destination $quotaHelper
+  }
+  Push-Location $quotaHelper
+  try { Run $node @($npm,'ci','--omit=dev','--no-audit','--no-fund') } finally { Pop-Location }
   $package = Get-Content -LiteralPath (Join-Path $server 'package.json') -Raw | ConvertFrom-Json
   $source = (& git -C $repo rev-parse HEAD).Trim()
   if ($LASTEXITCODE -ne 0) { throw '소스 commit 확인 실패' }
   $status = @(& git -C $repo status --porcelain)
   $version = [ordered]@{ version=$package.version; nodeVersion=$config.version; nodeArchiveSha256=$config.sha256;
-    builtAt=[DateTime]::UtcNow.ToString('o'); sourceCommit=$source; sourceDirty=($status.Count -gt 0); supportedCivil3D=@('2025'); claudeQuotaMode='statusline' }
+    builtAt=[DateTime]::UtcNow.ToString('o'); sourceCommit=$source; sourceDirty=($status.Count -gt 0); supportedCivil3D=@('2025'); claudeQuotaMode='sdk' }
   $version | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $contents 'version.json') -Encoding UTF8
   @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -136,8 +158,7 @@ try {
   Copy-Item -LiteralPath $builtExe -Destination $finalExe -Force
   if ($signing) { Run $node @((Join-Path $PSScriptRoot 'release-signing.mjs'),'sign-file',$finalExe) }
   Run $node @((Join-Path $repo 'server/scripts/installer-exe.mjs'),$finalExe)
-  if ($signing -and $env:MY_CIVIL3D_GITHUB_REPO) { Run $node @((Join-Path $repo 'server/scripts/github-publish.mjs'),$finalExe) }
-  if ($signing -and $env:MY_CIVIL3D_RELEASE_MANIFEST_ID) { Run $node @((Join-Path $repo 'server/scripts/drive-publish.mjs'),$finalExe) }
+  # 패키징은 산출물 생성까지만 한다. 공개 게시는 내부 테스트를 확인하는 deploy.ps1에서만 실행한다.
   Write-Host "설치 EXE 생성 완료: $finalExe"
   Write-Host "패키지 생성 완료: $finalZip ($([Math]::Round((Get-Item -LiteralPath $finalZip).Length / 1MB,1)) MB)"
 } finally { Remove-OwnedDirectory $work $workRoot }

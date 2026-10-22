@@ -109,6 +109,11 @@ internal static class DrawingOperations
 
         Receipt receipt = new(drawing, digest);
         Receipts.Add(id, receipt);
+        if (IsTransientDisplay(parameters))
+        {
+            return ApplyTransientDisplay(doc, id, receipt, edit);
+        }
+
         bool committed = false;
 
         // 새 작업이 도면을 바꾸면 이 도면의 이전 작업들은 더 이상 마지막 편집이 아니다. 그 뒤 기록은 멈춘다.
@@ -166,6 +171,33 @@ internal static class DrawingOperations
                     "post_commit", "변경 후 UNDO 그룹 종료에 실패했습니다. 적용 결과를 확인하세요.", "unknown");
             }
 
+            throw;
+        }
+    }
+
+    private static bool IsTransientDisplay(JsonObject? parameters)
+    {
+        JsonNode? request = parameters?["plan"]?["request"];
+        bool display = request?["operation"]?.ToString() == "drawing.display";
+        string? action = request?["action"]?.ToString();
+        return (display && action is "select" or "selectLayer" or "viewer") || request?["operation"]?.ToString() == "native.assist";
+    }
+
+    // UNDO End 명령이 PickFirst 선택을 지우므로 선택·뷰어는 UNDO 그룹을 만들지 않는다.
+    // 도면을 바꾸지 않아 이전 편집의 After 기록도 그대로 유지한다.
+    private static object ApplyTransientDisplay(Document doc, string id, Receipt receipt, Func<object> edit)
+    {
+        try
+        {
+            receipt.Result = edit();
+            receipt.State = "applied";
+            receipt.Revision = DrawingRevisions.Of(doc.Database);
+            return View(id, receipt);
+        }
+        catch
+        {
+            receipt.State = "rejected";
+            receipt.Revision = DrawingRevisions.Of(doc.Database);
             throw;
         }
     }
@@ -504,7 +536,8 @@ internal static class DrawingOperations
         }
 
         var objectHandle = new Autodesk.AutoCAD.DatabaseServices.Handle(value);
-        return database.TryGetObjectId(objectHandle, out var id) && !id.IsNull && !id.IsErased;
+        // 치수 블록의 BlockBegin/BlockEnd는 소유 블록만 지워져 IsErased가 false로 남을 수 있다.
+        return database.TryGetObjectId(objectHandle, out var id) && !id.IsNull && !id.IsEffectivelyErased;
     }
 
     private static JsonArray ToJsonArray(IEnumerable<string> items) =>
@@ -520,6 +553,8 @@ internal static class DrawingOperations
         result["drawingId"] = receipt.DrawingId;
         result["revision"] = receipt.Revision;
         result["state"] = receipt.State;
+        result["undoAvailable"] = receipt.State == "applied" && receipt.Journal.Count > 0
+            && result["undoAvailable"]?.GetValue<bool>() != false;
         return result;
     }
 }

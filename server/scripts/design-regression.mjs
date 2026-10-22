@@ -24,7 +24,7 @@ const { checkAllAlignments } = await import('../build/criteria/bulkCheck.js');
 const { storeFix } = await import('../build/changes/changeStore.js');
 const { applyFix } = await import('../build/changes/applyChange.js');
 const { ReportBuilder } = await import('../build/criteria/reportBuilder.js');
-const { readSelection } = await import('../build/civil/drawingSelection.js');
+const { readSelection } = await import('../build/civil/shared/drawingSelection.js');
 const selectionOutline = async () => (await readSelection()).outline;
 const { loadCriteria, table } = await import('../build/criteria/criteriaStore.js');
 

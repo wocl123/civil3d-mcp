@@ -214,7 +214,7 @@ async function readClaudeQuota(forceRefresh: boolean): Promise<QuotaInfo> {
     return claudeCache.quota;
   }
 
-  // 기본 배포본은 SDK를 포함하지 않는다. 없는 도우미를 실행하며 기다리지 않는다.
+  // 도우미가 없는 예전 배포본이나 상태줄 전용 설정에서는 최근 기록을 사용한다.
   if (process.env.MY_CIVIL3D_CLAUDE_QUOTA_MODE !== "statusline" && existsSync(claudeHelper)) {
     try {
       const quota = await queryClaudeQuota();
@@ -344,7 +344,7 @@ export async function getQuota(provider: Provider, forceRefresh = false): Promis
   if (provider === "gemini") {
     return {
       status: "unsupported", windows: [], ordinaryUsageAllowed: null,
-      message: "Gemini CLI does not expose a documented headless quota read. Check /stats model in Gemini."
+      message: "Gemini(Antigravity) 계정 한도는 Antigravity CLI의 /usage에서 확인하세요."
     };
   }
 

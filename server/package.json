@@ -1,12 +1,16 @@
 {
   "name": "my-civil3d-mcp-server",
-  "version": "0.1.8",
+  "version": "0.1.16",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "test": "npm run build && node scripts/smoke.mjs && node scripts/civil-scenario.mjs && node scripts/primitive-scenario.mjs && node scripts/design-regression.mjs && node scripts/safety-regression.mjs && node scripts/tool-contract.mjs && node scripts/delete-scenario.mjs && node scripts/edit-scenario.mjs && node scripts/layer-scenario.mjs && node scripts/layer-state-scenario.mjs",
+    "test:primitives": "npm run build && node scripts/primitive-scenario.mjs",
+    "test:civil": "npm run build && node scripts/civil-scenario.mjs",
+    "test:performance": "npm run build && node scripts/performance-scenario.mjs",
     "build": "tsc",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
@@ -20,14 +24,15 @@
     "law:fetch": "npm run build && node scripts/law-fetch.mjs",
     "test:design": "npm run build && node scripts/design-regression.mjs",
     "test:tools": "npm run build && node scripts/tool-contract.mjs",
-    "test:admin": "npm run build && node scripts/admin-menu.mjs",
+    "test:admin": "npm run build && node scripts/admin-menu.mjs && node scripts/admin-cleanup.mjs && node scripts/admin-worker.mjs && node scripts/admin-terminal.mjs && node scripts/admin-launcher.mjs",
     "test:drive": "npm run build && node scripts/drive-e2e.mjs && node scripts/drive-release.mjs && node scripts/drive-folder.mjs",
     "test:github": "npm run build && node scripts/github-release.mjs",
     "test:ingest": "npm run build && node ../scripts/build-ingest.mjs && node scripts/ingest-e2e.mjs && node scripts/ingest-install.mjs",
-    "smoke:cli": "npm run build && node scripts/cli-smoke.mjs && node scripts/cli-missing-scenario.mjs",
+    "smoke:cli": "npm run build && node scripts/cli-smoke.mjs && node scripts/cli-missing-scenario.mjs && node scripts/setup-window.mjs",
     "test:safety": "npm run build && node scripts/safety-regression.mjs",
     "test:delete": "npm run build && node scripts/delete-scenario.mjs",
     "test:edit": "npm run build && node scripts/edit-scenario.mjs",
+    "test:layers": "npm run build && node scripts/layer-scenario.mjs && node scripts/layer-state-scenario.mjs",
     "test:reconnect": "npm run build && node scripts/reconnect-scenario.mjs"
   },
   "dependencies": {

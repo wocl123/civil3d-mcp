@@ -4,7 +4,7 @@
 // 스크립트는 설치하고 로그인까지 이어 가며, 로그인은 사용자가 브라우저에서 자기 계정으로 한다.
 
 import { runtimeNode, cliPrefix } from "./runtime.js";
-import { spawn } from "node:child_process";
+import { startSetupProcess } from "./setupProcess.js";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,18 @@ Promise<{ opened: boolean; message: string }> {
     return { opened: false, message: "이미 열린 설치·로그인 창이 있습니다. 그 창에서 계속하세요." };
   }
 
+  open.add(provider);
+
+  try {
+    return await launchSetup(provider, action);
+  } catch (error) {
+    open.delete(provider);
+    const message = error instanceof Error ? error.message : String(error);
+    return { opened: false, message: "창을 열지 못했습니다: " + message };
+  }
+}
+
+async function launchSetup(provider: Provider, action: "install" | "login") {
   // 창의 PATH는 레지스트리의 최신 값으로(npm과 새로 설치한 CLI가 보이게).
   const env: Record<string, string | undefined> = { ...process.env };
   for (const key of Object.keys(env)) {
@@ -42,21 +54,16 @@ Promise<{ opened: boolean; message: string }> {
   env.MY_CIVIL3D_NODE_EXE = runtimeNode();
   env.MY_CIVIL3D_CLI_PREFIX = cliPrefix(provider);
 
-  // detached 로 띄우면 Windows에서 자기 콘솔 창을 갖는다.
-  const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", SETUP_SCRIPT, "-Provider", provider, "-Action", action];
-  const child = spawn("powershell.exe", args, { detached: true, stdio: "ignore", windowsHide: false, env });
-  open.add(provider);
-  child.on("exit", () => {
+  const window = await startSetupProcess(SETUP_SCRIPT, provider, action, env);
+  void window.closed.then(() => {
     open.delete(provider);
     forgetCli(provider);
   });
-  child.on("error", () => open.delete(provider));
-  child.unref();
 
   return {
     opened: true,
     message: action === "install"
-      ? "설치 창을 열었습니다. 설치가 끝나면 로그인이 이어집니다. 창을 닫은 뒤 AI를 다시 눌러 주세요."
-      : "로그인 창을 열었습니다. 브라우저에서 로그인하고 창을 닫은 뒤 AI를 다시 눌러 주세요."
+      ? "설치 창을 열었습니다. 설치와 인증을 마친 뒤 창을 닫고 팔레트의 새로고침(↻)을 눌러 주세요."
+      : "로그인 창을 열었습니다. 인증을 마친 뒤 창을 닫고 팔레트의 새로고침(↻)을 눌러 주세요."
   };
 }

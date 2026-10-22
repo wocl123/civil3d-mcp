@@ -253,13 +253,22 @@ internal static class NodeService
         string runtimeDirectory = Path.GetDirectoryName(nodePath)!;
         start.Environment["PATH"] = runtimeDirectory + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
         start.Environment["MY_CIVIL3D_NODE_EXE"] = nodePath;
-        string quotaMode = RuntimePaths.IsBundle(assemblyDirectory) ? "statusline" : "sdk";
+        string quotaMode = Environment.GetEnvironmentVariable("MY_CIVIL3D_CLAUDE_QUOTA_MODE") ?? "sdk";
         start.Environment["MY_CIVIL3D_CLAUDE_QUOTA_MODE"] = quotaMode;
 
         // 이 Civil 3D가 끝나면 서비스도 끝나고, 포트를 잡고 있는 이전 서비스는 서비스가 직접 내린다.
         start.Environment["MY_CIVIL3D_PARENT_PID"] = Environment.ProcessId.ToString();
         start.Environment["MY_CIVIL3D_SERVICE_PORT"] = _port.ToString();
         start.Environment["MY_CIVIL3D_CONNECTION_FILE"] = PluginBridge.OwnConnectionFilePath;
+
+        if (RuntimePaths.IsInternal(assemblyDirectory))
+        {
+            start.Environment["MY_CIVIL3D_DATA_DIR"] = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MyCivil3DMcp", "internal-data");
+            start.Environment["MY_CIVIL3D_SYNC"] = "off";
+            start.Environment["MY_CIVIL3D_AUTO_UPDATE"] = "off";
+            start.Environment["MY_CIVIL3D_PRODUCT_VERSION"] = "dev";
+        }
 
         return start;
     }
@@ -366,6 +375,12 @@ internal static class NodeService
             data = Path.Combine(localAppData, "MyCivil3DMcp", "data");
         }
 
+        string assemblyDirectory = Path.GetDirectoryName(typeof(NodeService).Assembly.Location)!;
+        if (RuntimePaths.IsInternal(assemblyDirectory))
+        {
+            data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MyCivil3DMcp", "internal-data");
+        }
+
         return Path.Combine(data, "logs", DateTime.Now.ToString("yyyy-MM-dd"), "service.log");
     }
 
@@ -384,6 +399,24 @@ internal static class NodeService
     }
 
     // 기록 실패는 무시한다(기록 때문에 서비스가 멈추면 안 된다).
+    internal static void LogBridgeError(string? method, System.Exception error)
+    {
+        string status = error.GetType().Name;
+        if (error is Autodesk.AutoCAD.Runtime.Exception cad)
+        {
+            status = cad.ErrorStatus.ToString();
+        }
+
+        string trace = error.StackTrace ?? "";
+        if (trace.Length > 16000)
+        {
+            trace = trace[..16000];
+        }
+
+        // 요청 인자·토큰은 기록하지 않는다. 원본 스택은 로컬 service.log에만 남긴다.
+        Log($"Bridge {method}: {status}: {error.Message}\n{trace}");
+    }
+
     private static void Log(string line)
     {
         try

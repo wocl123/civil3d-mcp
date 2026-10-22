@@ -5,6 +5,10 @@ import type { DrawingScope } from "./types/DrawingScope.js";
 // 연결 실패를 전달한다. 가짜 no-drawing 문맥으로 답을 캐시하지 않는다.
 export async function currentDrawingScope(): Promise<DrawingScope> {
   const status = await callPlugin("drawing.status") as Record<string, unknown>;
+  return scopeFromStatus(status);
+}
+
+export function scopeFromStatus(status: Record<string, unknown>): DrawingScope {
   const path = String(status.filePath || "");
   // 미저장 도면의 기본 이름은 영구 지식 파일의 키로 쓰지 않는다.
   const savedPath = isAbsolute(path) || win32.isAbsolute(path) ? path : "";

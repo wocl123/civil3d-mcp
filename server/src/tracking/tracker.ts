@@ -13,10 +13,10 @@ import { currentDrawingScope } from "../memory/drawingScope.js";
 
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { readSection } from "../civil/civilData.js";
-import type { AlignmentElement } from "../civil/types/AlignmentElement.js";
-import type { ProfileCurve } from "../civil/types/ProfileCurve.js";
-import type { ProfilePvi } from "../civil/types/ProfilePvi.js";
+import { readSection } from "../civil/shared/civilData.js";
+import type { AlignmentElement } from "../civil/alignment/types/AlignmentElement.js";
+import type { ProfileCurve } from "../civil/profile/types/ProfileCurve.js";
+import type { ProfilePvi } from "../civil/profile/types/ProfilePvi.js";
 import { failureGuide } from "../errors/failureGuide.js";
 import { withFileLock, writeAtomic } from "../files.js";
 import { logEvent } from "../logs/workLog.js";

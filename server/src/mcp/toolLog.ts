@@ -4,6 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { clip, logTool } from "../logs/workLog.js";
+import { currentRequestId } from "../changes/requestContext.js";
 
 type ToolOutput = { isError?: boolean; content?: { type: string; text?: string }[] };
 
@@ -15,12 +16,8 @@ export function outputSize(result: ToolOutput | undefined): { outputChars: numbe
 }
 
 export function loggedServer(server: McpServer): McpServer {
-  // 팔레트 요청이 아니면(개발용 실행 등) 기록하지 않는다.
-  const requestId = process.env.MY_CIVIL3D_REQUEST_ID;
-  if (!requestId || requestId === "none") {
-    return server;
-  }
-
+  const failures = new Map<string, ToolOutput>();
+  const errors = new Map<string, unknown>();
   return new Proxy(server, {
     get(target, property, receiver) {
       if (property !== "registerTool") {
@@ -29,22 +26,44 @@ export function loggedServer(server: McpServer): McpServer {
 
       return (name: string, config: unknown, callback: (...args: unknown[]) => Promise<ToolOutput>) =>
         (target.registerTool as (...args: unknown[]) => unknown)(name, config, async (...args: unknown[]) => {
+          const requestId = currentRequestId();
+          if (requestId === "none") {
+            return callback(...args);
+          }
+
           const started = Date.now();
+          const key = JSON.stringify([requestId, name, args[0] ?? {}]);
           const input = clip(JSON.stringify(args[0] ?? {}), 500);
           try {
-            const result = await callback(...args);
+            if (errors.has(key)) {
+              throw errors.get(key);
+            }
+
+            const previous = failures.get(key);
+            const result = previous ?? await callback(...args);
+            if (result?.isError && failures.size < 64) {
+              failures.set(key, result);
+            }
+
             await logTool({
               requestId,
               tool: name,
               input,
               ms: Date.now() - started,
               ok: !result?.isError,
+              repeatedFailure: !!previous,
               ...outputSize(result)
             });
             return result;
           } catch (error) {
+            const repeatedFailure = errors.has(key);
+            if (errors.size < 64) {
+              errors.set(key, error);
+            }
+
             const message = clip(error instanceof Error ? error.message : String(error), 500);
-            await logTool({ requestId, tool: name, input, ms: Date.now() - started, ok: false, error: message });
+            await logTool({ requestId, tool: name, input, ms: Date.now() - started,
+              ok: false, repeatedFailure, error: message });
             throw error;
           }
         });

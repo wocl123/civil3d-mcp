@@ -9,15 +9,23 @@ import { join } from "node:path";
 import { createConnection } from "node:net";
 import { StringDecoder } from "node:string_decoder";
 import { drawingContext } from "./drawingContext.js";
+import { paletteContext } from "../mcp/paletteContext.js";
 
 // 플러그인이 아는 요청 이름(PluginBridge.cs 와 같아야 한다).
 export type BridgeMethod =
-  | "drawing.status" | "drawing.objects" | "drawing.layers" | "drawing.object"
+  | "drawing.status" | "drawing.chat_context" | "drawing.objects" | "drawing.layers" | "drawing.object"
+  | "dimension.list" | "point.list"
+  | "drawing.cleanup" | "text.list" | "drawing.zoom"
   | "alignment.list" | "alignment.get" | "alignment.section"
   | "profile.get" | "profile.section"
   | "change.apply" | "alignment.create" | "change.undo" | "change.result" | "change.cancel" | "change.confirm"
   | "drawing.polylines" | "drawing.pick_polyline" | "drawing.selection" | "drawing.capture" | "drawing.summary"
-  | "drawing.delete_preview" | "drawing.delete" | "alignment.edit_preview" | "alignment.edit";
+  | "drawing.delete_preview" | "drawing.delete" | "alignment.edit_preview" | "alignment.edit"
+  | "drawing.layer_preview" | "drawing.layer_apply"
+  | "drawing.civil_preview" | "drawing.civil_apply" | "surface.list" | "surface.get" | "network.list" | "profileView.list"
+  | "cogo.list" | "volume.get" | "network.parts" | "network.catalog" | "civil.styles"
+  | "featureLine.list" | "sections.list" | "corridors.list" | "civil.utility_list" | "surface.sample" | "pressure.list" | "block.list" | "native.workflows" | "civil.labels" | "point.metadata"
+  | "pressure.runs" | "catchments.list" | "propertySets.list" | "parcels.list" | "surface.analysis";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
@@ -42,11 +50,15 @@ export async function callPlugin(
   method: BridgeMethod, params: Record<string, unknown> = {}, timeoutMs = 30000
 ): Promise<unknown> {
   for (let attempt = 0; ; attempt++) {
+    if (paletteContext()?.signal?.aborted) {
+      throw Object.assign(new Error("Palette request has ended."), { kind: "cancelled", drawingChanged: false });
+    }
+
     try {
       return await callOnce(method, params, timeoutMs);
     } catch (error) {
       const notSent = (error as { notSent?: boolean }).notSent === true;
-      if (!notSent || attempt >= RETRY_DELAYS_MS.length) {
+      if (paletteContext()?.signal?.aborted || !notSent || attempt >= RETRY_DELAYS_MS.length) {
         throw error;
       }
 
@@ -82,6 +94,8 @@ async function callOnce(method: BridgeMethod, params: Record<string, unknown>, t
     let receivedBytes = 0;
     let settled = false;
     let requestSent = false;
+    const signal = paletteContext()?.signal;
+    const aborted = () => finish(new Error("Palette request has ended."));
 
     // 한 번만 끝낸다(성공이든 실패든).
     const finish = (error?: Error, result?: unknown) => {
@@ -90,6 +104,7 @@ async function callOnce(method: BridgeMethod, params: Record<string, unknown>, t
       }
 
       settled = true;
+      signal?.removeEventListener("abort", aborted);
       socket.destroy();
       if (error) {
         if (!requestSent) {
@@ -98,7 +113,11 @@ async function callOnce(method: BridgeMethod, params: Record<string, unknown>, t
 
         // 전송 뒤 응답을 못 받으면 커밋 여부를 단정하지 않는다. 명시적 플러그인 거절만 false다.
         if (!("drawingChanged" in error) || (error as { drawingChanged?: unknown }).drawingChanged === undefined) {
-          Object.assign(error, { drawingChanged: requestSent && ["change.apply", "alignment.create", "drawing.delete", "alignment.edit", "change.undo"].includes(method) ? "unknown" : false });
+          const writes = [
+            "change.apply", "alignment.create", "drawing.delete", "alignment.edit", "drawing.layer_apply",
+            "drawing.civil_apply", "change.undo"
+          ];
+          Object.assign(error, { drawingChanged: requestSent && writes.includes(method) ? "unknown" : false });
         }
 
         reject(error);
@@ -108,7 +127,16 @@ async function callOnce(method: BridgeMethod, params: Record<string, unknown>, t
     };
 
     socket.setTimeout(timeoutMs, () => finish(new Error("Civil 3D plugin request timed out.")));
+    signal?.addEventListener("abort", aborted, { once: true });
+    if (signal?.aborted) {
+      aborted();
+    }
+
     socket.on("connect", () => {
+      if (settled) {
+        return;
+      }
+
       requestSent = true;
       socket.write(request);
     });

@@ -4,8 +4,8 @@
 //   conflict:   인접 요소와 겹쳐 그대로는 안 됨(reason에 이유)
 //   unverified: 다른 요소도 바뀌는데 코드가 다시 검토하지 않음
 
-import type { AlignmentCurve } from "../../civil/types/AlignmentCurve.js";
-import type { AlignmentElement } from "../../civil/types/AlignmentElement.js";
+import type { AlignmentCurve } from "../../civil/alignment/types/AlignmentCurve.js";
+import type { AlignmentElement } from "../../civil/alignment/types/AlignmentElement.js";
 import type { FixOption } from "../types/FixOption.js";
 import { step } from "../../knowledge/parameters.js";
 import {

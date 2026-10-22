@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 const temp = await mkdtemp(join(tmpdir(), 'mycivil3d-ai-errors-'));
@@ -25,6 +25,9 @@ try {
  ['codex',response({type:'turn.failed',error:{message:'Limit reached',codexErrorInfo:'usageLimitExceeded'}},0),'limit'],
  ['gemini',response({error:{code:429,type:'TerminalQuotaError',message:'Quota exceeded',details:[{retryDelay:'120s'}]}}),'limit'],
  ['gemini',response({error:{code:401,message:'Unauthorized'}},0),'auth'],
+ ['gemini',response(stream({event:'init'},{event:'result',result:{status:'ERROR',error:'authentication required'}}),0),'auth'],
+ ['gemini',response({status:'WAITING',response:''},0),'execution'],
+ ['gemini',response(stream({event:'init'},{event:'result',result:{status:'SUCCESS',response:'',denied_actions:[{action:'mcp'}]}}),0),'execution'],
  ['codex',response('',1,'unknown option --bad'),'execution'],
  ['claude',response('',1,'fetch failed ECONNRESET'),'network'],
  ['claude',response({type:'result',is_error:true,errors:['billing_error'],result:'Credit balance is too low'}),'billing']];
@@ -59,13 +62,13 @@ try {
  "if(args[0]==='app-server'){const lines=readline.createInterface({input:process.stdin});lines.on('line',line=>{const r=JSON.parse(line);",
  "if(r.id===1)console.log(JSON.stringify({id:1,result:{}}));",
  "if(r.id===2)console.log(JSON.stringify({id:2,result:{rateLimits:{primary:{usedPercent:100,windowDurationMins:300,resetsAt:"+Date.parse(first)/1000+"},secondary:{usedPercent:100,windowDurationMins:10080,resetsAt:"+Date.parse(second)/1000+"}}}}));});",
- "}else{const data=JSON.parse(fs.readFileSync(process.env.FAKE_AI_RESULT_FILE,'utf8'));process.stdin.resume();process.stdin.on('end',()=>{process.stdout.write(data.stdout);process.stderr.write(data.stderr);process.exit(data.code);});}"
+ "}else{const data=JSON.parse(fs.readFileSync(process.env.FAKE_AI_RESULT_FILE,'utf8'));let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end',()=>{if(process.argv[2]==='gemini')fs.writeFileSync(process.env.FAKE_AI_RESULT_FILE+'.input',input);process.stdout.write(data.stdout);process.stderr.write(data.stderr);process.exit(data.code);});}"
  ].join('\n');
  await writeFile(helper,helperBody);
  for(const provider of ['claude','codex','gemini']){
   const wrapper=process.platform==='win32'?'@"'+process.execPath+'" "'+helper+'" '+provider+' %*\r\n'
    :'#!/bin/sh\nexec "'+process.execPath+'" "'+helper+'" '+provider+' "$@"\n';
-  await writeFile(join(temp,provider+(process.platform==='win32'?'.cmd':'')),wrapper,{mode:0o700});
+  await writeFile(join(temp,(provider==='gemini'?'agy':provider)+(process.platform==='win32'?'.cmd':'')),wrapper,{mode:0o700});
  }
  await writeFile(process.env.MY_CIVIL3D_CLAUDE_QUOTA_FILE,JSON.stringify({capturedAt:now,rate_limits:{
  five_hour:{used_percentage:100,resets_at:Date.parse(first)/1000},seven_day:{used_percentage:100,resets_at:Date.parse(second)/1000}}}));
@@ -89,6 +92,20 @@ try {
  assert.equal(await verifyProvider('gemini'),'ready','quota during login probe is not logout');
  await use(response({error:{code:503,message:'Server overloaded'}}));
  await assert.rejects(verifyProvider('gemini'),/서버 문제/);
+ const prompt='한글 "질문" & echo unsafe\n$(literal)';
+ await use(response(stream({event:'init'},{event:'step_update',step_update:{step_type:'agent_response',text_delta:'안녕'}},
+ {event:'step_update',step_update:{step_type:'tool',state:'ACTIVE',tool_name:'call_mcp_tool',tool_info:{parameters:{ToolName:'list_surfaces'}}}},
+ {event:'result',result:{status:'SUCCESS',response:'안녕하세요',usage:{input_tokens:40,output_tokens:19,cache_read_tokens:8}}}),0));
+ assert.equal(await verifyProvider('gemini'),'ready');
+ const events=[];
+ const answered=await askProvider('gemini',prompt,{onEvent:event=>events.push(event)});
+ assert.equal(answered.answer,'안녕하세요');
+ assert.deepEqual(answered.usage,{inputTokens:40,outputTokens:19,cachedInputTokens:8,costUsd:null});
+ assert.deepEqual(events,[{type:'text',text:'안녕'},{type:'tool',name:'list_surfaces'}]);
+ assert.equal(JSON.parse(await readFile(process.env.FAKE_AI_RESULT_FILE+'.input','utf8')).message.content,prompt,'prompt travels as one stdin JSON message');
+ await use(response({status:'SUCCESS',response:''},0));
+ await assert.rejects(askProvider('gemini','empty'),/no answer/);
+ await assert.rejects(verifyProvider('gemini'),/응답을 받지 못했습니다/);
  await use(response({type:'result',is_error:true,result:'authentication_failed'}));
  await assert.rejects(askProvider('claude','auth test'),/로그인이 만료/);
  assert.equal(await getProviderState('claude'),'unauthenticated');

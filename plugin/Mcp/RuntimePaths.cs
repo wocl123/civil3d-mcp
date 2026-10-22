@@ -6,6 +6,8 @@ namespace MyCivil3DMcp.Plugin;
 // 경로 해석은 CAD API와 분리한다. 번들 파일 누락이 개발 PC의 경로로 가려지지 않게 한다.
 internal static class RuntimePaths
 {
+    public static bool IsInternal(string assemblyDirectory) =>
+        File.Exists(Path.GetFullPath(Path.Combine(assemblyDirectory, "..", "internal-deployment.json")));
     public static bool IsBundle(string assemblyDirectory) =>
         File.Exists(Path.GetFullPath(Path.Combine(assemblyDirectory, "..", "..", "PackageContents.xml")));
 
@@ -60,7 +62,8 @@ internal static class RuntimePaths
         try
         {
             string file = Path.Combine(assemblyDirectory, "..", "version.json");
-            return JsonNode.Parse(File.ReadAllText(file))?["version"]?.ToString() ?? "development";
+            string version = JsonNode.Parse(File.ReadAllText(file))?["version"]?.ToString() ?? "development";
+            return IsInternal(assemblyDirectory) ? version + " (internal)" : version;
         }
         catch (System.Exception)
         {

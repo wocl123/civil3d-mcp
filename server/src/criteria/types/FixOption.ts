@@ -1,5 +1,7 @@
 import type { DesignChange } from "./DesignChange.js";
 import type { AlignmentCreateRequest } from "../../design/types/AlignmentLayout.js";
+import type { LayerRequest } from "./LayerRequest.js";
+import type { CivilPlan } from "./CivilPlan.js";
 
 // 지울 객체. 미리 볼 때의 핸들·이름이라, 그 뒤 바뀌었으면 플러그인이 지우지 않는다.
 export type RemoveTarget = { kind: "alignment" | "profile" | "corridor"; handle: string; name: string };
@@ -37,6 +39,8 @@ export type FixOption = {
   // 선형·종단을 지우는 계획이면 changes 대신 이것(plan_delete).
   remove?: RemoveRequest;
   edit?: EditRequest;
+  layers?: LayerRequest;
+  civil?: CivilPlan;
 
   status: "feasible" | "conflict" | "unverified";
   reason?: string;

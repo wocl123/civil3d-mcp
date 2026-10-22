@@ -1,7 +1,7 @@
 import { drawingContext } from "../bridge/drawingContext.js";
 // 도면 변경이 적용된 직후: 무엇을 추적할지 정하고 추적을 시작한다.
 
-import { readRecord } from "../civil/alignmentRecord.js";
+import { readRecord } from "../civil/alignment/alignmentRecord.js";
 import type { ChangeLogEntry } from "../changes/types/ChangeLogEntry.js";
 import type { StoredFix } from "../changes/types/StoredFix.js";
 import { addTerms } from "../data/terms.js";

@@ -32,8 +32,15 @@ export function parseCliFailure(provider: Provider, result: CliResult, now = Dat
 
   const lastResult = events.filter(e => e.type === "result").at(-1);
   const lastTurn = events.filter(e => e.type === "turn.failed" || e.type === "turn.completed").at(-1);
-  const gemini = provider === "gemini" ? events.find(e => !e.type) : undefined;
+  if (provider === "gemini") {
+    events = events.map(e => e.event === "result" ? record(e.result) : e);
+  }
+
+  const gemini = provider === "gemini" ? events.filter(e => !e.type && !e.event).at(-1) : undefined;
+  const deniedActions = provider === "gemini" && Array.isArray(gemini?.denied_actions) && gemini.denied_actions.length > 0;
   const failed = result.code !== 0 || lastResult?.is_error === true || !!gemini?.error
+    || (provider === "gemini" && !!gemini?.status && gemini.status !== "SUCCESS")
+    || deniedActions
     || (provider === "claude" && !lastResult && events.some(e => e.type === "assistant" && e.error))
     || lastTurn?.type === "turn.failed"
     || (provider === "codex" && !lastTurn && events.some(e => e.type === "error"));
@@ -42,6 +49,11 @@ export function parseCliFailure(provider: Provider, result: CliResult, now = Dat
   }
 
   const parts: string[] = [result.stderr.trim()];
+
+  if (deniedActions) {
+    parts.push("Antigravity 도구 권한이 거부되어 요청을 완료하지 못했습니다. CLI의 Civil 3D 도구 권한 설정을 확인해 주세요.");
+  }
+
   const resetsAt: string[] = [];
   let denied = false, window: string | undefined;
   const inspect = (value: unknown, depth = 0): void => {
@@ -106,8 +118,8 @@ export function parseCliFailure(provider: Provider, result: CliResult, now = Dat
       }
     } else if (event.type === "error" || event.type === "turn.failed") {
       inspect(event);
-    } else if (provider === "gemini" && !event.type && event.error) {
-      inspect(event.error);
+    } else if (provider === "gemini" && !event.type && (event.error || (event.status && event.status !== "SUCCESS"))) {
+      inspect(event.error ?? event.status);
     }
   }
 
@@ -130,7 +142,7 @@ export function parseCliFailure(provider: Provider, result: CliResult, now = Dat
 
 // ── 오류 글로 실패 종류 가리기(위에서부터 먼저 맞는 것)
 const AUTH_ERROR =
-  /authentication[_ -]?(?:failed|error)|unauthenticated|unauthorized|not logged in|login required|please (?:run \/login|log[ -]?in)|(?:access |oauth )?token (?:has )?expired|invalid[_ -]?api[_ -]?key|(?:invalid|expired) (?:access |oauth )?(?:token|credentials)|\b401\b/i;
+  /authentication[_ -]?(?:failed|error|required)|unauthenticated|unauthorized|not logged in|login required|please (?:run \/login|log[ -]?in)|(?:access |oauth )?token (?:has )?expired|invalid[_ -]?api[_ -]?key|(?:invalid|expired) (?:access |oauth )?(?:token|credentials)|\b401\b/i;
 const BILLING_ERROR =
   /insufficient_quota|billing[_ -]?error|insufficient credits|credit balance|payment required|credits_required|\b402\b/i;
 const LIMIT_ERROR =

@@ -3,14 +3,14 @@ import { withDrawing } from "../bridge/boundOperation.js";
 // 종단곡선의 K·길이(제27조)와 종단경사(제25조)를 기준표(기본: 도로구조규칙)와 비교한다.
 
 import { callPlugin } from "../bridge/pluginClient.js";
-import { gradeConditions, notRoadNote, readRecord, type AlignmentRecord } from "../civil/alignmentRecord.js";
+import { gradeConditions, notRoadNote, readRecord, type AlignmentRecord } from "../civil/alignment/alignmentRecord.js";
 import { loadParameters } from "../knowledge/parameters.js";
-import { alignmentProfiles, readSection } from "../civil/civilData.js";
-import type { AlignmentDesignSpeed } from "../civil/types/AlignmentDesignSpeed.js";
-import type { ProfileCurve } from "../civil/types/ProfileCurve.js";
-import type { ProfilePvi } from "../civil/types/ProfilePvi.js";
-import type { ProfileSummary } from "../civil/types/ProfileSummary.js";
-import type { ProfileTangent } from "../civil/types/ProfileTangent.js";
+import { alignmentProfiles, readSection } from "../civil/shared/civilData.js";
+import type { AlignmentDesignSpeed } from "../civil/alignment/types/AlignmentDesignSpeed.js";
+import type { ProfileCurve } from "../civil/profile/types/ProfileCurve.js";
+import type { ProfilePvi } from "../civil/profile/types/ProfilePvi.js";
+import type { ProfileSummary } from "../civil/profile/types/ProfileSummary.js";
+import type { ProfileTangent } from "../civil/profile/types/ProfileTangent.js";
 import { findRow, loadCriteria, options, table } from "./criteriaStore.js";
 import { describeSpeeds, speedAt } from "./designSpeed.js";
 import { gradeFixes, verticalCurveFixes } from "./fixes/profileFixes.js";

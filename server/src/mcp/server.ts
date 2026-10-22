@@ -7,31 +7,46 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { registerDrawingTools } from "./tools/drawingTools.js";
-import { registerKnowledgeTools } from "./tools/knowledgeTools.js";
-import { registerAlignmentTools } from "./tools/alignmentTools.js";
-import { registerCriteriaTools } from "./tools/criteriaTools.js";
-import { registerChangeTools } from "./tools/changeTools.js";
-import { registerDesignTools } from "./tools/designTools.js";
-import { registerDeleteTools } from "./tools/deleteTools.js";
-import { registerAlignmentEditTools } from "./tools/alignmentEditTools.js";
+import { registerDrawingTools } from "./tools/drawing/drawingTools.js";
+import { registerKnowledgeTools } from "./tools/knowledge/knowledgeTools.js";
+import { registerAlignmentTools } from "./tools/registration/readTools.js";
+import { registerCriteriaTools } from "./tools/registration/criteriaTools.js";
+import { registerChangeTools } from "./tools/workflow/changeTools.js";
+import { registerDesignTools } from "./tools/alignment/designTools.js";
+import { registerDeleteTools } from "./tools/workflow/deleteTools.js";
+import { registerAlignmentEditTools } from "./tools/alignment/alignmentEditTools.js";
+import { registerLayerTools } from "./tools/drawing/layerTools.js";
+import { registerCivilTools } from "./tools/registration/civilTools.js";
+import { registerPrimitiveTools } from "./tools/drawing/primitiveTools.js";
+import { registerEngineeringTools } from "./tools/registration/engineeringTools.js";
+import { registerExtensionTools } from "./tools/registration/extensionTools.js";
 import { mcpProfile, paletteServer } from "./profile.js";
 import { loggedServer } from "./toolLog.js";
 import { guidedServer } from "./toolErrors.js";
+import type { McpProfile } from "./profile.js";
 
-const server = new McpServer({ name: "my-civil3d-mcp", version: "0.1.0" });
-const tools = loggedServer(guidedServer(mcpProfile() === "palette" ? paletteServer(server) : server));
+export function createMcpServer(profile: McpProfile = mcpProfile()): McpServer {
+  const server = new McpServer({ name: "my-civil3d-mcp", version: "0.1.0" });
+  const tools = loggedServer(guidedServer(profile === "palette" ? paletteServer(server) : server));
 
-registerDrawingTools(tools);
-registerAlignmentTools(tools);
-registerCriteriaTools(tools);
-registerDesignTools(tools);
-registerDeleteTools(tools);
-registerAlignmentEditTools(tools);
-registerChangeTools(tools);
-registerKnowledgeTools(tools);
+  registerDrawingTools(tools);
+  registerAlignmentTools(tools);
+  registerCriteriaTools(tools);
+  registerDesignTools(tools);
+  registerDeleteTools(tools);
+  registerAlignmentEditTools(tools);
+  registerLayerTools(tools);
+  registerCivilTools(tools);
+  registerPrimitiveTools(tools);
+  registerEngineeringTools(tools);
+  registerExtensionTools(tools);
+  registerChangeTools(tools);
+  registerKnowledgeTools(tools);
+  return server;
+}
 
-async function main(): Promise<void> {
+export async function startStdioServer(): Promise<void> {
+  const server = createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write("my-civil3d-mcp: stdio connected\n");
@@ -50,8 +65,3 @@ async function main(): Promise<void> {
   process.once("SIGINT", () => void shutdown());
   process.once("SIGTERM", () => void shutdown());
 }
-
-main().catch((error: unknown) => {
-  process.stderr.write(`my-civil3d-mcp: startup failed: ${String(error)}\n`);
-  process.exitCode = 1;
-});

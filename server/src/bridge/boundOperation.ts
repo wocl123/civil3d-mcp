@@ -1,6 +1,7 @@
 import { callPlugin } from "./pluginClient.js";
 import { drawingContext, inDrawingContext, type DrawingContext } from "./drawingContext.js";
 import { contentVersion } from "../knowledge/contentVersion.js";
+import { paletteContext } from "../mcp/paletteContext.js";
 
 const changed = (kind: string, message: string) => Object.assign(new Error(message), { kind, drawingChanged: false });
 
@@ -8,7 +9,7 @@ const changed = (kind: string, message: string) => Object.assign(new Error(messa
 export async function withDrawing<T>(work: () => Promise<T>): Promise<T> {
   const existing = drawingContext();
   const status = existing ?? await callPlugin("drawing.status") as Partial<DrawingContext>;
-  const expected = process.env.MY_CIVIL3D_DRAWING_ID;
+  const expected = paletteContext()?.drawingId ?? process.env.MY_CIVIL3D_DRAWING_ID;
   if (expected && expected !== status.drawingId) {
     throw changed("drawing_mismatch", "Drawing changed since the palette request started.");
   }

@@ -25,8 +25,9 @@ import { centralCommand } from "./centralCommands.js";
 import { addTerms } from "../data/terms.js";
 import { syncSoon } from "../sync/syncLoop.js";
 import { checkTracked } from "../tracking/tracker.js";
-import { drawingOutline } from "../civil/drawingOutline.js";
-import { readSelection } from "../civil/drawingSelection.js";
+import { readChatContext } from "../civil/shared/chatContext.js";
+import { quickApply } from "./quickApply.js";
+import { quickDrawing } from "./quickDrawing.js";
 import { splitFacts } from "../knowledge/factBlock.js";
 import { addCandidates } from "../knowledge/candidateStore.js";
 import { appendFacts, knowledgePrompt, readKnowledge } from "../knowledge/knowledgeStore.js";
@@ -44,11 +45,12 @@ export async function answerChat(provider: Provider, message: string,
   const question = message.trim();
   const started = Date.now();
   const requestId = randomUUID();
+  const timing: Record<string, number> = {};
 
   // /중앙 신청 의 메일, /중앙 드라이브 의 경로는 작업 기록에 남기지 않는다(보낼 묶음이 검사에 막히지 않게).
   const logged = /^\/중앙\s+(신청|드라이브)/.test(question) ? question.replace(/^(\/중앙\s+\S+).*$/s, "$1 <가림>") : question;
   const log = (entry: Record<string, unknown>) => logTurn({
-    requestId, conversation, provider, question: clip(logged, 2000), ms: Date.now() - started, ...entry
+    requestId, conversation, provider, question: clip(logged, 2000), ms: Date.now() - started, timing, ...entry
   });
 
   // ── 1) 명령
@@ -67,9 +69,60 @@ export async function answerChat(provider: Provider, message: string,
     return result;
   }
 
+  // 명확한 단일 계획 적용은 AI 판단을 반복하지 않고 버튼과 같은 경로로 처리한다.
+  try {
+    const quick = signal?.aborted ? undefined : await quickApply(question, conversation, requestId,
+      () => onProgress?.({ type: "progress", text: "수정안 적용 중" }), signal);
+    if (quick) {
+      const notes = quick.fixes.map(fix => `${fix.id}: ${fix.target} · ${fix.title}`).join("; ");
+      remember(conversation, { provider, question,
+        answer: quick.answer + (notes ? "\n[이 답의 수정안 id] " + notes : ""),
+        fixIds: [quick.fixId, ...quick.fixes.map(fix => fix.id)] });
+      await log({ kind: "chat", quickApply: true, answer: clip(quick.answer) });
+      syncSoon();
+      return {
+        provider, requestId, answer: quick.answer, usage: NO_USAGE, totals: getUsageTotals(provider),
+        cached: false, recorded: [], conversation: status(conversation),
+        applied: quick.applied.map(appliedCard), fixes: quick.fixes.map(fixCard)
+      };
+    }
+  } catch (error) {
+    await settleOperations(requestId);
+    const failure = error instanceof Error ? error : new Error(String(error));
+    await log({ kind: "chat", quickApply: true, error: clip(failure.message, 1000) });
+    syncSoon();
+    throw Object.assign(failure, { applied: await appliedFor(requestId) });
+  }
+
+  // 뜻과 범위가 완전히 명확한 목록/전체 삭제 계획은 모델 왕복 없이 같은 검증 경로를 사용한다.
+  try {
+    const quick = await quickDrawing(question, requestId, signal,
+      () => onProgress?.({ type: "progress", text: "도면 기능 처리 중" }));
+    if (quick) {
+      timing.fastPathMs = Date.now() - started;
+      const notes = quick.fixes.map(fix => `${fix.id}: ${fix.target} · ${fix.title}`).join("; ");
+      remember(conversation, { provider, question,
+        answer: quick.answer + (notes ? "\n[이 답의 수정안 id] " + notes : ""),
+        fixIds: quick.fixes.map(fix => fix.id) });
+      await log({ kind: "chat", fastPath: true, drawing: quick.scope.label,
+        tools: [quick.tool], answer: clip(quick.answer) });
+      syncSoon();
+      return { provider, requestId, answer: quick.answer, usage: NO_USAGE, totals: getUsageTotals(provider),
+        cached: false, recorded: [], conversation: status(conversation), fixes: quick.fixes.map(fixCard) };
+    }
+  } catch (error) {
+    await settleOperations(requestId);
+    const failure = error instanceof Error ? error : new Error(String(error));
+    await log({ kind: "chat", fastPath: true, error: clip(failure.message, 1000) });
+    syncSoon();
+    throw Object.assign(failure, { applied: await appliedFor(requestId) });
+  }
+
   // ── 2) 도면 상태와 선택. 선택도 재사용 키에 들어간다:
   //       "이걸로 선형 만들어줘"는 도면이 그대로여도 다른 객체를 고르면 다른 뜻이다.
-  const [scope, selectionRead] = await Promise.all([currentDrawingScope(), readSelection()]);
+  onProgress?.({ type: "progress", text: "도면 정보 확인 중" });
+  const { scope, selection: selectionRead, outline } = await readChatContext();
+  timing.contextMs = Date.now() - started;
   const selection = selectionRead.outline;
   // 작업 기록용: 선택한 개수, 또는 선택을 못 읽은 이유.
   const selected = selectionRead.error ? { error: selectionRead.error } : { count: selectionRead.count };
@@ -103,7 +156,7 @@ export async function answerChat(provider: Provider, message: string,
   }
 
   // ── 3) 프롬프트 (AI가 읽는 문장은 영어로 둔다)
-  const [knowledge, outline] = await Promise.all([Promise.resolve(knowledgePrompt(knowledgeFacts)), drawingOutline()]);
+  const knowledge = knowledgePrompt(knowledgeFacts);
   const prompt = [
     ...(outline ? [outline, ""] : []),
     ...(selection ? [selection, ""] : []),
@@ -117,18 +170,27 @@ export async function answerChat(provider: Provider, message: string,
   const filter = new FactsFilter();
   const tools: string[] = [];
   onProgress?.({ type: "progress", text: "생각하는 중" });
+  timing.beforeAiMs = Date.now() - started;
   let result: Awaited<ReturnType<typeof askProvider>>;
   try {
     result = await askProvider(provider, prompt, {
       tools: true,
       requestId, signal, drawingId: scope.drawingId,
+      onTiming: (stage, ms) => {
+        timing[stage] = ms;
+      },
       offeredFixes: offeredFixes(conversation),
       onEvent: event => {
         if (event.type === "tool") {
+          timing.firstToolMs ??= Date.now() - started;
           tools.push(event.name);
           onProgress?.({ type: "progress", text: toolLabel(event.name) });
         } else {
           const text = filter.push(event.text);
+          if (text) {
+            timing.firstTextMs ??= Date.now() - started;
+          }
+
           if (text && onProgress) {
             onProgress({ type: "delta", text });
           }
@@ -145,6 +207,7 @@ export async function answerChat(provider: Provider, message: string,
     throw Object.assign(failure, { applied: await appliedFor(requestId) });
   }
 
+  timing.aiFinishedMs = Date.now() - started;
   // ── 4) 답 정리와 지식 저장
   const totals = addUsage(provider, result.usage);
   const split = splitFacts(result.answer);

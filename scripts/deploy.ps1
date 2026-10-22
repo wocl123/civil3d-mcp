@@ -9,6 +9,9 @@ $owned = $false
 try {
   try { $owned = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $owned = $true }
   if (-not $owned) { throw '다른 배포 작업이 진행 중입니다.' }
+  # 버전·배포 설정·외부 서비스에 손대기 전에 현재 수정본의 내부 검증을 확인한다.
+  & node (Join-Path $PSScriptRoot 'internal-test-state.mjs') check
+  if ($LASTEXITCODE -ne 0) { throw '내부 테스트가 완료되지 않아 배포를 중단했습니다. 버전은 변경하지 않았습니다.' }
   $settingsFile = Join-Path $repo '.drive-deploy.json'
   $settings = if (Test-Path -LiteralPath $settingsFile) { Get-Content -LiteralPath $settingsFile -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
   function Value([string]$Given, [string]$Name, [string]$Prompt) {
@@ -43,11 +46,7 @@ try {
   & node (Join-Path $PSScriptRoot 'ingest-config.mjs') --probe $IngestUrl
   if ($LASTEXITCODE -ne 0) { throw '수신 웹앱 준비 확인 실패' }
   $current = (Get-Content -LiteralPath (Join-Path $repo 'server/package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
-  $suggested = $current
-  if ($settings -and $settings.PSObject.Properties['lastPublishedVersion'] -and $settings.lastPublishedVersion -eq $current) {
-    $parts = $current.Split('.'); $suggested = "$($parts[0]).$($parts[1]).$([int]$parts[2]+1)"
-  }
-  if (-not $Version) { $Version = (Read-Host "배포 버전 (Enter = $suggested)").Trim(); if (-not $Version) { $Version = $suggested } }
+  if (-not $Version) { $Version = (Read-Host "배포할 버전을 명시적으로 입력하세요 (현재 $current, 빈 입력은 취소)").Trim() }
   if ($Version -notmatch '^\d+\.\d+\.\d+$' -or ([version]$Version -lt [version]$current)) { throw '현재 버전 이상의 숫자.숫자.숫자 형식을 사용하세요.' }
   $config = [ordered]@{}
   if ($settings) { foreach ($property in $settings.PSObject.Properties) { $config[$property.Name] = $property.Value } }
@@ -70,7 +69,11 @@ try {
     if ($NodeArchive) { $build.NodeArchive = $NodeArchive }
     if ($NuGetAutodesk) { $build.NuGetAutodesk = $true }
     & (Join-Path $PSScriptRoot 'package.ps1') @build
+    & node (Join-Path $PSScriptRoot 'internal-test-state.mjs') record-package
+    if ($LASTEXITCODE -ne 0) { throw '검증한 수정본과 패키지가 일치하지 않아 게시를 중단했습니다.' }
   }
+  & node (Join-Path $PSScriptRoot 'internal-test-state.mjs') check-package
+  if ($LASTEXITCODE -ne 0) { throw '현재 내부 테스트 수정본의 배포 파일이 아니므로 게시를 중단했습니다.' }
   & node (Join-Path $PSScriptRoot 'github-publish.mjs') $settingsFile
   if ($LASTEXITCODE -ne 0) { throw 'GitHub 게시/공개 다운로드 확인 실패. 동일 산출물 재확인은 -SkipBuild로 할 수 있습니다.' }
   $config.lastPublishedVersion = $Version

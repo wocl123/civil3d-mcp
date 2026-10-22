@@ -4,7 +4,7 @@
 // 질문·답·도구 입력·변경 설명은 결과를 정제하는 데 필요해 보낸다(2026-10-07 결정).
 // 보내기 전에 도면 이름·경로·파일·메일·사용자/PC 이름·키를 가린다(privacy.ts blank).
 
-import { REGIONS, ROAD_CLASSES } from "../civil/alignmentRecord.js";
+import { REGIONS, ROAD_CLASSES } from "../civil/alignment/alignmentRecord.js";
 import { failureGuide } from "../errors/failureGuide.js";
 import type { LogFile } from "../logs/workLog.js";
 import { blank, hour } from "./privacy.js";
